@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo noupdate="1">
+    <record id="loadsheet_category_frozen" model="centric.loadsheet.category">
+        <field name="name">Frozen</field>
+        <field name="sequence">10</field>
+    </record>
+    <record id="loadsheet_category_dry" model="centric.loadsheet.category">
+        <field name="name">Dry</field>
+        <field name="sequence">20</field>
+    </record>
+</odoo>

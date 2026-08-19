@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="sale.sale_menu_root" model="ir.ui.menu">
+        <field name="action" eval="'ir.actions.act_window,%d' % ref('sale.action_orders')"/>
+    </record>
+
+    <record id="sale.menu_sale_order" model="ir.ui.menu">
+        <field name="sequence">5</field>
+    </record>
+
+    <record id="sale.menu_sale_quotations" model="ir.ui.menu">
+        <field name="sequence">20</field>
+    </record>
+
+    <record id="sale.product_menu_catalog" model="ir.ui.menu">
+        <field name="group_ids" eval="[(6, 0, [ref('sales_team.group_sale_salesman_all_leads')])]"/>
+    </record>
+
+    <record id="action_centric_sales_rep_customer_statement_lines" model="ir.actions.act_window">
+        <field name="name">Customer Statements</field>
+        <field name="res_model">account.move.line</field>
+        <field name="view_mode">list,pivot,graph</field>
+        <field name="view_id" ref="account.view_move_line_tree_grouped_partner"/>
+        <field name="search_view_id" ref="account.view_account_move_line_filter"/>
+        <field name="domain">[
+            ('display_type', 'not in', ('line_section', 'line_subsection', 'line_note')),
+            ('parent_state', '=', 'posted'),
+            ('account_id.account_type', '=', 'asset_receivable')
+        ]</field>
+        <field name="context">{
+            'journal_type': 'sale',
+            'search_default_group_by_partner': 1,
+            'search_default_posted': 1,
+            'search_default_trade_receivable': 1
+        }</field>
+    </record>
+
+    <menuitem
+        id="menu_centric_sales_rep_customer_invoices"
+        name="Customer Invoices"
+        parent="sale.menu_sale_invoicing"
+        action="account.action_move_out_invoice"
+        groups="centric_sales_rep_customisation.group_centric_sales_representative"
+        sequence="30"/>
+
+    <menuitem
+        id="menu_centric_sales_rep_customer_statements"
+        name="Customer Statements"
+        parent="sale.menu_sale_invoicing"
+        action="action_centric_sales_rep_customer_statement_lines"
+        groups="centric_sales_rep_customisation.group_centric_sales_representative"
+        sequence="40"/>
+
+    <!--
+        "Products Ordered" report for restricted sales reps. Opens the native
+        Sales Analysis (sale.report) defaulted to Sales Orders, grouped by
+        product. Access is scoped automatically: the rep record rule on
+        sale.report (rule_sale_report_centric_sales_rep_assigned_customers)
+        limits it to the rep's own assigned customers - no extra domain here.
+    -->
+    <!-- Add an "Order" group-by option to the Sales Analysis search view so the
+         report can be grouped per sales order (sale.report.name = order ref). -->
+    <record id="view_order_product_search_centric_order_group" model="ir.ui.view">
+        <field name="name">sale.report.search.centric.order.group</field>
+        <field name="model">sale.report</field>
+        <field name="inherit_id" ref="sale.view_order_product_search"/>
+        <field name="arch" type="xml">
+            <xpath expr="//filter[@name='product_tmpl_id']" position="before">
+                <filter string="Order" name="order_ref" context="{'group_by': 'name'}"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="action_centric_products_ordered" model="ir.actions.act_window">
+        <field name="name">Products Ordered</field>
+        <field name="res_model">sale.report</field>
+        <field name="view_mode">list,pivot,graph</field>
+        <field name="search_view_id" ref="sale.view_order_product_search"/>
+        <field name="domain">[('state', '!=', 'cancel')]</field>
+        <field name="context">{
+            'search_default_Sales': 1,
+            'search_default_filter_order_date': 1,
+            'search_default_order_ref': 1,
+        }</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No products ordered yet</p>
+            <p>Products ordered by your customers appear here, grouped by product.</p>
+        </field>
+    </record>
+
+    <menuitem
+        id="menu_centric_products_ordered"
+        name="Products Ordered"
+        parent="sale.sale_order_menu"
+        action="action_centric_products_ordered"
+        groups="centric_sales_rep_customisation.group_centric_sales_representative"
+        sequence="25"/>
+</odoo>

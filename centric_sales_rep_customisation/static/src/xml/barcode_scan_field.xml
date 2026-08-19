@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="centric_sale_barcode_entry.BarcodeScanField">
+        <div class="o_field_centric_barcode_scan d-inline-flex align-items-center">
+            <i class="fa fa-barcode me-2 text-muted" role="img" aria-label="Barcode"/>
+            <input type="text" class="o_input"
+                   autocomplete="off"
+                   t-att-placeholder="props.placeholder"
+                   t-on-keydown="onKeydown"/>
+        </div>
+    </t>
+</templates>

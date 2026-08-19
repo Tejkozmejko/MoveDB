@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Show the current catalog customer's purchase history on the product
+         "Card" (opened from the Sales catalog), on the right side under
+         Category. Hidden on a normal product form (no history in context). -->
+    <record id="product_normal_form_view_centric_history" model="ir.ui.view">
+        <field name="name">product.product.form.centric.catalog.history</field>
+        <field name="model">product.product</field>
+        <field name="inherit_id" ref="product.product_normal_form_view"/>
+        <field name="arch" type="xml">
+            <field name="categ_id" position="after">
+                <separator string="Previously Purchased (this customer)"
+                           invisible="not catalog_history_line_ids"/>
+                <field name="catalog_history_line_ids"
+                       nolabel="1"
+                       colspan="2"
+                       readonly="1"
+                       invisible="not catalog_history_line_ids">
+                    <list create="false" edit="false" default_order="id desc">
+                        <field name="currency_id" column_invisible="1"/>
+                        <field name="order_id"/>
+                        <field name="centric_order_date" string="Date" widget="date"/>
+                        <field name="product_uom_qty" string="Qty"/>
+                        <field name="price_unit" string="Price Sold"
+                               widget="monetary"
+                               options="{'currency_field': 'currency_id'}"/>
+                    </list>
+                </field>
+            </field>
+        </field>
+    </record>
+</odoo>

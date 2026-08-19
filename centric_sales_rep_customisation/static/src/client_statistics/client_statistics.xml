@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="centric_customer_sales_drilldown.ClientStatistics">
+        <div class="centric_cs o_action h-100 d-flex flex-column overflow-hidden">
+
+            <div t-if="!state.ready" class="p-4 text-muted">
+                Open this screen from a customer's <strong>Sales Statistics</strong> button.
+            </div>
+
+            <t t-if="state.ready">
+            <!-- Header -->
+            <div class="centric_cs_header d-flex align-items-center gap-2 px-3 py-2 border-bottom">
+                <i class="fa fa-bar-chart text-primary" role="img" aria-label="Sales statistics"/>
+                <h5 class="mb-0 flex-grow-1 text-truncate">
+                    <t t-esc="partnerName"/>
+                </h5>
+                <button class="btn btn-sm btn-secondary" t-on-click="openPivot">
+                    <i class="fa fa-table me-1" role="img" aria-label="Pivot"/>Pivot view
+                </button>
+            </div>
+
+            <!-- Cascading drill-down columns -->
+            <div class="centric_cs_columns d-flex border-bottom">
+
+                <div class="centric_cs_col border-end">
+                    <div class="centric_cs_col_title">Year</div>
+                    <div class="centric_cs_col_body">
+                        <div t-foreach="state.years" t-as="group" t-key="group_index"
+                             class="centric_cs_item"
+                             t-att-class="{ selected: group === state.selYear }"
+                             t-on-click="() => this.selectYear(group)">
+                            <span class="centric_cs_item_label" t-esc="labelOf(group, 'invoice_date:year')"/>
+                            <span class="centric_cs_item_amount" t-esc="fmt(amountOf(group))"/>
+                        </div>
+                        <div t-if="!state.years.length" class="centric_cs_empty">No invoices</div>
+                    </div>
+                </div>
+
+                <div class="centric_cs_col border-end">
+                    <div class="centric_cs_col_title">Month</div>
+                    <div class="centric_cs_col_body">
+                        <div t-foreach="state.months" t-as="group" t-key="group_index"
+                             class="centric_cs_item"
+                             t-att-class="{ selected: group === state.selMonth }"
+                             t-on-click="() => this.selectMonth(group)">
+                            <span class="centric_cs_item_label" t-esc="labelOf(group, 'invoice_date:month')"/>
+                            <span class="centric_cs_item_amount" t-esc="fmt(amountOf(group))"/>
+                        </div>
+                        <div t-if="!state.months.length" class="centric_cs_empty">
+                            <t t-if="state.selYear">No data</t>
+                            <t t-else="">Select a year</t>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="centric_cs_col border-end">
+                    <div class="centric_cs_col_title">Day</div>
+                    <div class="centric_cs_col_body">
+                        <div t-foreach="state.days" t-as="group" t-key="group_index"
+                             class="centric_cs_item"
+                             t-att-class="{ selected: group === state.selDay }"
+                             t-on-click="() => this.selectDay(group)">
+                            <span class="centric_cs_item_label" t-esc="labelOf(group, 'invoice_date:day')"/>
+                            <span class="centric_cs_item_amount" t-esc="fmt(amountOf(group))"/>
+                        </div>
+                        <div t-if="!state.days.length" class="centric_cs_empty">
+                            <t t-if="state.selMonth">No data</t>
+                            <t t-else="">Select a month</t>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="centric_cs_col">
+                    <div class="centric_cs_col_title">Invoice</div>
+                    <div class="centric_cs_col_body">
+                        <div t-foreach="state.invoices" t-as="group" t-key="group_index"
+                             class="centric_cs_item centric_cs_invoice"
+                             t-att-class="{ selected: group === state.selInvoice }"
+                             t-on-click="() => this.selectInvoice(group)">
+                            <span class="centric_cs_item_label" t-esc="labelOf(group, 'move_id')"/>
+                            <span class="centric_cs_item_amount" t-esc="fmt(amountOf(group))"/>
+                            <i class="fa fa-external-link centric_cs_open_invoice"
+                               title="Open invoice"
+                               role="button" aria-label="Open invoice"
+                               t-on-click="(ev) => this.openInvoice(group, ev)"/>
+                        </div>
+                        <div t-if="!state.invoices.length" class="centric_cs_empty">
+                            <t t-if="state.selDay">No data</t>
+                            <t t-else="">Select a day</t>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Products sold in the selected period -->
+            <div class="centric_cs_products flex-grow-1 d-flex flex-column overflow-hidden p-3">
+                <div class="d-flex align-items-center gap-3 mb-2">
+                    <h6 class="mb-0 text-nowrap">
+                        Products Sold — <t t-esc="state.productsTitle"/>
+                    </h6>
+                    <div class="input-group input-group-sm centric_cs_search">
+                        <span class="input-group-text"><i class="fa fa-search" role="img" aria-label="Search"/></span>
+                        <input type="text" class="form-control"
+                               placeholder="Filter products..."
+                               t-model="state.productFilter"/>
+                    </div>
+                    <span t-if="state.loading" class="text-muted small">Loading…</span>
+                </div>
+                <div class="flex-grow-1 overflow-auto">
+                    <table class="table table-sm table-hover centric_cs_products_table">
+                        <thead>
+                            <tr>
+                                <th>Description</th>
+                                <th class="text-end">Quantity</th>
+                                <th class="text-end">Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr t-foreach="filteredProducts" t-as="group" t-key="group_index">
+                                <td t-esc="labelOf(group, 'product_id')"/>
+                                <td class="text-end" t-esc="fmtQty(qtyOf(group))"/>
+                                <td class="text-end" t-esc="fmt(amountOf(group))"/>
+                            </tr>
+                            <tr t-if="!filteredProducts.length">
+                                <td colspan="3" class="text-muted">No products for this period</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            </t>
+        </div>
+    </t>
+
+</templates>

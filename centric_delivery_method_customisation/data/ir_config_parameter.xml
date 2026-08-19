@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- noupdate: seed the switch ON at install, but never overwrite the admin's
+         later choice on module upgrade. -->
+    <data noupdate="1">
+        <record id="centric_auto_assign_lots_param" model="ir.config_parameter">
+            <field name="key">centric_auto_lot_assignment.auto_assign_lots</field>
+            <field name="value">True</field>
+        </record>
+        <!-- How much of product_expiry's expired-lot popup to auto-confirm:
+             all      = never ask, for any lot (default, client decision),
+             negative = only the <code>-N negative-stock buckets,
+             off      = native behaviour, always ask. -->
+        <record id="centric_auto_confirm_expiry_param" model="ir.config_parameter">
+            <field name="key">centric_negative_stock_lot.auto_confirm_expiry</field>
+            <field name="value">all</field>
+        </record>
+    </data>
+</odoo>

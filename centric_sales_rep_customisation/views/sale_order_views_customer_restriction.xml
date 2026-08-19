@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_order_form_centric_sales_customer" model="ir.ui.view">
+        <field name="name">sale.order.form.centric.customer.restriction</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <!-- Limit the Customer dropdown to the user's Allowed Customers (no-op
+                 for unrestricted users, whose domain is empty). -->
+            <field name="partner_id" position="before">
+                <field name="centric_allowed_customer_domain" invisible="1"/>
+            </field>
+            <field name="partner_id" position="attributes">
+                <attribute name="domain">centric_allowed_customer_domain</attribute>
+            </field>
+        </field>
+    </record>
+</odoo>

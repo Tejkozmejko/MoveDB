@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_product_template_form_loadsheet_category" model="ir.ui.view">
+        <field name="name">product.template.form.loadsheet.category.centric</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_form_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='categ_id']" position="after">
+                <field name="centric_loadsheet_category_id"
+                       string="Loadsheet Category"
+                       options="{'no_open': False, 'no_create': False}"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_product_product_list_loadsheet_category" model="ir.ui.view">
+        <field name="name">product.product.list.loadsheet.category.centric</field>
+        <field name="model">product.product</field>
+        <field name="inherit_id" ref="product.product_product_tree_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='categ_id']" position="after">
+                <field name="centric_loadsheet_category_id" string="Loadsheet Category" optional="hide"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Deliberately NO patch on product.product_normal_form_view. That view is
+         mode="primary" inheriting product.product_template_form_view, so it already
+         receives the template patch above. Patching both rendered "Loadsheet
+         Category" twice on the product form. -->
+
+    <record id="view_product_template_search_loadsheet_category" model="ir.ui.view">
+        <field name="name">product.template.search.loadsheet.category.centric</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_search_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='categ_id']" position="after">
+                <field name="centric_loadsheet_category_id"/>
+            </xpath>
+            <xpath expr="//filter[@name='group_by_categ_id']" position="after">
+                <filter string="Loadsheet Category" name="group_by_loadsheet_category" context="{'group_by': 'centric_loadsheet_category_id'}"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

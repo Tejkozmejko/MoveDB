@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_order_form_centric_scrap_line" model="ir.ui.view">
+        <field name="name">sale.order.form.centric.scrap.line</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <!-- The button itself, next to Catalog under the order lines. -->
+            <xpath expr="//field[@name='order_line']/list/control/button[@name='action_add_from_catalog']" position="after">
+                <button
+                    string="Scrap"
+                    name="action_centric_add_scrap"
+                    type="object"
+                    class="px-4 btn-link"
+                    context="{'order_id': parent.id}"/>
+            </xpath>
+            <xpath expr="//field[@name='order_line']/kanban/control/button[@name='action_add_from_catalog']" position="after">
+                <button
+                    string="Scrap"
+                    name="action_centric_add_scrap"
+                    type="object"
+                    class="btn-secondary"
+                    context="{'order_id': parent.id}"/>
+            </xpath>
+
+            <!-- Needed by the modifiers below, and by the row decoration. -->
+            <xpath expr="//field[@name='order_line']/list/field[@name='display_type']" position="after">
+                <field name="centric_is_scrap" column_invisible="1"/>
+            </xpath>
+            <xpath expr="//field[@name='order_line']/list" position="attributes">
+                <attribute name="decoration-muted">centric_is_scrap</attribute>
+            </xpath>
+
+            <!-- The kilograms, for products that are not sold by weight. On a
+                 product sold in kg the Quantity column already says it. -->
+            <xpath expr="//field[@name='order_line']/list/field[@name='product_uom_qty']" position="after">
+                <field
+                    name="centric_scrap_qty_kg"
+                    string="Wastage (kg)"
+                    optional="hide"
+                    readonly="1"/>
+            </xpath>
+
+            <!-- A wastage line is fixed to the product it was recorded against
+                 and is never priced; only its quantity is meant to be edited. -->
+            <xpath expr="//field[@name='order_line']/list/field[@name='product_id']" position="attributes">
+                <attribute name="readonly">not product_updatable or centric_is_scrap</attribute>
+            </xpath>
+            <xpath expr="//field[@name='order_line']/list/field[@name='product_template_id']" position="attributes">
+                <attribute name="readonly">(id and not product_updatable) or centric_is_scrap</attribute>
+            </xpath>
+            <xpath expr="//field[@name='order_line']/list/field[@name='price_unit']" position="attributes">
+                <attribute name="readonly">qty_invoiced &gt; 0 or centric_is_scrap</attribute>
+            </xpath>
+            <xpath expr="//field[@name='order_line']/list/field[@name='tax_ids']" position="attributes">
+                <attribute name="readonly">qty_invoiced &gt; 0 or is_downpayment or centric_is_scrap</attribute>
+            </xpath>
+            <xpath expr="//field[@name='order_line']/list/field[@name='discount']" position="attributes">
+                <attribute name="readonly">centric_is_scrap</attribute>
+            </xpath>
+        </field>
+    </record>
+</odoo>

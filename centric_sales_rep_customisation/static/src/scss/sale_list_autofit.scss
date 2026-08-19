@@ -1,0 +1,108 @@
+// =============================================================================
+// Auto-fit the Sales Orders list columns to their content.
+//
+// Why this is needed
+// ------------------
+// Odoo renders every list as a FIXED-layout table (table-layout: fixed) so it
+// can decide column widths up front and offer drag-to-resize handles. The side
+// effect is that any value longer than its column is clipped with an ellipsis
+// ("SEABANK ...", "Fully Deli...", "Awaiting...", "C & T Trad...") and a manual
+// resize is never saved - it resets on the next reload. There is no standard
+// Odoo setting to size a column to its content.
+//
+// What this does
+// --------------
+// It switches ONLY the Sales Orders list to an auto-layout table whose cells do
+// not wrap, so each column automatically grows to fit the longest value it
+// actually contains - the "stretch to the data inside" behaviour. When the
+// combined content is wider than the screen the list scrolls horizontally; that
+// is the unavoidable trade-off of showing every value in full.
+//
+// Scope
+// -----
+// The selectors match only the lists we mean to touch, each anchored on a
+// column that is unique to that list:
+//   * the Sales Orders list        -> our Invoice Status column
+//                                      (th[data-name="centric_invoice_status"])
+//   * the Pick / Pack / Delivery    -> our Demand column
+//     (and other) picking boards      (th[data-name="centric_demand_quantity"])
+//   * the "Items" operations lists  -> our Item Note / Order Note columns
+//     (the pack-quantity wizard and    (th[data-name="centric_operation_note"],
+//      the picking detail list)         th[data-name="centric_sale_order_note"])
+// These anchor columns are custom fields that appear nowhere else, so every
+// other list in Odoo (contacts, invoices, products, ...) keeps the standard
+// fixed-layout behaviour and is completely untouched. `th[...]` only ever exists
+// in a list header, so a form showing the same field is never affected either.
+// For the Items lists we anchor on EITHER note column, so the auto-fit still
+// applies when the user hides one of the two optional note columns.
+//
+// Any per-column width still declared on the view (e.g. in
+// centric_delivery_method_customisation) simply acts as a sensible minimum here:
+// auto-layout lets a column grow past it for longer content, so nothing clips.
+// =============================================================================
+
+// Sales Orders list + the Pick / Pack / Delivery picking boards + the "Items"
+// pack-quantity wizard / picking detail operations lists.
+table.o_list_table:has(th[data-name="centric_invoice_status"]),
+table.o_list_table:has(th[data-name="centric_demand_quantity"]),
+table.o_list_table:has(th[data-name="centric_operation_note"]),
+table.o_list_table:has(th[data-name="centric_sale_order_note"]) {
+    // Grow columns to their content instead of clipping to a pre-computed width.
+    table-layout: auto !important;
+    // Fill the available space, but allow the table to widen (and the list to
+    // scroll) when the content needs more room than the viewport.
+    width: auto !important;
+    min-width: 100%;
+
+    th,
+    td {
+        // Remove the truncation cap and keep each value on a single line so the
+        // column sizes to the full text.
+        max-width: none !important;
+        white-space: nowrap;
+    }
+
+    // Multi-line Text fields (our "Item Note" / "Order Note") are the exception:
+    // core gives their list cells `white-space: pre-wrap` / `word-wrap: break-word`
+    // (web list_renderer.scss + fields.scss), which our plain `nowrap` above cannot
+    // beat, so the note kept wrapping into a thin ribbon. Force these onto a single
+    // line too (with !important) so the column grows to fit the whole note.
+    td.o_list_text,
+    td .o_field_text,
+    td .o_field_widget[name="centric_operation_note"],
+    td .o_field_widget[name="centric_sale_order_note"] {
+        white-space: nowrap !important;
+        word-wrap: normal !important;
+        overflow-wrap: normal !important;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Pin the horizontal scrollbar in the "Items" pack-quantity wizard dialog.
+//
+// The dialog body is already a fixed-height scroll area
+// (core dialog.scss: `.modal-body { height: 100%; overflow-y: auto }`). By
+// default the wide list scrolls horizontally on its OWN container
+// (`.o_list_renderer.table-responsive`), whose height grows with every row - so
+// its bottom scrollbar sits below the fold, and because that is a SECOND
+// (nested) scroller inside the modal body it also rides up out of view as you
+// scroll the rows: "not fixed".
+//
+// Fix: let the fixed-height modal body own BOTH scroll directions, so its
+// horizontal scrollbar stays pinned at the bottom of the visible dialog (just
+// above the footer), and stop the inner list from scrolling itself so there is
+// only ONE scroller. Scoped to the Items dialog via our note columns, so no
+// other dialog is affected.
+// -----------------------------------------------------------------------------
+.modal-content:has(th[data-name="centric_operation_note"]) > .modal-body,
+.modal-content:has(th[data-name="centric_sale_order_note"]) > .modal-body {
+    overflow: auto;
+}
+
+.modal-content:has(th[data-name="centric_operation_note"]) .o_list_renderer.table-responsive,
+.modal-content:has(th[data-name="centric_sale_order_note"]) .o_list_renderer.table-responsive {
+    // Let the table overflow into the modal body (which now scrolls) instead of
+    // scrolling within itself.
+    overflow: visible;
+    max-height: none;
+}

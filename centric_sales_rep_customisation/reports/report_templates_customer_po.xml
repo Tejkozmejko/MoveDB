@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Sales order / quotation PDF: show the customer PO number. -->
+    <template id="report_saleorder_document_centric_customer_po"
+              inherit_id="sale.report_saleorder_document">
+        <xpath expr="//div[@name='informations_reference']" position="after">
+            <div t-if="doc.centric_customer_po" class="col" name="informations_customer_po">
+                <strong>Purchase Order No</strong>
+                <div t-field="doc.centric_customer_po"/>
+            </div>
+        </xpath>
+    </template>
+
+    <!-- Customer invoice PDF: show the customer PO number. -->
+    <template id="report_invoice_document_centric_customer_po"
+              inherit_id="account.report_invoice_document">
+        <xpath expr="//div[@name='reference']" position="after">
+            <div t-if="o.centric_customer_po" class="col" name="informations_customer_po">
+                <strong>Purchase Order No</strong>
+                <div t-field="o.centric_customer_po"/>
+            </div>
+        </xpath>
+    </template>
+</odoo>

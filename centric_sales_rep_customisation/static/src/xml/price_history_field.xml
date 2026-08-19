@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="centric_sales_rep_customisation.PriceHistoryField">
+        <span t-if="props.readonly" t-esc="formattedValue"/>
+        <div t-else="" class="centric_price_history">
+            <input
+                t-on-focusin="onFocusIn"
+                t-on-focusout="onFocusOut"
+                t-on-keydown="phOnKeydown"
+                t-att-id="props.id"
+                t-ref="numpadDecimal"
+                t-att-type="props.inputType"
+                inputmode="decimal"
+                class="o_input"
+                autocomplete="off"
+                t-att-step="props.step"/>
+            <div t-if="ph.open and phReady" t-ref="phMenu" class="centric_price_history_menu dropdown-menu d-block py-1" role="listbox">
+                <span class="dropdown-header py-0">Previous prices</span>
+                <t t-if="ph.entries.length">
+                    <button t-foreach="ph.entries" t-as="entry" t-key="entry_index"
+                            type="button" role="option"
+                            class="dropdown-item py-1 d-flex align-items-baseline gap-2"
+                            t-on-mousedown.prevent=""
+                            t-on-click="() => this.phSelect(entry)">
+                        <strong t-esc="entry.price_label"/>
+                        <span class="text-muted small" t-esc="entry.note"/>
+                    </button>
+                </t>
+                <span t-else="" class="dropdown-item-text py-1 text-muted fst-italic">
+                    None yet for this customer
+                </span>
+            </div>
+        </div>
+    </t>
+
+</templates>

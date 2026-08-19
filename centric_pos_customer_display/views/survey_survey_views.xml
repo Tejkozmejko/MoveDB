@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="survey_survey_view_form_kiosk" model="ir.ui.view">
+        <field name="name">survey.survey.form.centric.kiosk</field>
+        <field name="model">survey.survey</field>
+        <field name="inherit_id" ref="survey.survey_survey_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='options']/group[@name='options']" position="inside">
+                <group string="Kiosk" name="centric_kiosk">
+                    <field name="centric_kiosk_mode"/>
+                    <label for="centric_kiosk_reset_delay" invisible="not centric_kiosk_mode"/>
+                    <div invisible="not centric_kiosk_mode">
+                        <field name="centric_kiosk_reset_delay" nolabel="1" class="oe_inline"/> seconds
+                    </div>
+                </group>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

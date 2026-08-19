@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!--
+        Primary search view for the Sales Product Catalog.
+
+        It is a copy (mode="primary") of the native catalog search view with an
+        extra "Previously Purchased" filter. The filter targets the search-only
+        `is_previously_purchased` field on product.product, whose search method
+        resolves the customer's purchase history from the `order_id` carried in
+        the context. Keeping it a primary view (referenced only by the sale
+        catalog) leaves the other catalogs (purchase, invoicing, mrp, repair)
+        untouched.
+    -->
+    <record id="product_view_search_catalog_previously_purchased" model="ir.ui.view">
+        <field name="name">product.view.search.catalog.previously.purchased</field>
+        <field name="model">product.product</field>
+        <field name="inherit_id" ref="product.product_view_search_catalog"/>
+        <field name="mode">primary</field>
+        <field name="arch" type="xml">
+            <xpath expr="//filter[@name='favorites']" position="before">
+                <filter string="Previously Purchased"
+                        name="previously_purchased"
+                        domain="[('is_previously_purchased', '=', True)]"
+                        context="{'catalog_rank_previously_purchased': True}"/>
+                <filter string="Recommended"
+                        name="recommended"
+                        domain="[('is_recommended', '=', True)]"
+                        context="{'catalog_rank_recommended': True}"/>
+                <separator/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_order_form_centric_info_note" model="ir.ui.view">
+        <field name="name">sale.order.form.centric.info.note</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <!--
+                Sits in the main info area under the Purchase Order No, so the
+                customer-facing note is entered at the top of the order rather
+                than against a product line. Notes typed against the lines stay
+                internal and never reach the invoice.
+            -->
+            <field name="centric_customer_po" position="after">
+                <field name="centric_info_note"
+                       placeholder="Note printed on the invoice, e.g. VAT number"/>
+            </field>
+        </field>
+    </record>
+</odoo>

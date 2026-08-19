@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_stock_move_operations_lots_context_centric" model="ir.ui.view">
+        <field name="name">stock.move.operations.form.lots.context.centric</field>
+        <field name="model">stock.move</field>
+        <field name="inherit_id" ref="stock.view_stock_move_operations"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='move_line_ids']" position="attributes">
+                <attribute name="context">{
+                    'list_view_ref': 'stock.view_stock_move_line_operation_tree',
+                    'form_view_ref': 'stock.view_move_line_mobile_form',
+                    'default_picking_id': picking_id,
+                    'default_move_id': id,
+                    'default_product_id': product_id,
+                    'default_location_id': location_id,
+                    'default_location_dest_id': location_dest_id,
+                    'default_company_id': company_id,
+                    'active_picking_id': picking_id,
+                    'centric_show_lots_serials': context.get('centric_show_lots_serials'),
+                }</attribute>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_stock_move_line_operation_tree_lots_centric" model="ir.ui.view">
+        <field name="name">stock.move.line.operations.list.lots.centric</field>
+        <field name="model">stock.move.line</field>
+        <field name="inherit_id" ref="stock.view_stock_move_line_operation_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='lot_id']" position="attributes">
+                <attribute name="string">Lot/Serial Number</attribute>
+                <attribute name="column_invisible">parent.has_tracking == 'none' or parent.show_lots_text or (not context.get('centric_show_lots_serials') and (parent.show_quant or not parent.show_lots_m2o))</attribute>
+                <attribute name="optional">show</attribute>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_stock_move_centric_quantity_list" model="ir.ui.view">
+        <field name="name">stock.move.list.centric.quantities</field>
+        <field name="model">stock.move</field>
+        <field name="arch" type="xml">
+            <list string="Items" editable="bottom" create="false" delete="false">
+                <field name="show_details_visible" column_invisible="True"/>
+                <field name="product_id" readonly="1"/>
+                <field name="centric_loadsheet_category_id" string="Loadsheet Category" readonly="1" optional="hide"/>
+                <field name="product_uom_qty" string="Demand" readonly="1"/>
+                <field name="quantity" string="Quantity" widget="centric_quantity_input" readonly="state in ('done', 'cancel')"/>
+                <field name="product_uom" string="Unit" readonly="1"/>
+                <button name="action_centric_show_details"
+                        type="object"
+                        string="Lots/Serials"
+                        icon="fa-tags"
+                        groups="stock.group_production_lot"
+                        invisible="not show_details_visible"/>
+                <field name="centric_operation_note" string="Item Note" readonly="1" optional="show"/>
+                <field name="centric_sale_order_note" string="Order Note" readonly="1" optional="show"/>
+                <field name="state" string="Status" widget="badge" readonly="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_stock_picking_list_editable_carrier" model="ir.ui.view">
+        <field name="name">stock.picking.list.carrier.dropdown.centric</field>
+        <field name="model">stock.picking</field>
+        <field name="inherit_id" ref="stock.vpicktree"/>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <xpath expr="//list/header/button[@name='action_assign']" position="after">
+                <button name="action_centric_print_and_validate" type="object" string="Print &amp; Validate" icon="fa-print" class="btn-primary o_centric_pick_action_button" groups="stock.group_stock_user" invisible="not context.get('centric_is_pick_operation')"/>
+                <button name="%(stock.action_validate_picking)d" type="action" string="Validate" class="btn-primary o_centric_pack_action_button" groups="stock.group_stock_user" invisible="not context.get('centric_is_pack_operation')"/>
+                <button name="%(stock.action_validate_picking)d" type="action" string="Validate" class="btn-primary o_centric_delivery_action_button" groups="stock.group_stock_user" invisible="not context.get('centric_is_delivery_operation')"/>
+            </xpath>
+            <xpath expr="//field[@name='priority']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='location_id']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='location_dest_id']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='partner_id']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='is_signed']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+            <xpath expr="//field[@name='user_id']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+            <xpath expr="//field[@name='scheduled_date']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='products_availability']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+            <xpath expr="//field[@name='date_deadline']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+            <xpath expr="//field[@name='date_done']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+            <xpath expr="//list" position="attributes">
+                <attribute name="decoration-success">centric_quantity_verified</attribute>
+            </xpath>
+            <xpath expr="//field[@name='origin']" position="before">
+                <field name="centric_quantity_verified" column_invisible="True"/>
+                <field name="centric_single_quantity_move" column_invisible="True"/>
+                <field name="centric_demand_quantity" string="Demand" readonly="1"/>
+                <!-- On the Pick board the Quantity is display-only. Picked amounts go in
+                     through the Items popup, where each line is edited on its own move.
+                     Editing the picking-level Quantity inline redistributes it greedily
+                     across the lines (one balloons, the rest zero out), which is what
+                     scrambled S00199. Pack already uses the readonly
+                     centric_pack_entered_qty below. The Delivery board is locked too:
+                     the packed quantity is final and a delivery is never amended
+                     (server guard in _inverse_centric_quantity backs this up). -->
+                <field name="centric_quantity" string="Quantity" widget="centric_quantity_input" readonly="state in ('done', 'cancel') or not centric_single_quantity_move or context.get('centric_is_pick_operation') or context.get('centric_is_delivery_operation')" column_invisible="context.get('centric_is_pack_operation')"/>
+                <field name="centric_pack_entered_qty" string="Quantity" readonly="1" column_invisible="not context.get('centric_is_pack_operation')"/>
+                <button name="action_centric_open_quantity_lines" type="object" string="Items" icon="fa-list-ul" groups="stock.group_stock_user"/>
+            </xpath>
+            <xpath expr="//field[@name='origin']" position="replace">
+                <field name="origin" string="Source Document" readonly="state in ['cancel', 'done']"/>
+            </xpath>
+            <xpath expr="//field[@name='origin']" position="after">
+                <field name="centric_sale_order_note"
+                       string="Order Note"
+                       readonly="1"
+                       optional="hide"
+                       column_invisible="not (context.get('centric_is_pick_operation') or context.get('centric_is_pack_operation'))"/>
+            </xpath>
+            <xpath expr="//field[@name='backorder_id']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+            <xpath expr="//field[@name='carrier_tracking_ref']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+            <xpath expr="//field[@name='carrier_id']" position="attributes">
+                <attribute name="optional">show</attribute>
+                <attribute name="widget">centric_carrier_dropdown</attribute>
+                <attribute name="options">{'no_create': True, 'no_open': True}</attribute>
+            </xpath>
+            <xpath expr="//field[@name='carrier_id']" position="after">
+                <field name="centric_driver_id" string="Driver" optional="show" widget="centric_driver_dropdown" options="{'no_create': True, 'no_open': True}"/>
+                <field name="centric_loadsheet_category_id" string="Loadsheet Category" optional="show"/>
+            </xpath>
+            <xpath expr="//field[@name='destination_country_code']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+            <xpath expr="//field[@name='weight']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+            <xpath expr="//field[@name='shipping_weight']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+            <xpath expr="//field[@name='picking_type_id']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+            <xpath expr="//field[@name='company_id'][@optional]" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='state']" position="attributes">
+                <attribute name="optional">show</attribute>
+                <attribute name="column_invisible">context.get('centric_is_delivery_operation')</attribute>
+            </xpath>
+            <xpath expr="//field[@name='state']" position="after">
+                <field name="centric_van_order_status"
+                       string="Status"
+                       widget="badge"
+                       readonly="1"
+                       column_invisible="not context.get('centric_is_delivery_operation')"
+                       decoration-warning="centric_van_order_status in ('In Pick', 'In Pack')"
+                       decoration-info="centric_van_order_status == 'Ready for Delivery'"
+                       decoration-success="centric_van_order_status == 'Done'"/>
+            </xpath>
+            <!-- Swap the Reference (transfer number, `name`) and Source Document
+                 (sale order, `origin`) columns on the Pick/Pack/Delivery boards:
+                 the Sales Order takes the first/Reference slot, the transfer
+                 number takes the old Source Document slot (kept just before the
+                 Order Note). Display position only; data and row-click behaviour
+                 are unchanged. -->
+            <xpath expr="//field[@name='name']" position="before">
+                <field name="origin" position="move"/>
+            </xpath>
+            <xpath expr="//field[@name='centric_sale_order_note']" position="before">
+                <field name="name" position="move"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_stock_picking_search_loadsheet_category" model="ir.ui.view">
+        <field name="name">stock.picking.search.loadsheet.category.centric</field>
+        <field name="model">stock.picking</field>
+        <field name="inherit_id" ref="stock.view_picking_internal_search"/>
+        <field name="arch" type="xml">
+            <xpath expr="//search/field[@name='picking_type_id']" position="after">
+                <field name="centric_loadsheet_category_id"/>
+            </xpath>
+            <xpath expr="//filter[@name='picking_type']" position="after">
+                <filter string="Carrier" name="centric_carrier" domain="[]" context="{'group_by': 'carrier_id'}"/>
+                <filter string="Loadsheet Category" name="centric_loadsheet_category" domain="[]" context="{'group_by': 'centric_loadsheet_category_id'}"/>
+                <filter string="Driver" name="centric_driver" domain="[]" context="{'group_by': 'centric_driver_id'}"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_stock_picking_form_driver" model="ir.ui.view">
+        <field name="name">stock.picking.form.driver.centric</field>
+        <field name="model">stock.picking</field>
+        <field name="inherit_id" ref="stock.view_picking_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='carrier_id']" position="after">
+                <field name="centric_driver_id" string="Driver"
+                       widget="centric_driver_dropdown"
+                       readonly="state in ('done', 'cancel')"
+                       options="{'no_create': True, 'no_open': True}"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Packed quantity is final: on a chain-fed customer delivery the form's
+         Operations tab is locked too - Demand and Quantity are the packed
+         amounts and are never amended at the delivery stage. The validation
+         hard block (_centric_check_delivery_quantities) remains the integrity
+         net for any path that slips past the UI. -->
+    <record id="view_picking_form_centric_delivery_lock" model="ir.ui.view">
+        <field name="name">stock.picking.form.centric.delivery.lock</field>
+        <field name="model">stock.picking</field>
+        <field name="inherit_id" ref="stock.view_picking_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='move_ids']" position="before">
+                <field name="centric_delivery_quantity_locked" invisible="1"/>
+            </xpath>
+            <xpath expr="//field[@name='move_ids']/list/field[@name='product_uom_qty']" position="attributes">
+                <attribute name="readonly" add="parent.centric_delivery_quantity_locked" separator=" or "/>
+            </xpath>
+            <xpath expr="//field[@name='move_ids']/list/field[@name='quantity']" position="attributes">
+                <attribute name="readonly" add="parent.centric_delivery_quantity_locked" separator=" or "/>
+            </xpath>
+            <!-- The optional Picked column is a quantity side door: ticking it
+                 on one move only makes core unlink the other moves' lines at
+                 validation (under-shipping past the quantity check). The
+                 server force-picks all moves on locked deliveries; this keeps
+                 the UI consistent with that. -->
+            <xpath expr="//field[@name='move_ids']/list/field[@name='picked']" position="attributes">
+                <attribute name="readonly" add="parent.centric_delivery_quantity_locked" separator=" or "/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

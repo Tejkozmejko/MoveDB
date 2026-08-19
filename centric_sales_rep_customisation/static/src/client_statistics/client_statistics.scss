@@ -1,0 +1,109 @@
+// Theme-aware: no hard-coded light/dark colours. Backgrounds and borders use
+// Bootstrap body variables (which Odoo's dark mode redefines) or neutral
+// rgba(128,...) overlays that read correctly on both light and dark themes.
+.centric_cs {
+    .centric_cs_columns {
+        // Roughly the top half of the screen, like the legacy layout.
+        height: 42vh;
+        min-height: 220px;
+    }
+
+    .centric_cs_col {
+        flex: 1 1 25%;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .centric_cs_col_title {
+        padding: 0.5rem 0.75rem;
+        font-weight: 600;
+        border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+        background: rgba(128, 128, 128, 0.08);
+    }
+
+    .centric_cs_col_body {
+        flex: 1 1 auto;
+        overflow-y: auto;
+    }
+
+    .centric_cs_item {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 0.5rem;
+        // Generous touch targets: this screen is used on tablets.
+        padding: 0.55rem 0.75rem;
+        cursor: pointer;
+        border-bottom: 1px solid var(--bs-border-color-translucent, rgba(128, 128, 128, 0.18));
+
+        &:hover {
+            background: rgba(128, 128, 128, 0.14);
+        }
+
+        &.selected {
+            background: rgba(var(--o-primary-rgb, 113, 75, 103), 0.30);
+            font-weight: 600;
+        }
+
+        .centric_cs_item_label {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .centric_cs_item_amount {
+            margin-left: auto;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+    }
+
+    .centric_cs_open_invoice {
+        padding: 0.15rem 0.25rem;
+        opacity: 0.55;
+
+        &:hover {
+            opacity: 1;
+        }
+    }
+
+    .centric_cs_empty {
+        padding: 0.75rem;
+        color: var(--bs-secondary-color, #6c757d);
+        font-style: italic;
+    }
+
+    .centric_cs_search {
+        max-width: 280px;
+    }
+
+    .centric_cs_products_table {
+        th {
+            position: sticky;
+            top: 0;
+            background: var(--bs-body-bg, #fff);
+            z-index: 1;
+        }
+
+        td,
+        th {
+            font-variant-numeric: tabular-nums;
+        }
+    }
+}
+
+// Stack the columns two-by-two on narrow screens (portrait tablet / phone).
+@media (max-width: 768px) {
+    .centric_cs .centric_cs_columns {
+        flex-wrap: wrap;
+        height: auto;
+        max-height: 60vh;
+        overflow-y: auto;
+
+        .centric_cs_col {
+            flex: 1 1 50%;
+            height: 30vh;
+        }
+    }
+}

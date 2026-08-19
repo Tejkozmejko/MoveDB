@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="res_config_settings_view_form_auto_lot" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.centric.auto.lot</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="stock.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <!-- Anchor on the same setting the other Centric module extends, so
+                 the block lands in the Inventory settings page reliably. -->
+            <xpath expr="//setting[@id='process_transfers']" position="after">
+                <setting id="centric_auto_assign_lots"
+                         string="Auto Assign Lots"
+                         help="Automatically assign available lots on deliveries, Pick/Pack and internal transfers for lot-tracked products, so operators are not asked to pick a lot when stock is on hand. Incoming receipts and serial-tracked products are never affected.">
+                    <field name="centric_auto_assign_lots"/>
+                </setting>
+            </xpath>
+        </field>
+    </record>
+</odoo>

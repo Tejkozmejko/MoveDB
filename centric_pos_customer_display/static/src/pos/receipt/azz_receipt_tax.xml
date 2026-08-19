@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+
+    <!--
+        Foot of the receipt, in this order:
+            Subtotal   amount excluding VAT
+            VAT 18%    the VAT only ("Tax" when the order mixes rates)
+            Total      Subtotal + VAT, printed larger than the rest
+        This replaces the native per-tax-group breakdown
+        ("VAT 18% (F) on 5.00 EUR", "VAT 0% (E) on 25.00 EUR").
+    -->
+    <t t-name="centric_pos_customer_display.OrderReceiptTotals"
+       t-inherit="point_of_sale.OrderReceipt" t-inherit-mode="extension">
+
+        <xpath expr="//div[contains(@class, 'pos-receipt-taxes')]" position="replace">
+            <div class="pos-receipt-taxes pt-3">
+                <div class="d-flex">
+                    <span class="text-nowrap mw-100">Subtotal</span>
+                    <span t-out="formatCurrency(order.priceExcl)" class="ms-auto font-monospace"/>
+                </div>
+                <div class="d-flex">
+                    <span class="text-nowrap mw-100" t-out="order.taxLabelForReceipt"/>
+                    <span t-out="formatCurrency(order.taxAmountForReceipt)"
+                          class="ms-auto font-monospace"/>
+                </div>
+            </div>
+        </xpath>
+
+        <xpath expr="//div[contains(@class, 'receipt-total')]" position="attributes">
+            <attribute name="style">font-size: 1.25em; line-height: 1.4;</attribute>
+        </xpath>
+    </t>
+
+    <!--
+        Per line, next to the unit price: "F: +0.27 EUR (18%)" - the tax group
+        code, the VAT this line carries and its rate. Replaces the bare letter
+        that used to sit in a narrow column beside the price.
+    -->
+    <t t-name="centric_pos_customer_display.OrderlineTaxDetail"
+       t-inherit="point_of_sale.Orderline" t-inherit-mode="extension">
+
+        <xpath expr="//li[@t-out='vals.displayPriceUnit']" position="replace">
+            <li t-if="vals.displayPriceUnit or vals.taxDetail"
+                class="price-per-unit d-flex justify-content-between w-100">
+                <span t-out="vals.displayPriceUnit or ''"/>
+                <span t-if="vals.taxDetail" t-out="vals.taxDetail"
+                      class="tax-detail ms-auto ps-2 text-end text-success"/>
+            </li>
+        </xpath>
+    </t>
+
+</templates>

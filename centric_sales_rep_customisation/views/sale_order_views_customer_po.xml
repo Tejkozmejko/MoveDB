@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_order_form_centric_customer_po" model="ir.ui.view">
+        <field name="name">sale.order.form.centric.customer.po</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <!-- Main info area (under Payment Terms), so it's easy to enter. -->
+            <field name="payment_term_id" position="after">
+                <field name="centric_customer_po"/>
+            </field>
+        </field>
+    </record>
+</odoo>

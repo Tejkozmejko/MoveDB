@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Show the planned Delivery Date (commitment_date) on the sales order /
+         quotation printout, right after the Order Date in the information band. -->
+    <template id="report_saleorder_document_delivery_date" inherit_id="sale.report_saleorder_document">
+        <xpath expr="//div[@id='informations']/div[@name='informations_date']" position="after">
+            <div t-if="doc.commitment_date" class="col" name="informations_delivery_date">
+                <strong>Delivery Date</strong>
+                <div t-field="doc.commitment_date" t-options='{"widget": "date"}'>2023-12-31</div>
+            </div>
+        </xpath>
+    </template>
+</odoo>

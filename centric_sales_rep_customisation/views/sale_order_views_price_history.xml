@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Unit Price on SO lines drops down the customer's previous prices for
+         the product (widget: static/src/js/price_history_field.js). Applied to
+         the inline list and to the line's form (mobile / expanded line); the
+         kanban card only displays the price, so it is left alone. -->
+    <record id="view_order_form_price_history" model="ir.ui.view">
+        <field name="name">sale.order.form.price.history</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='order_line']//list//field[@name='price_unit']" position="attributes">
+                <attribute name="widget">centric_price_history</attribute>
+            </xpath>
+            <xpath expr="//field[@name='order_line']//form//field[@name='price_unit']" position="attributes">
+                <attribute name="widget">centric_price_history</attribute>
+            </xpath>
+        </field>
+    </record>
+</odoo>

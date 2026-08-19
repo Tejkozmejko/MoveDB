@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="centric_expiry_confirmation_form" model="ir.ui.view">
+        <field name="name">centric.expiry.confirmation.form</field>
+        <field name="model">centric.expiry.confirmation</field>
+        <field name="arch" type="xml">
+            <form string="Check Expiration Dates">
+                <field name="picking_ids" invisible="1"/>
+                <div class="alert alert-warning" role="alert">
+                    <field name="message" nolabel="1" readonly="1"/>
+                </div>
+                <footer>
+                    <button name="action_confirm" type="object"
+                            string="Receive anyway" class="btn-primary"/>
+                    <button string="Go back &amp; fix" class="btn-secondary"
+                            special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

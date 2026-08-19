@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="sale_catalog_hide_prices.ProductCatalogKanbanController"
+       t-inherit="ProductCatalogKanbanController"
+       t-inherit-mode="extension">
+        <xpath expr="//button[hasclass('o-kanban-button-back')]" position="after">
+            <button type="button"
+                    t-att-class="this.catalogHidePricesButtonClass"
+                    t-on-click="this.toggleCatalogPrices">
+                <i t-att-class="this.catalogHidePricesState.hide ? 'fa fa-eye-slash me-1' : 'fa fa-eye me-1'"/>
+                <span t-out="this.catalogHidePricesButtonLabel"/>
+            </button>
+        </xpath>
+    </t>
+</templates>

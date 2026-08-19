@@ -1,0 +1,317 @@
+// Farm Meats POS Customer Display - two-column loyalty layout.
+// Left 3/4 = live order (lines + total), right 1/4 = loyalty panel.
+// Tuned for a 7" second screen at 1024x600 (landscape); viewport/clamp units
+// keep text large and readable and stop the page from scrolling.
+
+.o_azz_cd {
+    --azz-bg: #0b2a4a; // deep sea blue
+    --azz-bg-2: #0e3157;
+    --azz-fg: #ffffff;
+    --azz-muted: #a9c4de;
+    --azz-line: rgba(255, 255, 255, 0.1);
+
+    box-sizing: border-box;
+    color: var(--azz-fg);
+    background: var(--azz-bg);
+    overflow: hidden;
+    font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+
+    * {
+        box-sizing: border-box;
+    }
+
+    // ====================== LEFT 3/4 : ORDER ======================
+    .o_azz_cd_order {
+        width: 75%;
+        min-width: 0;
+        padding: 2vh 2vw;
+        background: radial-gradient(circle at 20% 0%, var(--azz-bg-2) 0%, var(--azz-bg) 65%);
+    }
+
+    .o_azz_cd_topbar {
+        flex: 0 0 auto;
+        height: 11vh;
+        margin-bottom: 1.5vh;
+    }
+
+    .o_azz_cd_logo {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1vh 1.4vh;
+        background: #ffffff;
+        border-radius: 1.2vh;
+        box-shadow: 0 0.4vh 1.4vh rgba(0, 0, 0, 0.28);
+
+        img {
+            max-height: 8vh;
+            max-width: 34vw;
+            width: auto;
+            object-fit: contain;
+            display: block;
+        }
+    }
+
+    // ---- Order lines ----
+    .o_azz_cd_lines {
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    .o_azz_cd_line_list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    .o_azz_cd_line {
+        padding: 1.4vh 0.6vw;
+        border-bottom: 1px solid var(--azz-line);
+
+        &.o_azz_cd_line_combo {
+            padding-left: 2.4vw;
+            font-style: italic;
+            opacity: 0.9;
+        }
+
+        &.o_azz_cd_line_selected {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 0.8vh;
+        }
+    }
+
+    .o_azz_cd_line_main {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1vw;
+        font-size: clamp(1.3rem, 3.5vh, 2.2rem);
+        font-weight: 700;
+        line-height: 1.15;
+    }
+
+    .o_azz_cd_line_name {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .o_azz_cd_line_price {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    .o_azz_cd_line_sub {
+        margin-top: 0.4vh;
+        font-size: clamp(0.95rem, 2.4vh, 1.5rem);
+        font-weight: 500;
+        color: var(--azz-muted);
+
+        .o_azz_cd_line_qty {
+            font-weight: 700;
+            color: var(--azz-fg);
+        }
+
+        .o_azz_cd_line_x {
+            margin: 0 0.4ch;
+        }
+    }
+
+    .o_azz_cd_line_note {
+        display: block;
+        margin-top: 0.4vh;
+        color: #ffe08a;
+        font-style: italic;
+    }
+
+    // Empty / thank-you placeholders in the order column
+    .o_azz_cd_placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        font-weight: 800;
+        text-align: center;
+    }
+
+    .o_azz_cd_welcome {
+        font-size: clamp(3rem, 12vh, 7rem);
+        color: var(--azz-muted);
+    }
+
+    .o_azz_cd_thankyou {
+        font-size: clamp(3rem, 13vh, 8rem);
+        color: #ffffff;
+    }
+
+    // ---- Totals ----
+    .o_azz_cd_totals {
+        flex: 0 0 auto;
+        margin-top: 1.4vh;
+        padding-top: 1.4vh;
+        border-top: 0.35vh solid var(--azz-line);
+    }
+
+    .o_azz_cd_total_row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 1vw;
+    }
+
+    .o_azz_cd_total_muted {
+        font-size: clamp(1rem, 2.6vh, 1.6rem);
+        font-weight: 600;
+        color: var(--azz-muted);
+        margin-bottom: 0.4vh;
+    }
+
+    .o_azz_cd_total_grand {
+        font-size: clamp(2rem, 6vh, 3.6rem);
+        font-weight: 800;
+        color: var(--azz-fg);
+        margin-top: 0.4vh;
+    }
+
+    // ====================== RIGHT 1/4 : LOYALTY ======================
+    .o_azz_cd_loyalty {
+        width: 25%;
+        min-width: 0;
+        padding: 2.4vh 1.4vw;
+        background: #ffffff;
+        color: var(--azz-bg); // deep sea blue text on white
+        text-align: center;
+    }
+
+    // Invitation (no customer)
+    .o_azz_cd_invite_icon {
+        font-size: 9vh;
+        color: var(--azz-bg);
+        opacity: 0.8;
+    }
+
+    .o_azz_cd_invite_text {
+        font-size: clamp(1.1rem, 2.9vh, 1.9rem);
+        font-weight: 700;
+        line-height: 1.3;
+    }
+
+    .o_azz_cd_create_btn {
+        margin-top: 2vh;
+        padding: 1.4vh 2vw;
+        border: none;
+        border-radius: 1.2vh;
+        background: var(--azz-bg); // deep sea blue on the white panel
+        color: #ffffff;
+        font-size: clamp(1.1rem, 2.9vh, 1.8rem);
+        font-weight: 800;
+        line-height: 1.1;
+        cursor: pointer;
+        box-shadow: 0 0.4vh 1.2vh rgba(11, 42, 74, 0.25);
+
+        &:active {
+            transform: translateY(0.3vh);
+        }
+    }
+
+    .o_azz_cd_invite_sub {
+        margin-top: 1.4vh;
+        font-size: clamp(0.85rem, 2.2vh, 1.3rem);
+        font-weight: 600;
+        opacity: 0.7;
+        line-height: 1.3;
+    }
+
+    // Customer name
+    .o_azz_cd_cust_name {
+        flex: 0 0 auto;
+        font-size: clamp(1.2rem, 3.4vh, 2.2rem);
+        font-weight: 800;
+        max-width: 100%;
+        margin-bottom: 1vh;
+        letter-spacing: 0.01em;
+    }
+
+    // Big points display
+    .o_azz_cd_points_label {
+        font-size: clamp(0.9rem, 2.4vh, 1.5rem);
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        opacity: 0.85;
+    }
+
+    .o_azz_cd_points_value {
+        font-size: clamp(2.6rem, 9vh, 5rem);
+        font-weight: 900;
+        line-height: 0.95;
+        word-break: break-all;
+    }
+
+    .o_azz_cd_points_zero {
+        opacity: 0.55;
+    }
+
+    .o_azz_cd_points_hint {
+        margin-top: 0.8vh;
+        padding: 0.5vh 1.4vh;
+        border-radius: 999px;
+        background: rgba(11, 42, 74, 0.1);
+        color: var(--azz-bg);
+        font-size: clamp(0.95rem, 2.4vh, 1.5rem);
+        font-weight: 800;
+    }
+
+    .o_azz_cd_noloyalty {
+        margin-top: 1vh;
+        font-size: clamp(0.95rem, 2.4vh, 1.4rem);
+        font-weight: 600;
+        opacity: 0.9;
+    }
+
+    // After-payment breakdown: current -> +earned -> = new balance
+    .o_azz_cd_breakdown {
+        gap: 1vh;
+    }
+
+    .o_azz_cd_bd_row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.8vw;
+        font-size: clamp(1rem, 2.7vh, 1.7rem);
+        font-weight: 700;
+    }
+
+    .o_azz_cd_bd_label {
+        opacity: 0.8;
+    }
+
+    .o_azz_cd_bd_val {
+        font-weight: 900;
+        white-space: nowrap;
+    }
+
+    .o_azz_cd_bd_won .o_azz_cd_bd_val {
+        color: var(--azz-bg); // positive earned, kept in brand blue (no green)
+    }
+
+    .o_azz_cd_bd_spent .o_azz_cd_bd_val {
+        color: #b3261e;
+    }
+
+    .o_azz_cd_bd_divider {
+        height: 0.35vh;
+        margin: 0.6vh 0;
+        background: rgba(11, 42, 74, 0.2);
+        border-radius: 999px;
+    }
+
+    .o_azz_cd_bd_new {
+        margin-top: 0.6vh;
+
+        .o_azz_cd_points_value {
+            font-size: clamp(2.4rem, 8vh, 4.4rem);
+        }
+    }
+}

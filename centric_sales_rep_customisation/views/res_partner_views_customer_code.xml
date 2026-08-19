@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Contact form: show/edit the Customer Code (next to VAT). -->
+    <record id="view_partner_form_centric_customer_code" model="ir.ui.view">
+        <field name="name">res.partner.form.centric.customer.code</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <!-- Anchor after Tags (category_id), the last clean field in the
+                 right column. The VAT area is crowded by account's
+                 company_registry + hidden placeholder helpers + Studio fields,
+                 which was collapsing our label; a clean anchor renders it
+                 label-left in its own row like Website. -->
+            <xpath expr="//field[@name='category_id']" position="after">
+                <field name="centric_customer_code" string="Customer Code"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Contacts search: search by Customer Code. -->
+    <record id="view_res_partner_filter_centric_customer_code" model="ir.ui.view">
+        <field name="name">res.partner.search.centric.customer.code</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_res_partner_filter"/>
+        <field name="arch" type="xml">
+            <xpath expr="//search/field[1]" position="before">
+                <field name="centric_customer_code"
+                       string="Customer Code"
+                       filter_domain="[('centric_customer_code', 'ilike', self)]"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Contacts list: optional Customer Code column. -->
+    <record id="view_partner_tree_centric_customer_code" model="ir.ui.view">
+        <field name="name">res.partner.list.centric.customer.code</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='vat']" position="after">
+                <field name="centric_customer_code" string="Customer Code" optional="show"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>
