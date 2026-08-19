@@ -1,0 +1,6 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_centric_loadsheet_category_user,centric.loadsheet.category user,model_centric_loadsheet_category,base.group_user,1,1,1,1
+access_centric_stock_picking_quantity_wizard_user,centric.stock.picking.quantity.wizard user,model_centric_stock_picking_quantity_wizard,stock.group_stock_user,1,1,1,1
+access_centric_stock_picking_quantity_wizard_line_user,centric.stock.picking.quantity.wizard.line user,model_centric_stock_picking_quantity_wizard_line,stock.group_stock_user,1,1,1,1
+access_centric_expiry_confirmation,access_centric_expiry_confirmation,model_centric_expiry_confirmation,base.group_user,1,1,1,0
+access_centric_delivery_split_confirmation_user,centric.delivery.split.confirmation user,model_centric_delivery_split_confirmation,stock.group_stock_user,1,1,1,1

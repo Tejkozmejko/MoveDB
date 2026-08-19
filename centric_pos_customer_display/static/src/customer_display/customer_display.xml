@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+
+    <!--
+        Two-column customer display:
+          - Left 3/4  : the live order (logo, product lines, running total)
+          - Right 1/4 : loyalty (customer name + points)
+        After payment (order.finalized) the order total stays on the left and the
+        loyalty panel shows the breakdown: current -> + earned -> = new balance.
+
+        Extension-mode inheritance replaces only the `.o_customer_display` node;
+        the surrounding <MainComponentsContainer/> is left intact.
+    -->
+    <t t-name="centric_pos_customer_display.CustomerDisplay"
+       t-inherit="point_of_sale.CustomerDisplay"
+       t-inherit-mode="extension">
+        <xpath expr="//div[hasclass('o_customer_display')]" position="replace">
+
+            <div class="o_azz_cd d-flex h-100 w-100">
+
+                <!-- ================= LEFT 3/4: ORDER ================= -->
+                <div class="o_azz_cd_order d-flex flex-column">
+
+                    <!-- Logo, top-left -->
+                    <div class="o_azz_cd_topbar d-flex align-items-center">
+                        <div class="o_azz_cd_logo">
+                            <img t-attf-src="/logo?company={{session.company_id}}" alt="Company logo"/>
+                        </div>
+                    </div>
+
+                    <!-- Product lines (or welcome / thank-you) -->
+                    <div class="o_azz_cd_lines flex-grow-1">
+                        <t t-if="!order.finalized and order.lines and order.lines.length">
+                            <ul class="o_azz_cd_line_list">
+                                <li t-foreach="order.lines" t-as="line" t-key="line_index"
+                                    t-attf-class="o_azz_cd_line {{ line.comboParent ? 'o_azz_cd_line_combo' : '' }} {{ line.isSelected ? 'o_azz_cd_line_selected' : '' }}">
+                                    <div class="o_azz_cd_line_main">
+                                        <span class="o_azz_cd_line_name text-truncate" t-esc="line.productName"/>
+                                        <span class="o_azz_cd_line_price" t-esc="line.price"/>
+                                    </div>
+                                    <div class="o_azz_cd_line_sub">
+                                        <span class="o_azz_cd_line_qty" t-esc="line.qty"/>
+                                        <t t-if="line.unit"><t t-esc="line.unit"/></t>
+                                        <span class="o_azz_cd_line_x">×</span>
+                                        <t t-esc="line.unitPrice"/>
+                                        <span t-if="line.customerNote" class="o_azz_cd_line_note">
+                                            <i class="fa fa-sticky-note me-1" role="img" aria-hidden="true"/><t t-esc="line.customerNote"/>
+                                        </span>
+                                    </div>
+                                </li>
+                            </ul>
+                        </t>
+                        <t t-elif="order.finalized">
+                            <div class="o_azz_cd_placeholder o_azz_cd_thankyou">Thank you!</div>
+                        </t>
+                        <t t-else="">
+                            <div class="o_azz_cd_placeholder o_azz_cd_welcome">Welcome</div>
+                        </t>
+                    </div>
+
+                    <!-- Totals, bottom of the order column -->
+                    <div t-if="order.amount" class="o_azz_cd_totals">
+                        <div t-if="order.subtotal" class="o_azz_cd_total_row o_azz_cd_total_muted">
+                            <span>Subtotal</span><span t-esc="order.subtotal"/>
+                        </div>
+                        <div t-if="order.amountTaxes" class="o_azz_cd_total_row o_azz_cd_total_muted">
+                            <span>Taxes</span><span t-esc="order.amountTaxes"/>
+                        </div>
+                        <div class="o_azz_cd_total_row o_azz_cd_total_grand">
+                            <span>Total</span><span t-esc="order.amount"/>
+                        </div>
+                        <t t-if="order.finalized">
+                            <div t-foreach="order.paymentLines or []" t-as="pl" t-key="pl_index"
+                                 class="o_azz_cd_total_row o_azz_cd_total_muted">
+                                <span t-esc="pl.name"/><span t-esc="pl.amount"/>
+                            </div>
+                            <div t-if="order.change" class="o_azz_cd_total_row o_azz_cd_total_muted">
+                                <span>Change</span><span t-esc="order.change"/>
+                            </div>
+                        </t>
+                    </div>
+                </div>
+
+                <!-- ================= RIGHT 1/4: LOYALTY ================= -->
+                <div class="o_azz_cd_loyalty d-flex flex-column">
+
+                    <!-- No customer selected -->
+                    <t t-if="!loyalty.hasPartner">
+                        <div class="o_azz_cd_invite d-flex flex-column align-items-center justify-content-center h-100">
+                            <i class="fa fa-heart-o o_azz_cd_invite_icon mb-3" role="img" aria-hidden="true"/>
+                            <div class="o_azz_cd_invite_text">
+                                Want to earn loyalty points?
+                            </div>
+                            <button class="o_azz_cd_create_btn" t-on-click="azzCreateAccount">
+                                Create an account
+                            </button>
+                            <div class="o_azz_cd_invite_sub">
+                                or ask the cashier to add or select your account.
+                            </div>
+                        </div>
+                    </t>
+
+                    <!-- Customer selected -->
+                    <t t-else="">
+                        <div class="o_azz_cd_cust_name text-truncate" t-esc="loyalty.partnerName"/>
+
+                        <!-- Has a loyalty account -->
+                        <t t-if="loyalty.hasLoyalty">
+
+                            <!-- Ongoing order: total points you have -->
+                            <t t-if="!order.finalized">
+                                <div class="o_azz_cd_points_block d-flex flex-column align-items-center justify-content-center flex-grow-1">
+                                    <div class="o_azz_cd_points_label">Your <t t-esc="loyalty.pointsName"/></div>
+                                    <div class="o_azz_cd_points_value" t-esc="formatPoints(loyalty.balance)"/>
+                                    <div t-if="loyalty.won" class="o_azz_cd_points_hint">
+                                        +<t t-esc="formatPoints(loyalty.won)"/> earning
+                                    </div>
+                                </div>
+                            </t>
+
+                            <!-- After payment: current -> + earned -> = new balance -->
+                            <t t-else="">
+                                <div class="o_azz_cd_breakdown d-flex flex-column justify-content-center flex-grow-1">
+                                    <div class="o_azz_cd_bd_row">
+                                        <span class="o_azz_cd_bd_label">Current</span>
+                                        <span class="o_azz_cd_bd_val" t-esc="formatPoints(loyalty.balance)"/>
+                                    </div>
+                                    <div class="o_azz_cd_bd_row o_azz_cd_bd_won">
+                                        <span class="o_azz_cd_bd_label">Earned this order</span>
+                                        <span class="o_azz_cd_bd_val">+<t t-esc="formatPoints(loyalty.won)"/></span>
+                                    </div>
+                                    <div t-if="loyalty.spent" class="o_azz_cd_bd_row o_azz_cd_bd_spent">
+                                        <span class="o_azz_cd_bd_label">Redeemed</span>
+                                        <span class="o_azz_cd_bd_val">-<t t-esc="formatPoints(loyalty.spent)"/></span>
+                                    </div>
+                                    <div class="o_azz_cd_bd_divider"/>
+                                    <div class="o_azz_cd_bd_new d-flex flex-column align-items-center">
+                                        <div class="o_azz_cd_points_label">New <t t-esc="loyalty.pointsName"/> balance</div>
+                                        <div class="o_azz_cd_points_value" t-esc="formatPoints(loyalty.projected)"/>
+                                    </div>
+                                </div>
+                            </t>
+                        </t>
+
+                        <!-- Customer selected but no loyalty account / zero points -->
+                        <t t-else="">
+                            <div class="o_azz_cd_points_block d-flex flex-column align-items-center justify-content-center flex-grow-1">
+                                <div class="o_azz_cd_points_value o_azz_cd_points_zero">0</div>
+                                <div class="o_azz_cd_noloyalty">
+                                    <t t-if="order.finalized">Thanks for shopping with us.</t>
+                                    <t t-else="">Join our loyalty programme to start earning points.</t>
+                                </div>
+                            </div>
+                        </t>
+                    </t>
+                </div>
+
+            </div>
+        </xpath>
+    </t>
+
+</templates>

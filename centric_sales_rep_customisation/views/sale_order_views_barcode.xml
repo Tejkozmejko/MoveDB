@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_order_form_centric_barcode_entry" model="ir.ui.view">
+        <field name="name">sale.order.form.centric.barcode.entry</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <!-- Scan box just above the order lines. Only for Barcode Sales Entry
+                 users, and only while the order is still editable. -->
+            <xpath expr="//field[@name='order_line']" position="before">
+                <field name="centric_barcode_scan"
+                       widget="centric_barcode_scan"
+                       placeholder="Scan a product barcode…"
+                       nolabel="0"
+                       groups="centric_sales_rep_customisation.group_centric_sale_barcode_entry"
+                       invisible="state not in ('draft', 'sent')"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

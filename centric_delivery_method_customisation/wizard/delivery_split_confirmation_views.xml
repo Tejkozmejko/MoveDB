@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_centric_delivery_split_confirmation" model="ir.ui.view">
+        <field name="name">centric.delivery.split.confirmation.form</field>
+        <field name="model">centric.delivery.split.confirmation</field>
+        <field name="arch" type="xml">
+            <form string="Split Order Before Delivering?">
+                <sheet>
+                    <field name="picking_ids" invisible="1"/>
+                    <field name="summary" nolabel="1" readonly="1"/>
+                </sheet>
+                <footer>
+                    <button name="action_confirm"
+                            type="object"
+                            string="Split &amp; Deliver"
+                            class="btn-primary"/>
+                    <button string="Discard" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

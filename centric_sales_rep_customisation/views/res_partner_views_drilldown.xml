@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_partner_form_centric_sales_drilldown" model="ir.ui.view">
+        <field name="name">res.partner.form.centric.sales.drilldown</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <field name="customer_rank" invisible="1"/>
+                <button name="action_view_centric_sales_drilldown"
+                        type="object"
+                        class="oe_stat_button"
+                        icon="fa-bar-chart"
+                        invisible="not customer_rank">
+                    <div class="o_stat_info">
+                        <span class="o_stat_text">Sales</span>
+                        <span class="o_stat_text">Statistics</span>
+                    </div>
+                </button>
+            </xpath>
+        </field>
+    </record>
+</odoo>

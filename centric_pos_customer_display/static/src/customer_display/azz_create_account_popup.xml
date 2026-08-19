@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+
+    <t t-name="centric_pos_customer_display.CreateAccountPopup">
+        <Dialog title="'Create your account'" size="'md'" contentClass="'o_azz_create_dialog'">
+            <div class="o_azz_create_form">
+                <p class="o_azz_create_intro">Enter your details to start earning loyalty points.</p>
+
+                <label class="o_azz_create_label" for="azz_create_name">Name</label>
+                <input id="azz_create_name" t-ref="name" type="text"
+                       class="form-control o_azz_create_input"
+                       placeholder="Your name"
+                       t-model="state.name"
+                       t-on-keyup="onKeyup"/>
+
+                <label class="o_azz_create_label" for="azz_create_phone">Phone</label>
+                <input id="azz_create_phone" type="tel"
+                       class="form-control o_azz_create_input"
+                       placeholder="Mobile / phone number"
+                       t-model="state.phone"/>
+
+                <label class="o_azz_create_label" for="azz_create_email">Email</label>
+                <input id="azz_create_email" type="email"
+                       class="form-control o_azz_create_input"
+                       placeholder="you@example.com"
+                       t-model="state.email"
+                       t-on-keyup="onKeyup"/>
+
+                <div t-if="state.error" class="o_azz_create_error" t-esc="state.error"/>
+            </div>
+
+            <t t-set-slot="footer">
+                <button class="btn btn-primary btn-lg o_azz_create_submit"
+                        t-att-disabled="!canSubmit"
+                        t-on-click="confirm">
+                    <t t-if="state.saving">Creating…</t>
+                    <t t-else="">Create account</t>
+                </button>
+                <button class="btn btn-secondary btn-lg" t-on-click="cancel">Cancel</button>
+            </t>
+        </Dialog>
+    </t>
+
+</templates>

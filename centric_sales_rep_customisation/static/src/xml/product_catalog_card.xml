@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <!-- #3: this customer's buying history for the product, on the card. -->
+    <t t-name="centric_sale_catalog_previously_purchased.ProductCatalogKanbanRecord"
+       t-inherit="ProductCatalogKanbanRecord"
+       t-inherit-mode="extension">
+        <xpath expr="//t[@t-component='orderLineComponent']" position="before">
+            <div t-if="hasPurchaseHistory"
+                 class="o_catalog_purchase_history small text-muted px-2 pb-1">
+                <i class="fa fa-history me-1"/>
+                <span>Bought <t t-out="purchaseHistoryQty"/> <t t-out="purchaseHistoryUom"/></span>
+                <span t-if="hasPurchaseHistoryPrice"> · Last <t t-out="purchaseHistoryPrice"/></span>
+            </div>
+        </xpath>
+        <!-- #2: packaging switch on its own row (the footer is too cramped).
+             Shows the current packaging; clicking cycles to the next one. -->
+        <xpath expr="//t[@t-component='orderLineComponent']" position="before">
+            <div t-if="productCatalogData.hasPackagings and productCatalogData.quantity"
+                 class="o_catalog_packaging px-2 pb-2">
+                <button type="button"
+                        class="btn btn-sm btn-outline-primary o_catalog_packaging_button o_product_catalog_cancel_global_click"
+                        title="Click to switch packaging"
+                        t-on-click.stop="() => this.cycleProductUom()">
+                    <i class="fa fa-cubes me-1"/>
+                    <span t-out="productCatalogData.uomDisplayName"/>
+                </button>
+            </div>
+        </xpath>
+    </t>
+
+    <!-- #1: "Card" button in the footer, left of Add, opens the product form. -->
+    <t t-name="centric_sale_catalog_previously_purchased.ProductCatalogOrderLine"
+       t-inherit="product.ProductCatalogOrderLine"
+       t-inherit-mode="extension">
+        <xpath expr="//div[hasclass('o_product_catalog_buttons')]/button[1]" position="before">
+            <button type="button"
+                    class="btn btn-primary o_catalog_open_product me-1"
+                    title="Open product card"
+                    t-on-click.stop="() => this.openProductCard()">
+                <i class="fa fa-external-link me-1"/>Card
+            </button>
+        </xpath>
+    </t>
+</templates>

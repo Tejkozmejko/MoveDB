@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!--
+        The Info Note is the customer-facing note, so it prints inside the
+        document's information block alongside the invoice number, dates and
+        salesperson — the grey box the reader already scans — rather than as a
+        separate band underneath it. Appended as the last column of that block
+        so it never displaces the existing fields.
+
+        Notes typed against the product lines are internal and are never
+        printed here.
+    -->
+
+    <!-- Customer invoice PDF. -->
+    <template id="report_invoice_document_centric_info_note"
+              inherit_id="account.report_invoice_document">
+        <xpath expr="//div[@id='informations']" position="inside">
+            <div t-if="o.centric_info_note" class="col" name="centric_info_note">
+                <strong>Info Note</strong>
+                <div style="white-space: pre-line;" t-field="o.centric_info_note"/>
+            </div>
+        </xpath>
+    </template>
+
+    <!-- Sales order / quotation PDF. -->
+    <template id="report_saleorder_document_centric_info_note"
+              inherit_id="sale.report_saleorder_document">
+        <xpath expr="//div[@id='informations']" position="inside">
+            <div t-if="doc.centric_info_note" class="col" name="centric_info_note">
+                <strong>Info Note</strong>
+                <div style="white-space: pre-line;" t-field="doc.centric_info_note"/>
+            </div>
+        </xpath>
+    </template>
+</odoo>

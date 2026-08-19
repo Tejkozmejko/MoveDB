@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Global rules: a no-op (1=1) for everyone EXCEPT users that have an
+         "Allowed Customers" list set, who are then limited to those customers'
+         sales documents. Global (no groups) so the restriction cannot be escaped
+         by also belonging to a broader sales group. Matching is on the commercial
+         partner, so an allowed customer's contacts/delivery addresses count too. -->
+
+    <record id="rule_sale_order_centric_customer_restriction" model="ir.rule">
+        <field name="name">Sales customer restriction: own customers' orders</field>
+        <field name="model_id" ref="sale.model_sale_order"/>
+        <field name="domain_force">[('partner_id.commercial_partner_id', 'in', user.centric_allowed_customer_ids.commercial_partner_id.ids)] if user.centric_allowed_customer_ids else [(1, '=', 1)]</field>
+    </record>
+
+    <record id="rule_sale_order_line_centric_customer_restriction" model="ir.rule">
+        <field name="name">Sales customer restriction: own customers' order lines</field>
+        <field name="model_id" ref="sale.model_sale_order_line"/>
+        <field name="domain_force">[('order_id.partner_id.commercial_partner_id', 'in', user.centric_allowed_customer_ids.commercial_partner_id.ids)] if user.centric_allowed_customer_ids else [(1, '=', 1)]</field>
+    </record>
+
+    <record id="rule_sale_report_centric_customer_restriction" model="ir.rule">
+        <field name="name">Sales customer restriction: own customers' analysis</field>
+        <field name="model_id" ref="sale.model_sale_report"/>
+        <field name="domain_force">[('partner_id.commercial_partner_id', 'in', user.centric_allowed_customer_ids.commercial_partner_id.ids)] if user.centric_allowed_customer_ids else [(1, '=', 1)]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <!-- Multi-company: a customer-restricted user may be assigned to a single
+         company while an allowed customer (or the price list / records the Sales
+         app opens) belongs to another company in the group. Reading that company
+         record is otherwise blocked by the core company rule, surfacing as a
+         "no read access to Companies" error that loops the Sales app. Allow a
+         customer-restricted user to READ company records (read only; it does NOT
+         widen access to other companies' orders/invoices, which keep their own
+         multi-company rules). Attached to group_user with a domain that is a no-op
+         (1=0) for unrestricted users, so it only OR-widens read for restricted
+         users. Mirrors centric_sales_rep_customisation. -->
+    <record id="rule_res_company_centric_customer_restriction_read" model="ir.rule">
+        <field name="name">Sales customer restriction: read group companies</field>
+        <field name="model_id" ref="base.model_res_company"/>
+        <field name="domain_force">[(1, '=', 1)] if user.centric_allowed_customer_ids else [(0, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+</odoo>

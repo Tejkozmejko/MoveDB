@@ -1,0 +1,121 @@
+// Kiosk skin for door tablets. Scoped to body.o_centric_kiosk, which the kiosk
+// JS only adds on surveys flagged with "Kiosk Mode" - regular surveys keep the
+// standard look.
+body.o_centric_kiosk {
+
+    // --- Strip everything a customer should not see or tap -------------------
+    .o_survey_progress_wrapper,
+    .o_survey_navigation_wrapper,
+    .o_survey_brand_message,
+    .o_survey_lang_selector,
+    .o_survey_main_title,
+    .o_survey_choice_key,          // the A / B / C key badges
+    .o_survey_enter,
+    #enter-tooltip,
+    .o_survey_choice_btn > i.fa,   // the radio circle / check icons
+    .o_survey_form button[type="submit"],
+    .o_survey_finished a.btn {     // "Take Again" and "Review your answers"
+        display: none !important;
+    }
+
+    // --- Full bleed ----------------------------------------------------------
+    .o_survey_wrap {
+        align-items: center;
+        min-height: 100vh;
+        padding: 0;
+    }
+
+    .o_survey_form {
+        margin-bottom: 0 !important;
+        max-width: 100%;
+        width: 100%;
+    }
+
+    .js_question-wrapper > h1,
+    .js_question-wrapper > h2,
+    .o_survey_finished h1 {
+        font-size: clamp(1.75rem, 4vw, 3rem);
+        font-weight: 600;
+        margin-bottom: 2rem;
+        text-align: center;
+    }
+
+    // --- The faces -----------------------------------------------------------
+    .o_survey_form_choice {
+        align-items: stretch;
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 1.5rem;
+        justify-content: center;
+
+        > div {
+            // Beat bootstrap's col-sm-12 / col-lg-6: one equal column per face.
+            flex: 1 1 0;
+            max-width: 22rem;
+            padding: 0;
+            width: auto;
+        }
+    }
+
+    .o_survey_choice_btn {
+        align-items: center;
+        border: 2px solid transparent;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 1.5rem 1rem !important;
+        transition: transform 0.1s ease-in-out;
+
+        // A tap must feel like a button press, and must not select text.
+        -webkit-tap-highlight-color: transparent;
+        user-select: none;
+
+        &:active {
+            transform: scale(0.94);
+        }
+
+        &.o_survey_selected {
+            border-color: currentColor;
+        }
+
+        .o_survey_choice_img {
+            margin: 0 !important;
+
+            img {
+                height: auto;
+                max-height: 40vh;
+                width: 100%;
+            }
+        }
+
+        > span {
+            font-size: clamp(1.1rem, 2.2vw, 1.6rem);
+            font-weight: 500;
+            margin-left: 0 !important;
+            margin-top: 0.75rem;
+            text-align: center;
+        }
+    }
+
+    // --- Thank you screen ----------------------------------------------------
+    .o_survey_finished {
+        text-align: center;
+    }
+
+    // Portrait tablets and phones: stack the faces instead of squeezing them.
+    @media (max-width: 575.98px) {
+        .o_survey_form_choice {
+            flex-wrap: wrap;
+
+            > div {
+                flex: 1 1 100%;
+                max-width: 100%;
+            }
+        }
+
+        .o_survey_choice_btn .o_survey_choice_img img {
+            max-height: 22vh;
+        }
+    }
+}

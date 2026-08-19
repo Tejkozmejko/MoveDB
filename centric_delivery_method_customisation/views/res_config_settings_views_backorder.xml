@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_config_settings_view_form_backorder_toggle" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.centric.backorder.toggle</field>
+        <field name="model">res.config.settings</field>
+        <field name="priority" eval="40"/>
+        <field name="inherit_id" ref="stock.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//block[@name='operations_setting_container']" position="inside">
+                <setting id="centric_disable_backorder"
+                         string="Disable Backorders"
+                         help="Validate partial transfers at the picked quantity without asking to create a backorder. The outstanding remainder is dropped.">
+                    <field name="centric_disable_backorder"/>
+                    <div class="content-group mt-2" invisible="not centric_disable_backorder">
+                        <label for="centric_disable_backorder_picking_type_ids"
+                               string="Backorder-Free Operations"
+                               class="o_light_label"/>
+                        <field name="centric_disable_backorder_picking_type_ids"
+                               widget="many2many_tags"
+                               options="{'no_create': True}"
+                               domain="[('company_id', 'in', [company_id, False])]"
+                               placeholder="e.g. Delivery Orders, Pick, Pack"/>
+                        <div class="text-muted">
+                            The switch applies only to these operation types. Defaults to the sales
+                            delivery chain (Pick, Pack, Delivery); add or remove any type. Leave
+                            Receipts out to keep tracking stock still owed by vendors.
+                        </div>
+                    </div>
+                </setting>
+            </xpath>
+        </field>
+    </record>
+</odoo>

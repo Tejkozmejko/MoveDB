@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="centric_sale_catalog_previously_purchased.ProductCatalogKanbanController"
+       t-inherit="ProductCatalogKanbanController"
+       t-inherit-mode="extension">
+        <xpath expr="//button[hasclass('o-kanban-button-back')]" position="after">
+            <div t-if="this.showPreviouslyPurchasedButton or this.showRecommendedButton"
+                 class="d-flex flex-column ms-2 o_catalog_history_buttons">
+                <button t-if="this.showPreviouslyPurchasedButton"
+                        type="button"
+                        t-att-class="this.previouslyPurchasedButtonClass"
+                        t-on-click="this.togglePreviouslyPurchased">
+                    <i class="fa fa-history me-1"/>
+                    <span t-out="this.previouslyPurchasedButtonLabel"/>
+                </button>
+                <button t-if="this.showRecommendedButton"
+                        type="button"
+                        t-att-class="this.recommendedButtonClass"
+                        t-on-click="this.toggleRecommended">
+                    <i class="fa fa-thumbs-up me-1"/>
+                    <span t-out="this.recommendedButtonLabel"/>
+                </button>
+            </div>
+        </xpath>
+    </t>
+</templates>

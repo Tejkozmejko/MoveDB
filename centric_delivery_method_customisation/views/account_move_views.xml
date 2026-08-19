@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_account_invoice_list_shipping_method" model="ir.ui.view">
+        <field name="name">account.invoice.list.shipping.method.centric</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account.view_invoice_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='invoice_origin']" position="after">
+                <field name="carrier_id" string="Shipping Method" optional="show" readonly="1" column_invisible="context.get('default_move_type') not in ('out_invoice', 'out_refund', 'out_receipt')" options="{'no_create': True, 'no_open': True}"/>
+                <field name="centric_driver_id" string="Driver" optional="show" column_invisible="context.get('default_move_type') not in ('out_invoice', 'out_refund', 'out_receipt')" options="{'no_create': True, 'no_open': True}"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_account_invoice_form_direct_sale_stock" model="ir.ui.view">
+        <field name="name">account.invoice.form.direct.sale.stock.centric</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account.view_move_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button name="action_centric_view_direct_sale_pickings"
+                        type="object"
+                        class="oe_stat_button"
+                        icon="fa-truck"
+                        invisible="centric_direct_sale_delivery_count == 0">
+                    <field name="centric_direct_sale_delivery_count" widget="statinfo" string="Stock Moves"/>
+                </button>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_account_invoice_filter_shipping_method" model="ir.ui.view">
+        <field name="name">account.invoice.search.shipping.method.centric</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account.view_account_invoice_filter"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='partner_id']" position="after">
+                <field name="carrier_id" string="Shipping Method"/>
+            </xpath>
+            <xpath expr="//group/filter[@name='partner']" position="after">
+                <filter string="Shipping Method" name="shipping_method" context="{'group_by': 'carrier_id'}"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

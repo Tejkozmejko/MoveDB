@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_move_form_sales_rep_no_product_open" model="ir.ui.view">
+        <field name="name">account.move.form.sales.rep.no.product.open</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account.view_move_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='invoice_line_ids']//field[@name='product_id'][@widget='product_label_section_and_note_field']" position="attributes">
+                <attribute name="options">{
+                    'no_open': True,
+                    'no_create': True,
+                    'no_create_edit': True
+                }</attribute>
+            </xpath>
+            <xpath expr="//field[@name='invoice_line_ids']//field[@name='product_id'][@widget='many2one_barcode']" position="attributes">
+                <attribute name="options">{
+                    'no_open': True,
+                    'no_create': True,
+                    'no_create_edit': True
+                }</attribute>
+            </xpath>
+        </field>
+    </record>
+</odoo>

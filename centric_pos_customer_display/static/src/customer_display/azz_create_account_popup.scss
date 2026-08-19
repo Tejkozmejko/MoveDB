@@ -1,0 +1,41 @@
+// Self-service "Create account" popup - large, touch-friendly on the 1024x600 screen.
+.o_azz_create_dialog {
+    .o_azz_create_form {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+    }
+
+    .o_azz_create_intro {
+        margin-bottom: 0.6rem;
+        font-size: 1.1rem;
+        color: #5b7089;
+    }
+
+    .o_azz_create_label {
+        margin-bottom: 0.15rem;
+        font-weight: 700;
+        font-size: 1rem;
+        color: #0b2a4a;
+    }
+
+    .o_azz_create_input {
+        height: 3.2rem;
+        font-size: 1.3rem;
+        margin-bottom: 0.6rem;
+    }
+
+    .o_azz_create_error {
+        margin-top: 0.2rem;
+        padding: 0.6rem 0.9rem;
+        border-radius: 0.5rem;
+        background: rgba(179, 38, 30, 0.1);
+        color: #b3261e;
+        font-weight: 700;
+    }
+
+    .o_azz_create_submit {
+        min-width: 12rem;
+        font-weight: 800;
+    }
+}

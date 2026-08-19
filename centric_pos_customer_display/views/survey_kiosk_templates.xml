@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Flag the kiosk surveys on the frontend so the JS/SCSS only touch those. -->
+    <template id="survey_fill_form_kiosk" inherit_id="survey.survey_fill_form">
+        <xpath expr="//form" position="attributes">
+            <attribute name="t-att-data-centric-kiosk">'1' if survey.centric_kiosk_mode else None</attribute>
+            <attribute name="t-att-data-centric-kiosk-delay">survey.centric_kiosk_reset_delay or 3</attribute>
+        </xpath>
+    </template>
+
+</odoo>

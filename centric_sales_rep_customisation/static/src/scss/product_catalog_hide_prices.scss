@@ -1,0 +1,9 @@
+body.o_sale_catalog_hide_prices {
+    .o_product_catalog_price {
+        display: none !important;
+    }
+}
+
+.o_catalog_hide_prices_button {
+    white-space: nowrap;
+}

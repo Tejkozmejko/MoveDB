@@ -1,0 +1,14 @@
+/* The menu is positioned by usePosition (inline fixed coordinates), so no
+   top/left here; .dropdown-menu supplies the theme-aware background, border
+   and text colors in light and dark mode. */
+.centric_price_history .centric_price_history_menu {
+    max-height: 16rem;
+    overflow-y: auto;
+    min-width: max-content;
+    z-index: 1056; /* above dialogs, like other field dropdowns */
+    box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.25);
+}
+
+.centric_price_history .centric_price_history_menu .dropdown-item {
+    font-variant-numeric: tabular-nums;
+}

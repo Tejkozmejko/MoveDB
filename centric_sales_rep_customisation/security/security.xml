@@ -1,0 +1,512 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="group_centric_sales_representative" model="res.groups">
+        <field name="name">Restricted Sales Representative</field>
+        <field name="sequence">15</field>
+        <field name="privilege_id" ref="sales_team.res_groups_privilege_sales"/>
+        <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman'))]"/>
+        <field name="comment">Restricts selected sales representatives to customers assigned to them through the customer Salesperson field, plus those customers' sales orders, invoices, and statement lines.</field>
+    </record>
+
+    <!-- Second Sales level. It IMPLIES the restricted role, so every ACL, record
+         rule, menu and view restriction defined for the restricted rep below
+         applies to it unchanged (has_group() and groups= checks both resolve
+         implied groups) - the only difference is that it may raise a sales
+         order and then work on it, granted by the extra branch on the sales
+         order rules further down. Sequence 16 puts
+         it directly after "Restricted Sales Representative" (15) and before the
+         native "User: All Documents" (20) in the Sales access-rights dropdown. -->
+    <record id="group_centric_sales_representative_create" model="res.groups">
+        <field name="name">Sales Representative</field>
+        <field name="sequence">16</field>
+        <field name="privilege_id" ref="sales_team.res_groups_privilege_sales"/>
+        <field name="implied_ids" eval="[(4, ref('group_centric_sales_representative'))]"/>
+        <field name="comment">Same restrictions as Restricted Sales Representative - only the customers assigned to them through the customer Salesperson field, plus those customers' sales orders, invoices and statement lines - but this level may also create sales orders, and read and edit the orders it created.</field>
+    </record>
+
+    <record id="access_account_fiscal_year_centric_sales_rep" model="ir.model.access">
+        <field name="name">account.fiscal.year restricted sales representative</field>
+        <field name="model_id" search="[('model', '=', 'account.fiscal.year')]" model="ir.model"/>
+        <field name="group_id" ref="group_centric_sales_representative"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <record id="access_account_report_horizontal_group_centric_sales_rep" model="ir.model.access">
+        <field name="name">account.report.horizontal.group restricted sales representative</field>
+        <field name="model_id" search="[('model', '=', 'account.report.horizontal.group')]" model="ir.model"/>
+        <field name="group_id" ref="group_centric_sales_representative"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <function name="unlink" model="ir.model.access">
+        <function name="search" model="ir.model.access">
+            <value eval="[
+                ('group_id', '=', ref('group_centric_sales_representative')),
+                ('model_id.model', 'in', (
+                    'account_reports.export.wizard',
+                    'account_reports.export.wizard.format',
+                )),
+            ]"/>
+        </function>
+    </function>
+
+    <!-- Restore the standard Odoo sales-personal rules, then layer the Centric restricted rules below. -->
+    <function name="write" model="ir.model.data">
+        <function name="search" model="ir.model.data">
+            <value eval="[
+                ('module', '=', 'sale'),
+                ('name', 'in', (
+                    'sale_order_personal_rule',
+                    'sale_order_line_personal_rule',
+                    'sale_order_report_personal_rule',
+                    'account_invoice_report_rule_see_personal',
+                    'account_invoice_rule_see_personal',
+                    'account_invoice_line_rule_see_personal',
+                    'account_invoice_send_single_rule_see_personal',
+                    'account_invoice_send_batch_rule_see_personal'
+                ))
+            ]"/>
+        </function>
+        <value eval="{'noupdate': False}"/>
+    </function>
+
+    <record id="sale.sale_order_personal_rule" model="ir.rule">
+        <field name="domain_force">['|', ('user_id', '=', user.id), ('user_id', '=', False)]</field>
+    </record>
+
+    <record id="sale.sale_order_line_personal_rule" model="ir.rule">
+        <field name="domain_force">['|', ('salesman_id', '=', user.id), ('salesman_id', '=', False)]</field>
+    </record>
+
+    <record id="sale.sale_order_report_personal_rule" model="ir.rule">
+        <field name="domain_force">['|', ('user_id', '=', user.id), ('user_id', '=', False)]</field>
+    </record>
+
+    <record id="sale.account_invoice_report_rule_see_personal" model="ir.rule">
+        <field name="domain_force">['|', ('invoice_user_id', '=', user.id), ('invoice_user_id', '=', False)]</field>
+    </record>
+
+    <record id="sale.account_invoice_rule_see_personal" model="ir.rule">
+        <field name="domain_force">[
+            ('move_type', 'in', ('out_invoice', 'out_refund')),
+            '|',
+            ('invoice_user_id', '=', user.id),
+            ('invoice_user_id', '=', False)
+        ]</field>
+    </record>
+
+    <record id="sale.account_invoice_line_rule_see_personal" model="ir.rule">
+        <field name="domain_force">[
+            ('move_id.move_type', 'in', ('out_invoice', 'out_refund')),
+            '|',
+            ('move_id.invoice_user_id', '=', user.id),
+            ('move_id.invoice_user_id', '=', False)
+        ]</field>
+    </record>
+
+    <record id="sale.account_invoice_send_single_rule_see_personal" model="ir.rule">
+        <field name="domain_force">[
+            ('move_id.move_type', 'in', ('out_invoice', 'out_refund')),
+            '|',
+            ('move_id.invoice_user_id', '=', user.id),
+            ('move_id.invoice_user_id', '=', False)
+        ]</field>
+    </record>
+
+    <record id="sale.account_invoice_send_batch_rule_see_personal" model="ir.rule">
+        <field name="domain_force">[
+            ('move_ids.move_type', 'in', ('out_invoice', 'out_refund')),
+            '|',
+            ('move_ids.invoice_user_id', '=', user.id),
+            ('move_ids.invoice_user_id', '=', False)
+        ]</field>
+    </record>
+
+    <function name="write" model="ir.model.data">
+        <function name="search" model="ir.model.data">
+            <value eval="[
+                ('module', '=', 'sale'),
+                ('name', 'in', (
+                    'sale_order_personal_rule',
+                    'sale_order_line_personal_rule',
+                    'sale_order_report_personal_rule',
+                    'account_invoice_report_rule_see_personal',
+                    'account_invoice_rule_see_personal',
+                    'account_invoice_line_rule_see_personal',
+                    'account_invoice_send_single_rule_see_personal',
+                    'account_invoice_send_batch_rule_see_personal'
+                ))
+            ]"/>
+        </function>
+        <value eval="{'noupdate': True}"/>
+    </function>
+
+    <record id="rule_res_partner_centric_sales_rep_assigned_customers" model="ir.rule">
+        <field name="name">Restricted sales reps: assigned customers and contacts</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="domain_force">[
+            '|', '|', '|', '|',
+            ('id', '=', user.partner_id.id),
+            ('id', 'in', user.company_ids.partner_id.ids),
+            '&amp;',
+            ('user_ids', '!=', False),
+            ('user_ids.share', '=', False),
+            ('user_id', '=', user.id),
+            ('commercial_partner_id.user_id', '=', user.id)
+        ]</field>
+        <field name="groups" eval="[(4, ref('group_centric_sales_representative'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <record id="rule_res_partner_centric_sales_rep_assigned_customers_write" model="ir.rule">
+        <field name="name">Restricted sales reps: write assigned customers and contacts</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="domain_force">[
+            '|', '|', '|',
+            ('id', '=', user.partner_id.id),
+            ('id', 'in', user.company_ids.partner_id.ids),
+            ('user_id', '=', user.id),
+            ('commercial_partner_id.user_id', '=', user.id)
+        ]</field>
+        <field name="groups" eval="[(4, ref('group_centric_sales_representative'))]"/>
+        <field name="perm_read" eval="False"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+
+    <!-- Scope = "orders that are mine". Three OR branches, all needed:
+           * user_id: the order's own Salesperson. Without this a rep cannot CREATE
+             a quotation for a customer that has no Salesperson set (the vast
+             majority of the imported customer base) - core stamps the new order's
+             Salesperson with the rep (sale.order._compute_user_id falls back to
+             self.env.user), so this branch is what makes the rep's own new orders
+             pass the create check and stay readable afterwards.
+           * partner_id.user_id: the Salesperson set on the exact contact of the
+             order. The partner rule above already grants the rep that contact, so
+             its orders must be reachable too - otherwise a contact assigned to the
+             rep whose parent company is assigned to somebody else is selectable
+             but its orders are not.
+           * commercial_partner_id.user_id: the original company-level assignment.
+         Customers that belong to ANOTHER rep still stay out of reach: core stamps
+         that rep as the order's Salesperson, so no branch matches. -->
+    <record id="rule_sale_order_centric_sales_rep_assigned_customers" model="ir.rule">
+        <field name="name">Restricted sales reps: assigned customer sales orders</field>
+        <field name="model_id" ref="sale.model_sale_order"/>
+        <field name="domain_force">[
+            '|', '|',
+            ('user_id', '=', user.id),
+            ('partner_id.user_id', '=', user.id),
+            ('partner_id.commercial_partner_id.user_id', '=', user.id)
+        ]</field>
+        <field name="groups" eval="[(4, ref('group_centric_sales_representative'))]"/>
+    </record>
+
+    <record id="rule_sale_order_line_centric_sales_rep_assigned_customers" model="ir.rule">
+        <field name="name">Restricted sales reps: assigned customer sales order lines</field>
+        <field name="model_id" ref="sale.model_sale_order_line"/>
+        <field name="domain_force">[
+            '|', '|',
+            ('order_id.user_id', '=', user.id),
+            ('order_id.partner_id.user_id', '=', user.id),
+            ('order_id.partner_id.commercial_partner_id.user_id', '=', user.id)
+        ]</field>
+        <field name="groups" eval="[(4, ref('group_centric_sales_representative'))]"/>
+    </record>
+
+    <!-- What the "Sales Representative" level adds: one more branch, its own
+         orders, on ALL four operations. The three branches above all depend on
+         the order's Salesperson, which core computes from the customer
+         (sale.order._compute_user_id = partner's salesperson, else the parent
+         company's, else the user raising it). So the moment a rep raises an
+         order for a customer that carries somebody else's Salesperson - the
+         Farm Meats company record itself, say - the new order belongs
+         to that other user and the rep is locked out of their own document:
+         first the create is refused, then the write, then the read back. Adding
+         create_uid closes that for good, and it needs no exception for the
+         create check either, since create_uid IS the rep at that moment.
+         This does NOT widen what a rep sees of everyone else's work: it only
+         ever matches documents they raised themselves, and which customers they
+         may raise one for is still bounded by the partner rules above. -->
+    <record id="rule_sale_order_centric_sales_rep_own_orders" model="ir.rule">
+        <field name="name">Sales reps: own and assigned customer sales orders</field>
+        <field name="model_id" ref="sale.model_sale_order"/>
+        <field name="domain_force">[
+            '|', '|', '|',
+            ('create_uid', '=', user.id),
+            ('user_id', '=', user.id),
+            ('partner_id.user_id', '=', user.id),
+            ('partner_id.commercial_partner_id.user_id', '=', user.id)
+        ]</field>
+        <field name="groups" eval="[(4, ref('group_centric_sales_representative_create'))]"/>
+    </record>
+
+    <record id="rule_sale_order_line_centric_sales_rep_own_orders" model="ir.rule">
+        <field name="name">Sales reps: own and assigned customer sales order lines</field>
+        <field name="model_id" ref="sale.model_sale_order_line"/>
+        <field name="domain_force">[
+            '|', '|', '|',
+            ('order_id.create_uid', '=', user.id),
+            ('order_id.user_id', '=', user.id),
+            ('order_id.partner_id.user_id', '=', user.id),
+            ('order_id.partner_id.commercial_partner_id.user_id', '=', user.id)
+        ]</field>
+        <field name="groups" eval="[(4, ref('group_centric_sales_representative_create'))]"/>
+    </record>
+
+    <record id="rule_sale_report_centric_sales_rep_assigned_customers" model="ir.rule">
+        <field name="name">Restricted sales reps: assigned customer sales analysis</field>
+        <field name="model_id" ref="sale.model_sale_report"/>
+        <field name="domain_force">[
+            '|', '|',
+            ('user_id', '=', user.id),
+            ('partner_id.user_id', '=', user.id),
+            ('partner_id.commercial_partner_id.user_id', '=', user.id)
+        ]</field>
+        <field name="groups" eval="[(4, ref('group_centric_sales_representative'))]"/>
+    </record>
+
+    <record id="rule_account_invoice_report_centric_sales_rep_assigned_customers" model="ir.rule">
+        <field name="name">Restricted sales reps: assigned customer invoice analysis</field>
+        <field name="model_id" ref="account.model_account_invoice_report"/>
+        <field name="domain_force">[('partner_id.commercial_partner_id.user_id', '=', user.id)]</field>
+        <field name="groups" eval="[(4, ref('group_centric_sales_representative'))]"/>
+    </record>
+
+    <record id="rule_account_move_centric_sales_rep_customer_documents" model="ir.rule">
+        <field name="name">Restricted sales reps: assigned customer invoices and receivable entries</field>
+        <field name="model_id" ref="account.model_account_move"/>
+        <field name="domain_force">[
+            '|',
+            '&amp;',
+            ('move_type', 'in', ('out_invoice', 'out_refund', 'out_receipt')),
+            ('partner_id.commercial_partner_id.user_id', '=', user.id),
+            '&amp;',
+            ('move_type', '=', 'entry'),
+            '&amp;',
+            ('line_ids.partner_id.commercial_partner_id.user_id', '=', user.id),
+            ('line_ids.account_id.account_type', '=', 'asset_receivable')
+        ]</field>
+        <field name="groups" eval="[(4, ref('group_centric_sales_representative'))]"/>
+    </record>
+
+    <record id="rule_account_move_line_centric_sales_rep_customer_documents" model="ir.rule">
+        <field name="name">Restricted sales reps: assigned customer invoice and statement lines</field>
+        <field name="model_id" ref="account.model_account_move_line"/>
+        <field name="domain_force">[
+            '|',
+            '&amp;',
+            ('move_id.move_type', 'in', ('out_invoice', 'out_refund', 'out_receipt')),
+            ('move_id.partner_id.commercial_partner_id.user_id', '=', user.id),
+            '&amp;',
+            ('account_id.account_type', '=', 'asset_receivable'),
+            ('partner_id.commercial_partner_id.user_id', '=', user.id)
+        ]</field>
+        <field name="groups" eval="[(4, ref('group_centric_sales_representative'))]"/>
+    </record>
+
+    <record id="rule_account_invoice_send_single_centric_sales_rep_assigned_customers" model="ir.rule">
+        <field name="name">Restricted sales reps: assigned customer invoice send and print</field>
+        <field name="model_id" ref="account.model_account_move_send_wizard"/>
+        <field name="domain_force">[
+            ('move_id.move_type', 'in', ('out_invoice', 'out_refund', 'out_receipt')),
+            ('move_id.partner_id.commercial_partner_id.user_id', '=', user.id)
+        ]</field>
+        <field name="groups" eval="[(4, ref('group_centric_sales_representative'))]"/>
+    </record>
+
+    <record id="rule_account_invoice_send_batch_centric_sales_rep_assigned_customers" model="ir.rule">
+        <field name="name">Restricted sales reps: assigned customer invoice batch send and print</field>
+        <field name="model_id" ref="account.model_account_move_send_batch_wizard"/>
+        <field name="domain_force">[
+            ('move_ids.move_type', 'in', ('out_invoice', 'out_refund', 'out_receipt')),
+            ('move_ids.partner_id.commercial_partner_id.user_id', '=', user.id)
+        ]</field>
+        <field name="groups" eval="[(4, ref('group_centric_sales_representative'))]"/>
+    </record>
+
+    <record id="rule_res_partner_centric_sales_rep_enforce_assigned_customers" model="ir.rule">
+        <field name="name">Restricted sales reps: enforce assigned customers and contacts</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="domain_force">[
+            '|', '|', '|', '|',
+            ('id', '=', user.partner_id.id),
+            ('id', 'in', user.company_ids.partner_id.ids),
+            '&amp;',
+            ('user_ids', '!=', False),
+            ('user_ids.share', '=', False),
+            ('user_id', '=', user.id),
+            ('commercial_partner_id.user_id', '=', user.id)
+        ] if user.has_group('centric_sales_rep_customisation.group_centric_sales_representative') else [(1, '=', 1)]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <record id="rule_res_partner_centric_sales_rep_enforce_assigned_customers_write" model="ir.rule">
+        <field name="name">Restricted sales reps: enforce write assigned customers and contacts</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="domain_force">[
+            '|', '|', '|',
+            ('id', '=', user.partner_id.id),
+            ('id', 'in', user.company_ids.partner_id.ids),
+            ('user_id', '=', user.id),
+            ('commercial_partner_id.user_id', '=', user.id)
+        ] if user.has_group('centric_sales_rep_customisation.group_centric_sales_representative') else [(1, '=', 1)]</field>
+        <field name="perm_read" eval="False"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+
+    <!-- Global twins of the three rules above: same widened scope, or the AND of
+         the two would keep refusing the create. Keep both sides in sync.
+         Global rules are AND-ed, so a group rule cannot lift them: the two
+         sales-order twins therefore have to carry the "Sales Representative"
+         scope themselves, hence the nested condition - own orders for that
+         level, assigned customers only for the restricted level, no-op for
+         everyone else. Keep each branch in sync with its group rule above. -->
+    <record id="rule_sale_order_centric_sales_rep_enforce_assigned_customers" model="ir.rule">
+        <field name="name">Restricted sales reps: enforce assigned customer sales orders</field>
+        <field name="model_id" ref="sale.model_sale_order"/>
+        <field name="domain_force">[
+            '|', '|', '|',
+            ('create_uid', '=', user.id),
+            ('user_id', '=', user.id),
+            ('partner_id.user_id', '=', user.id),
+            ('partner_id.commercial_partner_id.user_id', '=', user.id)
+        ] if user.has_group('centric_sales_rep_customisation.group_centric_sales_representative_create') else ([
+            '|', '|',
+            ('user_id', '=', user.id),
+            ('partner_id.user_id', '=', user.id),
+            ('partner_id.commercial_partner_id.user_id', '=', user.id)
+        ] if user.has_group('centric_sales_rep_customisation.group_centric_sales_representative') else [(1, '=', 1)])</field>
+    </record>
+
+    <record id="rule_sale_order_line_centric_sales_rep_enforce_assigned_customers" model="ir.rule">
+        <field name="name">Restricted sales reps: enforce assigned customer sales order lines</field>
+        <field name="model_id" ref="sale.model_sale_order_line"/>
+        <field name="domain_force">[
+            '|', '|', '|',
+            ('order_id.create_uid', '=', user.id),
+            ('order_id.user_id', '=', user.id),
+            ('order_id.partner_id.user_id', '=', user.id),
+            ('order_id.partner_id.commercial_partner_id.user_id', '=', user.id)
+        ] if user.has_group('centric_sales_rep_customisation.group_centric_sales_representative_create') else ([
+            '|', '|',
+            ('order_id.user_id', '=', user.id),
+            ('order_id.partner_id.user_id', '=', user.id),
+            ('order_id.partner_id.commercial_partner_id.user_id', '=', user.id)
+        ] if user.has_group('centric_sales_rep_customisation.group_centric_sales_representative') else [(1, '=', 1)])</field>
+    </record>
+
+    <record id="rule_sale_report_centric_sales_rep_enforce_assigned_customers" model="ir.rule">
+        <field name="name">Restricted sales reps: enforce assigned customer sales analysis</field>
+        <field name="model_id" ref="sale.model_sale_report"/>
+        <field name="domain_force">[
+            '|', '|',
+            ('user_id', '=', user.id),
+            ('partner_id.user_id', '=', user.id),
+            ('partner_id.commercial_partner_id.user_id', '=', user.id)
+        ] if user.has_group('centric_sales_rep_customisation.group_centric_sales_representative') else [(1, '=', 1)]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <record id="rule_account_invoice_report_centric_sales_rep_enforce_assigned_customers" model="ir.rule">
+        <field name="name">Restricted sales reps: enforce assigned customer invoice analysis</field>
+        <field name="model_id" ref="account.model_account_invoice_report"/>
+        <field name="domain_force">[
+            ('partner_id.commercial_partner_id.user_id', '=', user.id)
+        ] if user.has_group('centric_sales_rep_customisation.group_centric_sales_representative') else [(1, '=', 1)]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <record id="rule_account_move_centric_sales_rep_enforce_customer_documents" model="ir.rule">
+        <field name="name">Restricted sales reps: enforce assigned customer invoices and receivable entries</field>
+        <field name="model_id" ref="account.model_account_move"/>
+        <field name="domain_force">[
+            '|',
+            '&amp;',
+            ('move_type', 'in', ('out_invoice', 'out_refund', 'out_receipt')),
+            ('partner_id.commercial_partner_id.user_id', '=', user.id),
+            '&amp;',
+            ('move_type', '=', 'entry'),
+            '&amp;',
+            ('line_ids.partner_id.commercial_partner_id.user_id', '=', user.id),
+            ('line_ids.account_id.account_type', '=', 'asset_receivable')
+        ] if user.has_group('centric_sales_rep_customisation.group_centric_sales_representative') else [(1, '=', 1)]</field>
+    </record>
+
+    <record id="rule_account_move_line_centric_sales_rep_enforce_customer_documents" model="ir.rule">
+        <field name="name">Restricted sales reps: enforce assigned customer invoice and statement lines</field>
+        <field name="model_id" ref="account.model_account_move_line"/>
+        <field name="domain_force">[
+            '|',
+            '&amp;',
+            ('move_id.move_type', 'in', ('out_invoice', 'out_refund', 'out_receipt')),
+            ('move_id.partner_id.commercial_partner_id.user_id', '=', user.id),
+            '&amp;',
+            ('account_id.account_type', '=', 'asset_receivable'),
+            ('partner_id.commercial_partner_id.user_id', '=', user.id)
+        ] if user.has_group('centric_sales_rep_customisation.group_centric_sales_representative') else [(1, '=', 1)]</field>
+    </record>
+
+    <record id="rule_account_invoice_send_single_centric_sales_rep_enforce_assigned_customers" model="ir.rule">
+        <field name="name">Restricted sales reps: enforce assigned customer invoice send and print</field>
+        <field name="model_id" ref="account.model_account_move_send_wizard"/>
+        <field name="domain_force">[
+            ('move_id.move_type', 'in', ('out_invoice', 'out_refund', 'out_receipt')),
+            ('move_id.partner_id.commercial_partner_id.user_id', '=', user.id)
+        ] if user.has_group('centric_sales_rep_customisation.group_centric_sales_representative') else [(1, '=', 1)]</field>
+    </record>
+
+    <record id="rule_account_invoice_send_batch_centric_sales_rep_enforce_assigned_customers" model="ir.rule">
+        <field name="name">Restricted sales reps: enforce assigned customer invoice batch send and print</field>
+        <field name="model_id" ref="account.model_account_move_send_batch_wizard"/>
+        <field name="domain_force">[
+            ('move_ids.move_type', 'in', ('out_invoice', 'out_refund', 'out_receipt')),
+            ('move_ids.partner_id.commercial_partner_id.user_id', '=', user.id)
+        ] if user.has_group('centric_sales_rep_customisation.group_centric_sales_representative') else [(1, '=', 1)]</field>
+    </record>
+
+    <!-- Multi-company: a restricted rep is assigned to a single company, but their
+         customers' documents (or the views they open) can reference another company
+         in the group. Reading that company record is otherwise blocked by the core
+         employee company rule, which surfaces as an intermittent "you don't have read
+         access to Companies" error that loops the Sales app. Allow restricted reps to
+         READ company records (read only; it does not widen access to other companies'
+         orders/invoices, which keep their own multi-company rules, nor change the
+         company selector). OR-combines with the core company rule. -->
+    <record id="rule_res_company_centric_sales_rep_read" model="ir.rule">
+        <field name="name">Restricted sales reps: read group companies</field>
+        <field name="model_id" ref="base.model_res_company"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('group_centric_sales_representative'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <!-- Reconcile the restricted rep role on every install/upgrade: refresh the implied
+         Salesperson group (clears the stale groups cache that caused the delivery.carrier
+         access error) and remove the full Invoicing group from reps (office staff invoice;
+         reps only view their customers' invoices). -->
+    <function model="res.users" name="_centric_sync_sales_rep_role"/>
+</odoo>

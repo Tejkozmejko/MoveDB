@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_sale_order_form_not_delivered_button" model="ir.ui.view">
+        <field name="name">sale.order.form.not.delivered.button</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button name="action_not_delivered_from_sale_order"
+                        type="object"
+                        string="Not Delivered"
+                        class="btn-primary"
+                        invisible="not show_not_delivered_button"/>
+            </xpath>
+            <xpath expr="//sheet" position="inside">
+                <field name="show_not_delivered_button" invisible="1"/>
+                <field name="not_delivered_available_picking_id" invisible="1"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

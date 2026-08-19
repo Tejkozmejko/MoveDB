@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_sale_order_list_shipping_method" model="ir.ui.view">
+        <field name="name">sale.order.list.shipping.method.centric</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.sale_order_tree"/>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <xpath expr="//header/button[@name='%(sale.action_view_sale_advance_payment_inv)d']" position="attributes">
+                <attribute name="name">action_centric_create_and_post_invoices</attribute>
+                <attribute name="type">object</attribute>
+            </xpath>
+            <xpath expr="//field[@name='partner_id']" position="after">
+                <field name="carrier_id" string="Shipping Method" optional="show" widget="centric_carrier_dropdown" options="{'no_create': True, 'no_open': True}"/>
+                <field name="centric_driver_id" string="Driver" optional="show" widget="centric_driver_dropdown" options="{'no_create': True, 'no_open': True}"/>
+                <field name="centric_van_status"
+                       string="Van Status"
+                       widget="badge"
+                       decoration-success="centric_van_status == 'van_ready'"
+                       decoration-danger="centric_van_status == 'van_not_ready'"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_order_tree_workflow_statuses" model="ir.ui.view">
+        <field name="name">sale.order.list.workflow.statuses.centric</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_tree"/>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='delivery_status']" position="replace">
+                <field name="centric_delivery_status"
+                       string="Delivery Status"
+                       widget="badge"
+                       decoration-success="centric_delivery_status == 'full'"
+                       decoration-info="centric_delivery_status == 'ready'"
+                       decoration-warning="centric_delivery_status in ('started', 'partial')"
+                       optional="show"/>
+            </xpath>
+            <xpath expr="//field[@name='invoice_status']" position="replace">
+                <field name="centric_invoice_status"
+                       string="Invoice Status"
+                       widget="badge"
+                       decoration-success="centric_invoice_status == 'invoiced'"
+                       decoration-info="centric_invoice_status == 'ready_to_invoice'"
+                       decoration-warning="centric_invoice_status == 'upselling'"
+                       decoration-danger="centric_invoice_status == 'blocked'"
+                       optional="show"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_sale_order_form_shipping_method" model="ir.ui.view">
+        <field name="name">sale.order.form.shipping.method.centric</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <!-- Replace the standard "Create Invoice" UX entirely: the button no
+                 longer opens the advance-payment wizard (no popup, no invoice-type
+                 / down-payment selection). It calls the direct action that creates
+                 a regular customer invoice in one click, still gated by the FULL
+                 delivery rule. -->
+            <xpath expr="//button[@id='create_invoice']" position="attributes">
+                <attribute name="name">action_centric_create_and_post_invoices</attribute>
+                <attribute name="type">object</attribute>
+                <attribute name="context"></attribute>
+            </xpath>
+            <!-- Down payments are no longer offered: hide the percentage/down-
+                 payment "Create Invoice" button shown when nothing is yet to
+                 invoice. -->
+            <xpath expr="//button[@id='create_invoice_percentage']" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </xpath>
+            <xpath expr="//group[@name='sale_shipping']/label[@for='commitment_date']" position="before">
+                <field name="carrier_id" string="Shipping Method" readonly="state == 'cancel' or locked" options="{'no_create': True, 'no_open': True}"/>
+                <field name="centric_driver_id" string="Driver" widget="centric_driver_dropdown" readonly="state == 'cancel' or locked" options="{'no_create': True, 'no_open': True}"/>
+            </xpath>
+            <!-- Restrict the Delivery Address selector to the SELECTED customer's
+                 delivery addresses (its type='delivery' child contacts) plus the
+                 customer's own company/HQ address, instead of listing every
+                 contact in the database (core Odoo puts no domain on this field).
+                 The domain is the computed centric_shipping_partner_domain field
+                 (see sale_order.py::_compute_centric_shipping_partner_domain). -->
+            <xpath expr="//field[@name='partner_shipping_id']" position="before">
+                <field name="centric_shipping_partner_domain" invisible="1"/>
+            </xpath>
+            <xpath expr="//field[@name='partner_shipping_id']" position="attributes">
+                <attribute name="domain">centric_shipping_partner_domain</attribute>
+            </xpath>
+            <!-- Clear, read-only delivery address block right under the Delivery
+                 Address selector, sourced from the selected partner_shipping_id.
+                 Hidden when there is nothing to show so the layout stays clean. -->
+            <xpath expr="//field[@name='partner_shipping_id']" position="after">
+                <field name="centric_shipping_address_display"
+                       nolabel="1"
+                       readonly="1"
+                       invisible="not centric_shipping_address_display"
+                       class="text-muted o_address_format mb-0"/>
+            </xpath>
+            <!-- Delivery Date in the order header, next to Order Date / Pricelist /
+                 Payment Terms. This is Odoo's built-in commitment_date, which also
+                 drives the delivery order's scheduled date and flows to the invoice. -->
+            <xpath expr="//group[@name='order_details']/field[@name='payment_term_id']" position="after">
+                <!-- Delivery Date is date-only, so the picker offers no time at
+                     all. 'show_time': False only formats the displayed VALUE
+                     ("Displays or hides the time in the datetime value") - the
+                     picker still shows a time column, because commitment_date is
+                     a Datetime and widget="date" does not support that type.
+                     So the form edits centric_delivery_date, a plain Date mapped
+                     onto commitment_date at local noon (see sale_order.py). The
+                     stored field stays a Datetime, so every delivery / invoice /
+                     deadline linkage keeps working untouched. -->
+                <field name="centric_delivery_date" string="Delivery Date" readonly="state == 'cancel' or locked"/>
+            </xpath>
+            <!-- The native Delivery Date in Other Info > Shipping is left in place
+                 (the xpath above only borrows its label as an anchor); make that
+                 instance date-only too so the time picker is gone everywhere
+                 commitment_date appears on the form. -->
+            <!-- Same swap in Other Info > Shipping, so the time picker is gone
+                 everywhere the Delivery Date appears rather than only in the
+                 header. commitment_date has to stay in the view (hidden): the
+                 neighbouring "Expected:" span tests it in its invisible
+                 modifier, and a modifier may only reference fields the view
+                 loads. The label is re-pointed at the visible field so the
+                 "Delivery Date" caption does not follow the hidden one. -->
+            <xpath expr="//group[@name='sale_shipping']/label[@for='commitment_date']" position="attributes">
+                <attribute name="for">centric_delivery_date</attribute>
+                <attribute name="string">Delivery Date</attribute>
+            </xpath>
+            <xpath expr="//group[@name='sale_shipping']//field[@name='commitment_date']" position="replace">
+                <field name="commitment_date" invisible="1"/>
+                <field name="centric_delivery_date" string="Delivery Date" readonly="state == 'cancel' or locked"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_sales_order_filter_shipping_method" model="ir.ui.view">
+        <field name="name">sale.order.search.shipping.method.centric</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_sales_order_filter"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='team_id']" position="after">
+                <field name="carrier_id" string="Shipping Method"/>
+            </xpath>
+            <xpath expr="//group/filter[@name='preferred_payment_method_line_groupby']" position="after">
+                <filter name="shipping_method" string="Shipping Method" context="{'group_by': 'carrier_id'}"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

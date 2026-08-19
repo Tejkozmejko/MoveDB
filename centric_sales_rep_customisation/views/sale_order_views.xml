@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_order_form_sales_rep_no_product_open" model="ir.ui.view">
+        <field name="name">sale.order.form.sales.rep.no.product.open</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='order_line']//field[@name='product_id'][@widget='sol_product_many2one']" position="attributes">
+                <attribute name="options">{
+                    'show_label_warning': True,
+                    'no_open': True,
+                    'no_create': True,
+                    'no_create_edit': True
+                }</attribute>
+            </xpath>
+            <xpath expr="//field[@name='order_line']//field[@name='product_template_id'][@widget='sol_product_many2one']" position="attributes">
+                <attribute name="options">{
+                    'show_label_warning': True,
+                    'no_open': True,
+                    'no_create': True,
+                    'no_create_edit': True
+                }</attribute>
+            </xpath>
+        </field>
+    </record>
+</odoo>

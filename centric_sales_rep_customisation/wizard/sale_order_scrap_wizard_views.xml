@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="centric_sale_order_scrap_wizard_form" model="ir.ui.view">
+        <field name="name">centric.sale.order.scrap.wizard.form</field>
+        <field name="model">centric.sale.order.scrap.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Record Wastage">
+                <field name="order_id" invisible="1"/>
+                <field name="available_line_ids" invisible="1"/>
+                <group>
+                    <field
+                        name="line_id"
+                        options="{'no_create': True, 'no_open': True, 'no_quick_create': True}"
+                    />
+                    <field name="ordered_qty_display" invisible="not line_id"/>
+                    <field
+                        name="existing_scrap_kg"
+                        invisible="not line_id or existing_scrap_kg == 0"
+                    />
+                    <field name="qty_kg"/>
+                </group>
+                <p class="text-muted mb-0">
+                    The wastage leaves stock with the rest of the order and shows on
+                    the sales order and the delivery. It is never invoiced.
+                </p>
+                <footer>
+                    <button
+                        string="Record Wastage"
+                        name="action_confirm"
+                        type="object"
+                        class="btn-primary"
+                        data-hotkey="q"
+                    />
+                    <button
+                        string="Cancel"
+                        class="btn-secondary"
+                        special="cancel"
+                        data-hotkey="x"
+                    />
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

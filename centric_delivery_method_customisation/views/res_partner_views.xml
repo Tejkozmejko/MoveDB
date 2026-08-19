@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_partner_form_delivery_address" model="ir.ui.view">
+        <field name="name">res.partner.form.delivery.address.centric</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//span[@name='address_name']/following-sibling::div[hasclass('o_address_format')][1]" position="after">
+                <label for="centric_delivery_name" string="Delivery Address"/>
+                <div class="o_address_format" name="centric_delivery_address">
+                    <field name="centric_delivery_name" placeholder="Delivery name..." class="o_address_street"/>
+                    <field name="centric_delivery_street" placeholder="Street..." class="o_address_street"/>
+                    <field name="centric_delivery_street2" placeholder="Street 2..." class="o_address_street"/>
+                    <field name="centric_delivery_city" placeholder="City" class="o_address_city"/>
+                    <field name="centric_delivery_state_id"
+                           placeholder="State"
+                           class="o_address_state"
+                           options="{'no_open': True, 'no_quick_create': True}"
+                           context="{'country_id': centric_delivery_country_id, 'default_country_id': centric_delivery_country_id, 'zip': centric_delivery_zip}"/>
+                    <field name="centric_delivery_zip" placeholder="ZIP" class="o_address_zip"/>
+                    <div name="centric_delivery_address_country" class="d-flex justify-content-between">
+                        <field name="centric_delivery_country_id"
+                               placeholder="Country"
+                               class="o_address_country"
+                               options='{"no_open": True, "no_create": True}'/>
+                    </div>
+                </div>
+            </xpath>
+            <!-- Salesperson and Delivery Method selectors on each child DELIVERY
+                 address (the "Create Contact" dialog opened from the Contacts
+                 tab). Both are per-location settings, shown only for
+                 delivery-type addresses.
+
+                 The salesperson drives the sales order's Salesperson for orders
+                 delivered to this location - see sale_order.py::_compute_user_id.
+
+                 property_delivery_carrier_id is the NATIVE Delivery Method field.
+                 It already works per address on both sides - native
+                 delivery.sale_order::action_open_delivery_wizard reads
+                 partner_shipping_id's value before falling back to the commercial
+                 partner, and _centric_contact_delivery_method does the same - but
+                 native only ever RENDERS it inside `group name="sale"`, which
+                 exists on the main contact form and not in this dialog. So the
+                 method could only be set on the parent contact. Adding it here is
+                 all that was missing.
+
+                 Anchored AFTER the (hidden) company_id field - the exact spot
+                 account_add_gln uses for its GLN field - because a bare field
+                 dropped inside the other_info group's nested-group/div layout
+                 does not render in this dialog. -->
+            <xpath expr="//field[@name='child_ids']/form//field[@name='company_id']" position="after">
+                <field name="centric_salesperson_id"
+                       widget="many2one_avatar_user"
+                       invisible="type != 'delivery'"/>
+                <field name="property_delivery_carrier_id"
+                       options="{'no_create': True, 'no_open': True}"
+                       invisible="type != 'delivery'"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_partner_form_secondary_delivery_method" model="ir.ui.view">
+        <field name="name">res.partner.form.secondary.delivery.method.centric</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="delivery.view_partner_property_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='property_delivery_carrier_id']" position="after">
+                <field name="centric_secondary_delivery_carrier_id"
+                       options="{'no_create': True, 'no_open': True}"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

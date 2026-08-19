@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_partner_form_centric_sales_ytd" model="ir.ui.view">
+        <field name="name">res.partner.form.centric.sales.ytd</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <!-- Headline figures on the right column of the contact form, so
+                 they're visible without opening the Sales YTD tab. -->
+            <xpath expr="//field[@name='category_id']" position="after">
+                <field name="customer_rank" invisible="1"/>
+                <field name="centric_sales_ytd_currency_id" invisible="1"/>
+                <field name="centric_sales_ytd_current"
+                       string="Sales This Year"
+                       invisible="not customer_rank"/>
+                <field name="centric_sales_ytd_last_year"
+                       string="Sales Last Year"
+                       invisible="not customer_rank"/>
+            </xpath>
+            <xpath expr="//notebook" position="inside">
+                <page string="Sales YTD"
+                      name="centric_sales_ytd"
+                      invisible="not customer_rank">
+                    <group>
+                        <group string="Sales to date">
+                            <field name="centric_sales_ytd_current"
+                                   string="This year (1 Jan - today)"/>
+                            <field name="centric_sales_ytd_last_year"
+                                   string="Last year (same date)"/>
+                        </group>
+                        <group string="Variance vs last year">
+                            <field name="centric_sales_ytd_variance"/>
+                            <field name="centric_sales_ytd_variance_pct"
+                                   widget="percentage"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Contacts list: optional Sales This Year / Last Year columns. -->
+    <record id="view_partner_tree_centric_sales_ytd" model="ir.ui.view">
+        <field name="name">res.partner.list.centric.sales.ytd</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_tree"/>
+        <field name="arch" type="xml">
+            <field name="display_name" position="after">
+                <field name="centric_sales_ytd_currency_id" column_invisible="1"/>
+                <field name="centric_sales_ytd_current"
+                       string="Sales This Year"
+                       optional="show"/>
+                <field name="centric_sales_ytd_last_year"
+                       string="Sales Last Year"
+                       optional="show"/>
+            </field>
+        </field>
+    </record>
+</odoo>

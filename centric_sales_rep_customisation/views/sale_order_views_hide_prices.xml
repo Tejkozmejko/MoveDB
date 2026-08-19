@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Hidden technical field used to remember the catalog toggle per sale order. -->
+    <record id="sale_order_form_hide_catalog_prices" model="ir.ui.view">
+        <field name="name">sale.order.form.hide.catalog.prices.technical</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='pricelist_id']" position="after">
+                <field name="hide_catalog_prices" invisible="1"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="centric_delivery_method_customisation.LotsSerialsButton">
+        <button type="button"
+                class="btn btn-link text-success p-0 text-nowrap o_centric_lots_serials_button"
+                t-on-click.stop.prevent="onClick">
+            <i class="fa fa-tags me-1" role="img" aria-label="Lots/Serials"/>Lots/Serials
+        </button>
+    </t>
+</templates>
