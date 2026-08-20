@@ -89,14 +89,60 @@ class CentricClaudeGithubClient(models.AbstractModel):
             raise UserError(_("GitHub owner and repository are not configured."))
         return owner, repo
 
-    def _test_connection(self, owner=None, repo=None, token=None):
+    def _test_connection(self, owner=None, repo=None, token=None, branch=None):
+        """Check the repo AND that the branch Claude will actually read exists.
+
+        Checking only the repository is misleading: a Default Base Branch that
+        does not exist still passes, then every read fails with a 404 later.
+        """
+        config = self._config()
         owner, repo = self._require_repository(owner, repo)
-        token = token if token is not None else self._config()["token"]
+        token = token if token is not None else config["token"]
         data = self._request("GET", f"/repos/{quote(owner)}/{quote(repo)}", token=token)
-        return _("Connected to %(repo)s. Default branch: %(branch)s") % {
-            "repo": data.get("full_name", self._repo_label(owner, repo)),
-            "branch": data.get("default_branch", "unknown"),
-        }
+        label = data.get("full_name") or self._repo_label(owner, repo)
+        github_default = data.get("default_branch") or "unknown"
+        branch = branch or config["branch"]
+
+        if not branch:
+            raise UserError(_("Set a Default Base Branch before testing."))
+        try:
+            self._get_branch_ref(branch, owner, repo, token)
+        except UserError as exc:
+            raise UserError(_(
+                "Connected to %(repo)s, but the branch Claude is configured to read, "
+                "'%(branch)s', does not exist there.\n\n"
+                "GitHub's own default branch is '%(default)s'. Either create "
+                "'%(branch)s' or change Default Base Branch.\n\n%(detail)s"
+            ) % {
+                "repo": label, "branch": branch,
+                "default": github_default, "detail": exc,
+            }) from exc
+
+        # A branch that exists but holds no approved modules looks fine here and
+        # then shows an empty Code tab. Say so now instead.
+        modules = self._list_allowed_modules(branch=branch)
+        prefix = config["prefix"] or "centric_"
+        if modules:
+            found = _("\nFound %(count)s approved module(s): %(names)s") % {
+                "count": len(modules),
+                "names": ", ".join(m["name"] for m in modules[:8]),
+            }
+        else:
+            found = _(
+                "\n\nWARNING: branch '%(branch)s' contains no modules starting with "
+                "'%(prefix)s'. Claude will see nothing. Check you picked the right branch."
+            ) % {"branch": branch, "prefix": prefix}
+
+        note = ""
+        if not token:
+            note = _("\n\nNo GitHub token is set. Reads work because this repository "
+                     "is public, but committing needs a token with Contents: write.")
+        return _(
+            "Connected to %(repo)s.\nClaude will read branch '%(branch)s' - it exists.\n"
+            "(GitHub's own default branch is '%(default)s'; that is separate.)"
+            "%(found)s%(note)s"
+        ) % {"repo": label, "branch": branch, "default": github_default,
+             "found": found, "note": note}
 
     def _get_branch_ref(self, branch, owner=None, repo=None, token=None):
         owner, repo = self._require_repository(owner, repo)

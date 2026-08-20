@@ -151,6 +151,7 @@ class ResConfigSettings(models.TransientModel):
             owner=self.centric_claude_github_owner,
             repo=self.centric_claude_github_repo,
             token=self.centric_claude_github_token,
+            branch=self.centric_claude_default_branch,
         )
         self.env["centric.claude.audit.log"].sudo().create({
             "action": "settings_test",

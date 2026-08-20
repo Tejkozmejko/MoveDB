@@ -139,6 +139,20 @@
                                         t-on-click="() => this.selectModule(module)">
                                     <i class="fa fa-cube me-1"/> <t t-esc="module.name"/>
                                 </button>
+                                <div t-if="state.modulesLoaded &amp;&amp; !state.modules.length"
+                                     class="p-3 small text-muted">
+                                    <p class="mb-2">
+                                        No modules starting with
+                                        <code><t t-esc="state.access.allowed_module_prefix"/></code>
+                                        were found on branch
+                                        <code><t t-esc="activeBranch"/></code>.
+                                    </p>
+                                    <p class="mb-0">
+                                        That branch is probably not the one your modules live on.
+                                        An administrator can change Default Base Branch in
+                                        Settings, then start a new conversation.
+                                    </p>
+                                </div>
                             </div>
                             <div class="o_cc_files border-end overflow-auto">
                                 <div class="p-2 fw-bold border-bottom">Files</div>

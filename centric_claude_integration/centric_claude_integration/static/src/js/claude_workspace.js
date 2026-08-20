@@ -23,6 +23,7 @@ export class ClaudeDeveloperWorkspace extends Component {
             messageDraft: "",
             tab: "chat",
             modules: [],
+            modulesLoaded: false,
             files: [],
             selectedModule: null,
             selectedFile: null,
@@ -247,6 +248,7 @@ export class ClaudeDeveloperWorkspace extends Component {
 
     resetCodeBrowser() {
         this.state.modules = [];
+        this.state.modulesLoaded = false;
         this.state.files = [];
         this.state.selectedModule = null;
         this.state.selectedFile = null;
@@ -262,6 +264,7 @@ export class ClaudeDeveloperWorkspace extends Component {
         }
         try {
             this.state.modules = await this.call("get_repository_modules", [this.state.conversation.id]);
+            this.state.modulesLoaded = true;
         } catch (error) {
             this.notifyError(error);
         }
@@ -380,6 +383,11 @@ export class ClaudeDeveloperWorkspace extends Component {
         if (this.state.conversation?.pull_request_url) {
             window.open(this.state.conversation.pull_request_url, "_blank", "noopener,noreferrer");
         }
+    }
+
+    get activeBranch() {
+        const conv = this.state.conversation;
+        return conv ? conv.review_branch || conv.base_branch : "";
     }
 
     get stagedChanges() {

@@ -188,6 +188,23 @@ def changed_files(repo):
     return paths
 
 
+def find_module(repo, path):
+    """Resolve a repo-relative file to (module_name, path_within_module).
+
+    Walks up from the file to the nearest directory holding __manifest__.py,
+    exactly as Odoo discovers modules. Assuming the module is the first path
+    segment breaks on nested layouts such as
+    `centric_claude_integration/centric_claude_integration/models/x.py`,
+    where the real module directory sits one level down.
+    """
+    parts = path.split("/")
+    for depth in range(len(parts) - 1, 0, -1):
+        directory = os.path.join(repo, *parts[:depth])
+        if os.path.isfile(os.path.join(directory, "__manifest__.py")):
+            return parts[depth - 1], "/".join(parts[depth:])
+    return None, None
+
+
 def collect_changes(repo, prefix):
     """Turn the working-tree diff into the payload Odoo stages.
 
@@ -195,9 +212,11 @@ def collect_changes(repo, prefix):
     """
     staged, skipped = [], []
     for path in changed_files(repo):
-        parts = path.split("/")
-        module = parts[0]
-        if not module.startswith(prefix) or len(parts) < 2:
+        module, relative = find_module(repo, path)
+        if not module:
+            skipped.append((path, "not inside an Odoo module (no __manifest__.py above it)"))
+            continue
+        if not module.startswith(prefix):
             skipped.append((path, "outside an approved %s* module" % prefix))
             continue
         absolute = os.path.join(repo, path)
@@ -217,7 +236,7 @@ def collect_changes(repo, prefix):
             continue
         staged.append({
             "module": module,
-            "path": "/".join(parts[1:]),
+            "path": relative,
             "new_content": content,
             "summary": "Edited by Claude Code via the Odoo workspace",
         })
