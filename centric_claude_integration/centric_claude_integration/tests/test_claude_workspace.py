@@ -422,6 +422,86 @@ class TestClaudeWorkspace(TransactionCase):
         })
         self.assertEqual(self.env(user=user)["centric.claude.data"]._level(), "none")
 
+    def test_group_implications_replace_rather_than_append(self):
+        """implied_ids must use (6, 0, ids), never (4, id).
+
+        (4, id) links a group and nothing ever unlinks it: an implication
+        deleted from claude_security.xml would survive every future upgrade,
+        silently granting access the file no longer describes. This bit once -
+        Claude Administrator kept implying Data Administrator after the line
+        was removed, which floored the data dropdown at Administrator.
+        """
+        import os
+        import re
+
+        # Resolve through the addon package rather than __file__, so this works
+        # wherever the test module itself happens to be loaded from.
+        import odoo.addons.centric_claude_integration as addon
+
+        path = os.path.join(
+            os.path.dirname(addon.__file__), "security", "claude_security.xml"
+        )
+        with open(path, encoding="utf-8") as handle:
+            source = handle.read()
+        implications = re.findall(
+            r'name="implied_ids"\s+eval="([^"]+)"', source
+        )
+        self.assertTrue(implications, "no implied_ids found to check")
+        for expression in implications:
+            self.assertNotIn("(4,", expression.replace(" ", ""),
+                             "implied_ids must replace, not append: %s" % expression)
+            self.assertIn("(6,0,", expression.replace(" ", ""),
+                          "implied_ids must use (6, 0, ids): %s" % expression)
+
+    def test_the_code_ladder_implies_no_data_level(self):
+        admin = self.env.ref("centric_claude_integration.group_claude_admin")
+        data_groups = {
+            self.env.ref("centric_claude_integration.group_data_user").id,
+            self.env.ref("centric_claude_integration.group_data_intermediate").id,
+            self.env.ref("centric_claude_integration.group_data_admin").id,
+        }
+        reachable = set(admin.trans_implied_ids.ids) | {admin.id}
+        self.assertFalse(
+            reachable & data_groups,
+            "Claude Administrator still implies a data level, which floors the "
+            "Centric Claude Data dropdown so no lower level can be chosen.",
+        )
+
+    def test_all_three_data_levels_exist(self):
+        for name in ("group_data_user", "group_data_intermediate", "group_data_admin"):
+            group = self.env.ref("centric_claude_integration.%s" % name, False)
+            self.assertTrue(group, "%s is missing" % name)
+            self.assertEqual(
+                group.privilege_id,
+                self.env.ref("centric_claude_integration.res_groups_privilege_claude_data"),
+            )
+
+    def test_the_two_ladders_are_independent(self):
+        """Code access confers no data level, and vice versa.
+
+        They were briefly chained, which had two costs: a developer silently
+        gained the right to read every record, and Odoo floors a privilege
+        dropdown at whatever another group implies, so Administrator became the
+        only选 selectable data level for anyone holding Claude Administrator.
+        """
+        code_admin = self.env["res.users"].create({
+            "name": "Code Only",
+            "login": "claude_codeonly_%s" % self.env.cr.dbname[-4:],
+            "groups_id": [
+                (4, self.env.ref("base.group_user").id),
+                (4, self.env.ref("centric_claude_integration.group_claude_admin").id),
+            ],
+        })
+        self.assertTrue(
+            code_admin.has_group("centric_claude_integration.group_claude_admin")
+        )
+        self.assertEqual(self.env(user=code_admin)["centric.claude.data"]._level(), "none")
+
+        data_admin = self._as_level("admin")
+        self.assertFalse(
+            data_admin["centric.claude.conversation"]._workspace_access()["can_develop"]
+        )
+
     def test_only_intermediate_and_above_may_change_records(self):
         self.assertFalse(
             self._as_level("user")["centric.claude.data"]._data_access()["can_propose"]
