@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="action_claude_workspace" model="ir.actions.client">
+        <field name="name">Claude Developer</field>
+        <field name="tag">centric_claude_integration.developer_workspace</field>
+    </record>
+
+    <menuitem id="menu_claude_root"
+              name="Claude"
+              sequence="75"
+              groups="centric_claude_integration.group_claude_user"/>
+
+    <menuitem id="menu_claude_workspace"
+              name="Developer Workspace"
+              parent="menu_claude_root"
+              action="action_claude_workspace"
+              sequence="10"
+              groups="centric_claude_integration.group_claude_user"/>
+
+    <menuitem id="menu_claude_turns"
+              name="Agent Queue"
+              parent="menu_claude_root"
+              action="action_claude_turns"
+              sequence="80"
+              groups="centric_claude_integration.group_claude_admin"/>
+
+    <menuitem id="menu_claude_audit_logs"
+              name="Audit Logs"
+              parent="menu_claude_root"
+              action="action_claude_audit_logs"
+              sequence="90"
+              groups="centric_claude_integration.group_claude_admin"/>
+
+</odoo>
