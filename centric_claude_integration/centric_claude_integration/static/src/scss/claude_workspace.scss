@@ -1,0 +1,116 @@
+.o_centric_claude_workspace {
+    min-height: 0;
+
+    .o_cc_topbar {
+        min-height: 52px;
+        background: var(--o-view-background-color, #fff);
+    }
+
+    .o_cc_body,
+    .o_cc_main,
+    .o_cc_chat,
+    .o_cc_code,
+    .o_cc_editor {
+        min-height: 0;
+    }
+
+    .o_cc_conversations {
+        width: 260px;
+        min-width: 220px;
+        background: var(--o-view-background-color, #fff);
+    }
+
+    .o_cc_conversation {
+        padding: .75rem;
+        border-left: 3px solid transparent;
+
+        &.active {
+            border-left-color: var(--o-brand-primary, #714b67);
+            background: rgba(113, 75, 103, .08);
+        }
+    }
+
+    .o_cc_messages {
+        background: var(--o-webclient-background-color, #f7f7f7);
+    }
+
+    .o_cc_message {
+        max-width: 900px;
+
+        .o_cc_message_content {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            padding: .75rem 1rem;
+            border: 1px solid var(--border-color, #dee2e6);
+            border-radius: .75rem;
+            background: var(--o-view-background-color, #fff);
+        }
+
+        &.o_cc_message_user {
+            margin-left: auto;
+            max-width: 760px;
+
+            .o_cc_message_content {
+                background: rgba(113, 75, 103, .08);
+            }
+        }
+    }
+
+    .o_cc_composer {
+        background: var(--o-view-background-color, #fff);
+    }
+
+    .o_cc_modules {
+        width: 230px;
+        min-width: 190px;
+    }
+
+    .o_cc_files {
+        width: 310px;
+        min-width: 240px;
+    }
+
+    .o_cc_modules .btn.active,
+    .o_cc_files .btn.active {
+        background: rgba(113, 75, 103, .1);
+        color: inherit;
+        font-weight: 600;
+    }
+
+    .o_cc_code_pre,
+    .o_cc_code_textarea,
+    .o_cc_diff {
+        font-size: 12.5px;
+        line-height: 1.55;
+        tab-size: 4;
+        background: #111827;
+        color: #e5e7eb;
+    }
+
+    .o_cc_code_textarea {
+        resize: none;
+        outline: none;
+    }
+
+    .o_cc_diff {
+        max-height: 520px;
+        white-space: pre;
+    }
+
+    @media (max-width: 992px) {
+        .o_cc_conversations {
+            width: 190px;
+            min-width: 170px;
+        }
+
+        .o_cc_modules {
+            width: 170px;
+            min-width: 150px;
+        }
+
+        .o_cc_files {
+            width: 220px;
+            min-width: 180px;
+        }
+    }
+}

@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="res_config_settings_view_form_claude" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.centric.claude</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app string="Centric Claude" name="centric_claude_integration" groups="centric_claude_integration.group_claude_admin">
+                    <block title="Claude Backend" name="centric_claude_backend_settings">
+                        <setting string="Enable Claude" help="Enable the Claude workspace for users who have a Centric Claude access group.">
+                            <field name="centric_claude_enabled"/>
+                        </setting>
+                        <setting string="Claude Backend" help="Where the thinking happens. Odoo.sh cannot run the Claude Code CLI itself, so the local agent is the way to use a developer's Claude subscription instead of an API key.">
+                            <field name="centric_claude_backend" widget="radio"/>
+                        </setting>
+                        <setting string="Agent Runs As" help="Odoo user the local bridge acts as. Give it the Claude Developer group." invisible="centric_claude_backend != 'agent'">
+                            <field name="centric_claude_agent_uid"/>
+                        </setting>
+                        <setting string="Agent Token" help="Shared secret the bridge sends as a Bearer token. Generate one, then copy it into the bridge's CENTRIC_CLAUDE_TOKEN." invisible="centric_claude_backend != 'agent'">
+                            <field name="centric_claude_agent_token" password="True"/>
+                            <div class="mt8">
+                                <button name="action_generate_agent_token" type="object" string="Generate Agent Token" class="btn-secondary"/>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <block title="Anthropic API" name="centric_claude_api_settings" invisible="centric_claude_backend != 'api'">
+                        <setting string="Anthropic API Key" help="Stored in Odoo system parameters. It is never returned to Claude tools or repository logs.">
+                            <field name="centric_claude_api_key" password="True" placeholder="sk-ant-..."/>
+                        </setting>
+                        <setting string="Claude Model" help="Anthropic model ID used by the workspace.">
+                            <field name="centric_claude_model" placeholder="claude-opus-5"/>
+                        </setting>
+                        <setting string="Response Limits" help="Safety limits for one Claude turn.">
+                            <div class="row mt16">
+                                <label for="centric_claude_max_tokens" class="col-lg-4 o_light_label"/>
+                                <field name="centric_claude_max_tokens"/>
+                            </div>
+                            <div class="row mt16">
+                                <label for="centric_claude_max_tool_rounds" class="col-lg-4 o_light_label"/>
+                                <field name="centric_claude_max_tool_rounds"/>
+                            </div>
+                        </setting>
+                        <setting string="Test Claude Connection" invisible="centric_claude_backend != 'api'">
+                            <button name="action_test_claude_connection" type="object" string="Test Claude Connection" class="btn-primary"/>
+                        </setting>
+                    </block>
+
+                    <block title="GitHub Repository" name="centric_claude_github_settings">
+                        <setting string="Repository" help="The GitHub repository that contains your Odoo custom modules.">
+                            <div class="row mt16">
+                                <label for="centric_claude_github_owner" class="col-lg-4 o_light_label"/>
+                                <field name="centric_claude_github_owner" placeholder="centricmt"/>
+                            </div>
+                            <div class="row mt16">
+                                <label for="centric_claude_github_repo" class="col-lg-4 o_light_label"/>
+                                <field name="centric_claude_github_repo" placeholder="Azzopardi-Fisheries-LTD"/>
+                            </div>
+                        </setting>
+                        <setting string="GitHub Token" help="Use a fine-grained token restricted to the configured repository. Contents read is enough for Code Reader; Contents write is required for Developer commits.">
+                            <field name="centric_claude_github_token" password="True"/>
+                        </setting>
+                        <setting string="Default Base Branch" help="Claude reads this branch until a review branch is created.">
+                            <field name="centric_claude_default_branch" placeholder="testing"/>
+                        </setting>
+                        <setting string="Allowed Module Prefix" help="Only modules with this technical-name prefix can be opened or changed.">
+                            <field name="centric_claude_allowed_module_prefix" placeholder="centric_"/>
+                        </setting>
+                        <setting string="Test GitHub Connection">
+                            <button name="action_test_github_connection" type="object" string="Test GitHub Connection" class="btn-primary"/>
+                        </setting>
+                    </block>
+
+                    <block title="Code Permissions" name="centric_claude_code_permissions">
+                        <setting string="Allow Source Code Reading" help="Code Reader, Developer and Administrator users can browse approved repository modules.">
+                            <field name="centric_claude_code_read_enabled"/>
+                        </setting>
+                        <setting string="Allow Code Modifications" help="Required in addition to the Claude Developer group and the per-conversation Developer Mode toggle. Changes are staged first and committed only after a user clicks Commit.">
+                            <field name="centric_claude_code_write_enabled"/>
+                        </setting>
+                        <setting string="Allow Pull Request Creation" help="Allow authorised developers to create a GitHub pull request from the Claude review branch.">
+                            <field name="centric_claude_pull_request_enabled"/>
+                        </setting>
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

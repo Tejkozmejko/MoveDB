@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="module_category_claude" model="ir.module.category">
+        <field name="name">Centric Claude</field>
+        <field name="description">Access levels for the Centric Claude developer workspace.</field>
+        <field name="sequence">80</field>
+    </record>
+
+    <record id="res_groups_privilege_claude" model="res.groups.privilege">
+        <field name="name">Centric Claude</field>
+        <field name="description">Choose how much access the user has to the Claude developer workspace.</field>
+        <field name="category_id" ref="module_category_claude"/>
+        <field name="sequence">80</field>
+    </record>
+
+    <record id="group_claude_user" model="res.groups">
+        <field name="name">User</field>
+        <field name="sequence">10</field>
+        <field name="privilege_id" ref="res_groups_privilege_claude"/>
+    </record>
+
+    <record id="group_claude_code_reader" model="res.groups">
+        <field name="name">Code Reader</field>
+        <field name="sequence">20</field>
+        <field name="privilege_id" ref="res_groups_privilege_claude"/>
+        <field name="implied_ids" eval="[(4, ref('group_claude_user'))]"/>
+    </record>
+
+    <record id="group_claude_developer" model="res.groups">
+        <field name="name">Developer</field>
+        <field name="sequence">30</field>
+        <field name="privilege_id" ref="res_groups_privilege_claude"/>
+        <field name="implied_ids" eval="[(4, ref('group_claude_code_reader'))]"/>
+    </record>
+
+    <record id="group_claude_admin" model="res.groups">
+        <field name="name">Administrator</field>
+        <field name="sequence">40</field>
+        <field name="privilege_id" ref="res_groups_privilege_claude"/>
+        <field name="implied_ids" eval="[(4, ref('group_claude_developer'))]"/>
+    </record>
+
+    <record id="rule_claude_conversation_own" model="ir.rule">
+        <field name="name">Claude conversations: own</field>
+        <field name="model_id" ref="model_centric_claude_conversation"/>
+        <field name="domain_force">[('user_id', '=', user.id)]</field>
+        <field name="groups" eval="[(4, ref('group_claude_user'))]"/>
+    </record>
+
+    <record id="rule_claude_conversation_admin" model="ir.rule">
+        <field name="name">Claude conversations: administrator all</field>
+        <field name="model_id" ref="model_centric_claude_conversation"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('group_claude_admin'))]"/>
+    </record>
+
+    <record id="rule_claude_message_own" model="ir.rule">
+        <field name="name">Claude messages: own conversations</field>
+        <field name="model_id" ref="model_centric_claude_message"/>
+        <field name="domain_force">[('conversation_id.user_id', '=', user.id)]</field>
+        <field name="groups" eval="[(4, ref('group_claude_user'))]"/>
+    </record>
+
+    <record id="rule_claude_message_admin" model="ir.rule">
+        <field name="name">Claude messages: administrator all</field>
+        <field name="model_id" ref="model_centric_claude_message"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('group_claude_admin'))]"/>
+    </record>
+
+    <record id="rule_claude_change_own" model="ir.rule">
+        <field name="name">Claude changes: own conversations</field>
+        <field name="model_id" ref="model_centric_claude_change"/>
+        <field name="domain_force">[('conversation_id.user_id', '=', user.id)]</field>
+        <field name="groups" eval="[(4, ref('group_claude_user'))]"/>
+    </record>
+
+    <record id="rule_claude_change_admin" model="ir.rule">
+        <field name="name">Claude changes: administrator all</field>
+        <field name="model_id" ref="model_centric_claude_change"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('group_claude_admin'))]"/>
+    </record>
+
+    <record id="rule_claude_turn_own" model="ir.rule">
+        <field name="name">Claude turns: own conversations</field>
+        <field name="model_id" ref="model_centric_claude_turn"/>
+        <field name="domain_force">[('conversation_id.user_id', '=', user.id)]</field>
+        <field name="groups" eval="[(4, ref('group_claude_user'))]"/>
+    </record>
+
+    <record id="rule_claude_turn_admin" model="ir.rule">
+        <field name="name">Claude turns: administrator all</field>
+        <field name="model_id" ref="model_centric_claude_turn"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('group_claude_admin'))]"/>
+    </record>
+
+</odoo>

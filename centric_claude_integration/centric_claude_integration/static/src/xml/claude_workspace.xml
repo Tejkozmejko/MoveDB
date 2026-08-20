@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="centric_claude_integration.ClaudeDeveloperWorkspace">
+        <div class="o_centric_claude_workspace h-100 d-flex flex-column">
+            <div class="o_cc_topbar border-bottom px-3 py-2 d-flex align-items-center gap-3">
+                <div class="fw-bold fs-5">Claude Developer</div>
+                <div class="text-muted small" t-if="state.access.repository">
+                    <i class="fa fa-github me-1"/> <t t-esc="state.access.repository"/>
+                </div>
+                <div class="text-muted small" t-if="state.conversation">
+                    Branch: <code><t t-esc="state.conversation.review_branch || state.conversation.base_branch"/></code>
+                </div>
+                <div class="text-muted small" t-if="state.agent.backend === 'agent'">
+                    <i class="fa fa-desktop me-1"/> Local agent
+                </div>
+                <div class="ms-auto d-flex align-items-center gap-2" t-if="state.conversation">
+                    <span class="small fw-semibold">Developer Mode</span>
+                    <div class="form-check form-switch m-0">
+                        <input class="form-check-input"
+                               type="checkbox"
+                               t-ref="developerModeToggle"
+                               t-att-checked="state.conversation.developer_mode"
+                               t-att-disabled="!state.access.can_develop"
+                               t-on-change="toggleDeveloperMode"/>
+                    </div>
+                </div>
+            </div>
+
+            <div t-if="state.loading" class="flex-grow-1 d-flex align-items-center justify-content-center">
+                <div class="text-muted"><i class="fa fa-spinner fa-spin me-2"/>Loading Claude workspace...</div>
+            </div>
+
+            <div t-elif="!state.access.enabled" class="flex-grow-1 d-flex align-items-center justify-content-center p-4">
+                <div class="alert alert-warning mb-0">
+                    Claude is not enabled. A Centric Claude Administrator must configure it in Odoo Settings.
+                </div>
+            </div>
+
+            <div t-else="" class="o_cc_body flex-grow-1 d-flex overflow-hidden">
+                <aside class="o_cc_conversations border-end d-flex flex-column">
+                    <div class="p-2 border-bottom">
+                        <button class="btn btn-primary w-100" t-on-click="newConversation">
+                            <i class="fa fa-plus me-1"/> New Conversation
+                        </button>
+                    </div>
+                    <div class="overflow-auto flex-grow-1">
+                        <t t-foreach="state.conversations" t-as="conv" t-key="conv.id">
+                            <button class="o_cc_conversation btn text-start w-100 rounded-0 border-bottom"
+                                    t-att-class="{'active': state.activeConversationId === conv.id}"
+                                    t-on-click="() => this.selectConversation(conv.id)">
+                                <span class="d-block text-truncate fw-semibold" t-esc="conv.name"/>
+                                <span class="d-block small opacity-75 text-truncate">
+                                    <t t-esc="conv.review_branch || conv.base_branch"/>
+                                </span>
+                            </button>
+                        </t>
+                    </div>
+                </aside>
+
+                <main class="o_cc_main flex-grow-1 d-flex flex-column overflow-hidden">
+                    <div t-if="!state.conversation" class="flex-grow-1 d-flex align-items-center justify-content-center">
+                        <div class="text-center text-muted">
+                            <i class="fa fa-comments-o fa-3x mb-3"/>
+                            <div>Create a conversation to start.</div>
+                        </div>
+                    </div>
+
+                    <t t-else="">
+                        <ul class="nav nav-tabs px-3 pt-2 flex-shrink-0">
+                            <li class="nav-item">
+                                <button class="nav-link" t-att-class="{'active': state.tab === 'chat'}" t-on-click="() => this.setTab('chat')">Chat</button>
+                            </li>
+                            <li class="nav-item">
+                                <button class="nav-link"
+                                        t-att-class="{'active': state.tab === 'code'}"
+                                        t-att-disabled="!state.access.can_read_code"
+                                        t-on-click="() => this.setTab('code')">Code</button>
+                            </li>
+                            <li class="nav-item">
+                                <button class="nav-link" t-att-class="{'active': state.tab === 'changes'}" t-on-click="() => this.setTab('changes')">
+                                    Changes
+                                    <span t-if="stagedChanges.length" class="badge text-bg-warning ms-1" t-esc="stagedChanges.length"/>
+                                </button>
+                            </li>
+                        </ul>
+
+                        <div t-if="state.tab === 'chat'" class="o_cc_chat flex-grow-1 d-flex flex-column overflow-hidden">
+                            <div class="o_cc_messages flex-grow-1 overflow-auto p-3">
+                                <div t-if="!state.messages.length" class="text-muted text-center py-5">
+                                    Ask Claude about an Odoo module, an error, or a code change.
+                                </div>
+                                <t t-foreach="state.messages" t-as="msg" t-key="msg.id">
+                                    <div class="o_cc_message mb-3" t-att-class="msg.role === 'user' ? 'o_cc_message_user' : 'o_cc_message_assistant'">
+                                        <div class="small fw-semibold mb-1" t-esc="msg.role === 'user' ? 'You' : 'Claude'"/>
+                                        <div class="o_cc_message_content"><t t-esc="msg.content"/></div>
+                                    </div>
+                                </t>
+                                <div t-if="state.busy" class="o_cc_message o_cc_message_assistant mb-3">
+                                    <div class="small fw-semibold mb-1">Claude</div>
+                                    <div class="text-muted d-flex align-items-center gap-2">
+                                        <i class="fa fa-spinner fa-spin"/>
+                                        <span t-if="agentStatusText" t-esc="agentStatusText"/>
+                                        <span t-else="">Working with the approved tools...</span>
+                                        <button t-if="state.agent.waiting"
+                                                class="btn btn-sm btn-link text-danger p-0 ms-2"
+                                                t-on-click="cancelTurn">Cancel</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <form class="o_cc_composer border-top p-3" t-on-submit="sendMessage">
+                                <textarea class="form-control"
+                                          rows="3"
+                                          placeholder="Ask Claude to inspect or fix an approved custom module..."
+                                          t-model="state.messageDraft"
+                                          t-att-disabled="state.busy"/>
+                                <div class="d-flex align-items-center mt-2 gap-2">
+                                    <div class="small text-muted flex-grow-1">
+                                        <t t-if="state.conversation.developer_mode &amp;&amp; state.access.can_develop">
+                                            Developer Mode is ON. Claude may stage code changes, but cannot commit them itself.
+                                        </t>
+                                        <t t-else="">
+                                            Read-only chat. Enable Developer Mode to let Claude stage code changes.
+                                        </t>
+                                    </div>
+                                    <button class="btn btn-primary" type="submit" t-att-disabled="state.busy || !state.messageDraft.trim()">
+                                        Send
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div t-if="state.tab === 'code'" class="o_cc_code flex-grow-1 d-flex overflow-hidden">
+                            <div class="o_cc_modules border-end overflow-auto">
+                                <div class="p-2 fw-bold border-bottom">Modules</div>
+                                <button t-foreach="state.modules" t-as="module" t-key="module.name"
+                                        class="btn rounded-0 text-start w-100 text-truncate"
+                                        t-att-class="{'active': state.selectedModule === module.name}"
+                                        t-on-click="() => this.selectModule(module)">
+                                    <i class="fa fa-cube me-1"/> <t t-esc="module.name"/>
+                                </button>
+                            </div>
+                            <div class="o_cc_files border-end overflow-auto">
+                                <div class="p-2 fw-bold border-bottom">Files</div>
+                                <button t-foreach="state.files" t-as="file" t-key="file.path"
+                                        class="btn rounded-0 text-start w-100 text-truncate"
+                                        t-att-class="{'active': state.selectedFile === file.path}"
+                                        t-on-click="() => this.selectFile(file)">
+                                    <i class="fa fa-file-code-o me-1"/> <t t-esc="file.path"/>
+                                </button>
+                            </div>
+                            <div class="o_cc_editor flex-grow-1 d-flex flex-column overflow-hidden">
+                                <div class="border-bottom p-2 d-flex align-items-center gap-2" t-if="state.selectedFile">
+                                    <code class="flex-grow-1 text-truncate"><t t-esc="state.selectedModule"/>/<t t-esc="state.selectedFile"/></code>
+                                    <button t-if="state.access.can_develop &amp;&amp; state.conversation.developer_mode &amp;&amp; !state.fileEditing"
+                                            class="btn btn-sm btn-outline-primary"
+                                            t-on-click="startEditing">Edit</button>
+                                    <t t-if="state.fileEditing">
+                                        <button class="btn btn-sm btn-outline-secondary" t-on-click="cancelEditing">Cancel</button>
+                                        <button class="btn btn-sm btn-primary" t-on-click="stageManualChange">Stage Change</button>
+                                    </t>
+                                </div>
+                                <div t-if="!state.selectedFile" class="flex-grow-1 d-flex align-items-center justify-content-center text-muted">
+                                    Select an approved module and source file.
+                                </div>
+                                <textarea t-elif="state.fileEditing"
+                                          class="o_cc_code_textarea flex-grow-1 border-0 rounded-0 p-3 font-monospace"
+                                          spellcheck="false"
+                                          t-model="state.editorContent"/>
+                                <pre t-else="" class="o_cc_code_pre flex-grow-1 overflow-auto m-0 p-3"><t t-esc="state.editorContent"/></pre>
+                            </div>
+                        </div>
+
+                        <div t-if="state.tab === 'changes'" class="o_cc_changes flex-grow-1 overflow-auto p-3">
+                            <div class="d-flex align-items-center gap-2 mb-3">
+                                <div class="flex-grow-1">
+                                    <h5 class="mb-0">Staged and committed changes</h5>
+                                    <div class="small text-muted">Nothing reaches GitHub until an authorised developer clicks Commit.</div>
+                                </div>
+                                <button t-if="stagedChanges.length &amp;&amp; state.access.can_develop &amp;&amp; state.conversation.developer_mode"
+                                        class="btn btn-primary"
+                                        t-att-disabled="state.busy"
+                                        t-on-click="commitChanges">
+                                    Commit to Review Branch
+                                </button>
+                                <button t-if="state.conversation.commit_sha &amp;&amp; !state.conversation.pull_request_url &amp;&amp; state.access.can_create_pr"
+                                        class="btn btn-outline-primary"
+                                        t-att-disabled="state.busy"
+                                        t-on-click="createPullRequest">
+                                    Create Pull Request
+                                </button>
+                                <button t-if="state.conversation.pull_request_url"
+                                        class="btn btn-outline-primary"
+                                        t-on-click="openPullRequest">
+                                    Open Pull Request
+                                </button>
+                            </div>
+
+                            <div t-if="state.conversation.review_branch" class="alert alert-info py-2">
+                                Review branch: <code><t t-esc="state.conversation.review_branch"/></code>
+                                <t t-if="state.conversation.commit_sha">
+                                    <span class="ms-3">Commit: <code><t t-esc="state.conversation.commit_sha.slice(0, 12)"/></code></span>
+                                </t>
+                            </div>
+
+                            <div t-if="!state.changes.length" class="text-muted text-center py-5">
+                                No code changes have been staged in this conversation.
+                            </div>
+                            <div t-foreach="state.changes" t-as="change" t-key="change.id" class="card mb-3">
+                                <div class="card-header d-flex align-items-center gap-2">
+                                    <div class="flex-grow-1">
+                                        <div class="fw-bold"><t t-esc="change.module_name"/>/<t t-esc="change.file_path"/></div>
+                                        <div class="small text-muted" t-esc="change.summary"/>
+                                    </div>
+                                    <span class="badge"
+                                          t-att-class="change.status === 'staged' ? 'text-bg-warning' : (change.status === 'committed' ? 'text-bg-success' : 'text-bg-secondary')"
+                                          t-esc="change.status"/>
+                                    <button t-if="change.status === 'staged'"
+                                            class="btn btn-sm btn-outline-danger"
+                                            t-on-click="() => this.discardChange(change.id)">Discard</button>
+                                </div>
+                                <pre class="o_cc_diff mb-0 p-3 overflow-auto"><t t-esc="change.diff_text"/></pre>
+                            </div>
+                        </div>
+                    </t>
+                </main>
+            </div>
+        </div>
+    </t>
+
+</templates>
