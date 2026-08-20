@@ -422,6 +422,32 @@ class TestClaudeWorkspace(TransactionCase):
         })
         self.assertEqual(self.env(user=user)["centric.claude.data"]._level(), "none")
 
+    def test_the_two_ladders_are_independent(self):
+        """Code access confers no data level, and vice versa.
+
+        They were briefly chained, which had two costs: a developer silently
+        gained the right to read every record, and Odoo floors a privilege
+        dropdown at whatever another group implies, so Administrator became the
+        only选 selectable data level for anyone holding Claude Administrator.
+        """
+        code_admin = self.env["res.users"].create({
+            "name": "Code Only",
+            "login": "claude_codeonly_%s" % self.env.cr.dbname[-4:],
+            "groups_id": [
+                (4, self.env.ref("base.group_user").id),
+                (4, self.env.ref("centric_claude_integration.group_claude_admin").id),
+            ],
+        })
+        self.assertTrue(
+            code_admin.has_group("centric_claude_integration.group_claude_admin")
+        )
+        self.assertEqual(self.env(user=code_admin)["centric.claude.data"]._level(), "none")
+
+        data_admin = self._as_level("admin")
+        self.assertFalse(
+            data_admin["centric.claude.conversation"]._workspace_access()["can_develop"]
+        )
+
     def test_only_intermediate_and_above_may_change_records(self):
         self.assertFalse(
             self._as_level("user")["centric.claude.data"]._data_access()["can_propose"]

@@ -135,6 +135,19 @@ class CentricClaudeGithubClient(models.AbstractModel):
                 "'%(prefix)s'. Claude will see nothing. Check you picked the right branch."
             ) % {"branch": branch, "prefix": prefix}
 
+        # A module that appears twice in the tree is worth saying out loud: Odoo
+        # loads whichever copy the addons path reaches first, and that can change
+        # between builds, so the symptom looks like the deploy being random.
+        duplicates = ""
+        for module in modules:
+            for other in module.get("duplicate_roots", []):
+                duplicates += _(
+                    "\n\nWARNING: '%(name)s' exists twice on this branch, at "
+                    "'%(kept)s' and '%(other)s'. Odoo loads whichever the addons "
+                    "path reaches first, which can differ between builds. Delete "
+                    "the copy you do not want and push."
+                ) % {"name": module["name"], "kept": module["root"], "other": other}
+
         note = ""
         if not token:
             note = _("\n\nNo GitHub token is set. Reads work because this repository "
@@ -142,9 +155,9 @@ class CentricClaudeGithubClient(models.AbstractModel):
         return _(
             "Connected to %(repo)s.\nClaude will read branch '%(branch)s' - it exists.\n"
             "(GitHub's own default branch is '%(default)s'; that is separate.)"
-            "%(found)s%(note)s"
+            "%(found)s%(duplicates)s%(note)s"
         ) % {"repo": label, "branch": branch, "default": github_default,
-             "found": found, "note": note}
+             "found": found, "duplicates": duplicates, "note": note}
 
     def _get_branch_ref(self, branch, owner=None, repo=None, token=None):
         owner, repo = self._require_repository(owner, repo)
@@ -193,7 +206,7 @@ class CentricClaudeGithubClient(models.AbstractModel):
         prefix = config["prefix"] or "centric_"
         # Callers that already walked the tree pass it in; each walk is 3 API calls.
         tree = tree if tree is not None else self._get_tree(branch=branch)
-        modules = []
+        found = {}
         for item in tree["entries"]:
             path = item.get("path", "")
             if item.get("type") != "blob" or not path.endswith("/__manifest__.py"):
@@ -202,13 +215,25 @@ class CentricClaudeGithubClient(models.AbstractModel):
             module_name = root.rsplit("/", 1)[-1]
             if not module_name.startswith(prefix):
                 continue
-            modules.append({
-                "name": module_name,
-                "root": root,
-                "manifest_path": path,
-            })
-        modules.sort(key=lambda item: item["name"].lower())
-        return modules
+            entry = {"name": module_name, "root": root, "manifest_path": path}
+            existing = found.get(module_name)
+            if existing is None:
+                found[module_name] = entry
+                continue
+            # The same technical name under two roots: a half-finished move
+            # leaves one copy nested inside the other, and Odoo then loads
+            # whichever the addons path reaches first - which can differ
+            # between builds. Take the shallowest, since that is the one Odoo
+            # treats as a top-level addon, and keep the others so callers can
+            # tell the user rather than silently picking one.
+            shallow, deep = sorted(
+                (existing, entry), key=lambda one: one["root"].count("/")
+            )
+            shallow["duplicate_roots"] = (
+                existing.get("duplicate_roots", []) + [deep["root"]]
+            )
+            found[module_name] = shallow
+        return sorted(found.values(), key=lambda item: item["name"].lower())
 
     MODULE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 

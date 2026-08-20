@@ -209,7 +209,7 @@ def find_claude(preferred="claude"):
 
 # ---------------------------------------------------------------- odoo io ---
 def call_odoo(base_url, token, path, payload):
-    """Odoo `type="json"` routes speak JSON-RPC 2.0, not plain JSON."""
+    """Odoo `type="jsonrpc"` routes speak JSON-RPC 2.0, not plain JSON."""
     body = json.dumps({
         "jsonrpc": "2.0",
         "method": "call",

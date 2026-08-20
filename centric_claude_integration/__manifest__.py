@@ -1,6 +1,6 @@
 {
     "name": "Centric Claude Integration",
-    "version": "19.0.1.2.0",
+    "version": "19.0.1.2.2",
     "category": "Technical",
     "author": "Centric",
     "website": "https://www.centricmt.com",
