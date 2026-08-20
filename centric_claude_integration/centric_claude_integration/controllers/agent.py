@@ -16,6 +16,8 @@ class CentricClaudeAgentController(http.Controller):
     permission for local network access.
     """
 
+    # Odoo 19 renamed the JSON-RPC route type; "json" still works but warns on
+    # every import. The wire format is unchanged, so the bridge needs no edit.
     _MAX_FILE_BYTES = 512000
     _MAX_FILES_PER_TURN = 40
 
@@ -63,7 +65,7 @@ class CentricClaudeAgentController(http.Controller):
     # -- endpoints --------------------------------------------------------
     @http.route(
         "/centric_claude/agent/claim",
-        type="json", auth="public", methods=["POST"], csrf=False,
+        type="jsonrpc", auth="public", methods=["POST"], csrf=False,
     )
     def claim(self, agent_name=None, **kwargs):
         """Hand the oldest pending turn to the calling bridge."""
@@ -85,7 +87,7 @@ class CentricClaudeAgentController(http.Controller):
 
     @http.route(
         "/centric_claude/agent/complete",
-        type="json", auth="public", methods=["POST"], csrf=False,
+        type="jsonrpc", auth="public", methods=["POST"], csrf=False,
     )
     def complete(self, turn_id=None, assistant_text=None, changes=None, **kwargs):
         """Store the agent's reply and stage whatever files it changed."""
@@ -168,7 +170,7 @@ class CentricClaudeAgentController(http.Controller):
 
     @http.route(
         "/centric_claude/agent/fail",
-        type="json", auth="public", methods=["POST"], csrf=False,
+        type="jsonrpc", auth="public", methods=["POST"], csrf=False,
     )
     def fail(self, turn_id=None, error=None, **kwargs):
         """Record that the agent could not complete a turn."""
@@ -194,7 +196,7 @@ class CentricClaudeAgentController(http.Controller):
 
     @http.route(
         "/centric_claude/agent/odoo",
-        type="json", auth="public", methods=["POST"], csrf=False,
+        type="jsonrpc", auth="public", methods=["POST"], csrf=False,
     )
     def odoo(self, turn_id=None, op=None, params=None, **kwargs):
         """Run one database operation for a turn the bridge is working on.
@@ -292,7 +294,7 @@ class CentricClaudeAgentController(http.Controller):
 
     @http.route(
         "/centric_claude/agent/ping",
-        type="json", auth="public", methods=["POST"], csrf=False,
+        type="jsonrpc", auth="public", methods=["POST"], csrf=False,
     )
     def ping(self, **kwargs):
         """Let the bridge verify its token and URL before it starts polling."""
