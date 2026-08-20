@@ -367,8 +367,11 @@ def main(argv=None):
 
     hello = call_odoo(config.url, config.token, "/centric_claude/agent/ping",
                       {"agent_name": config.name})
-    print("Connected to %s as %s (repo %s, %s pending)"
-          % (config.url, hello.get("user"), hello.get("repository"), hello.get("pending")))
+    print("Connected to %s as %s (repo %s on %s, %s pending)"
+          % (config.url, hello.get("user"), hello.get("repository"),
+             hello.get("branch", "?"), hello.get("pending")))
+    for warning in hello.get("warnings") or []:
+        print("  WARNING: %s" % warning)
     print("Watching %s. Ctrl-C to stop." % config.repo)
 
     while True:

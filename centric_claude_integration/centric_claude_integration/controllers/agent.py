@@ -19,28 +19,41 @@ class CentricClaudeAgentController(http.Controller):
     _MAX_FILES_PER_TURN = 40
 
     # -- authentication ---------------------------------------------------
-    def _agent_user(self):
+    def _agent_check(self):
         """Resolve the bearer token to the Odoo user the bridge acts as.
 
-        Returns None when the token is missing, unset or wrong. The token is
-        compared with `compare_digest` so a wrong token cannot be recovered by
-        timing the response.
+        Returns (user, None) or (None, reason). The reasons are deliberately
+        specific: a single "invalid token" for every cause is unusable when
+        setting the bridge up, and each of these is an administrator-side
+        configuration fact, not a secret. The token itself is compared with
+        `compare_digest` so it cannot be recovered by timing the response.
         """
         params = request.env["ir.config_parameter"].sudo()
         expected = params.get_param("centric_claude.agent_token")
         if not expected:
-            return None
+            return None, ("No agent token is configured in Odoo. Go to Settings > "
+                          "Centric Claude and click Generate Agent Token.")
         header = request.httprequest.headers.get("Authorization") or ""
         if not header.startswith("Bearer "):
-            return None
+            return None, "Request carried no 'Authorization: Bearer <token>' header."
         presented = header[len("Bearer "):].strip()
         if not presented or not hmac.compare_digest(presented, expected):
-            return None
+            return None, ("The token this bridge sent does not match the one stored in "
+                          "Odoo. Generate a new token in Settings, Save, and restart the "
+                          "bridge with that value.")
         uid = params.get_param("centric_claude.agent_uid")
         if not uid:
-            return None
+            return None, ("'Agent Runs As' is not set in Odoo. Settings > Centric Claude "
+                          "> pick a user holding the Claude Developer group, then Save.")
         user = request.env["res.users"].sudo().browse(int(uid)).exists()
-        return user or None
+        if not user:
+            return None, "The configured 'Agent Runs As' user no longer exists."
+        return user, None
+
+    def _agent_user(self):
+        """Backwards-compatible accessor returning just the user, or None."""
+        user, _reason = self._agent_check()
+        return user
 
     def _denied(self, reason="Invalid or missing agent token."):
         _logger.warning("Centric Claude agent request rejected: %s", reason)
@@ -53,9 +66,9 @@ class CentricClaudeAgentController(http.Controller):
     )
     def claim(self, agent_name=None, **kwargs):
         """Hand the oldest pending turn to the calling bridge."""
-        user = self._agent_user()
+        user, reason = self._agent_check()
         if not user:
-            return self._denied()
+            return self._denied(reason)
         env = request.env(user=user.id)
         Turn = env["centric.claude.turn"].sudo()
         Turn._reclaim_stale()
@@ -75,9 +88,9 @@ class CentricClaudeAgentController(http.Controller):
     )
     def complete(self, turn_id=None, assistant_text=None, changes=None, **kwargs):
         """Store the agent's reply and stage whatever files it changed."""
-        user = self._agent_user()
+        user, reason = self._agent_check()
         if not user:
-            return self._denied()
+            return self._denied(reason)
         env = request.env(user=user.id)
         turn = env["centric.claude.turn"].sudo().browse(int(turn_id or 0)).exists()
         if not turn:
@@ -155,9 +168,9 @@ class CentricClaudeAgentController(http.Controller):
     )
     def fail(self, turn_id=None, error=None, **kwargs):
         """Record that the agent could not complete a turn."""
-        user = self._agent_user()
+        user, reason = self._agent_check()
         if not user:
-            return self._denied()
+            return self._denied(reason)
         env = request.env(user=user.id)
         turn = env["centric.claude.turn"].sudo().browse(int(turn_id or 0)).exists()
         if not turn:
@@ -181,11 +194,29 @@ class CentricClaudeAgentController(http.Controller):
     )
     def ping(self, **kwargs):
         """Let the bridge verify its token and URL before it starts polling."""
-        user = self._agent_user()
+        user, reason = self._agent_check()
         if not user:
-            return self._denied()
+            return self._denied(reason)
         env = request.env(user=user.id)
         params = env["ir.config_parameter"].sudo()
+        # Surface the config faults that otherwise only show up as a silently
+        # rejected change, long after the bridge said it was connected.
+        warnings = []
+        if not user.has_group("centric_claude_integration.group_claude_developer"):
+            warnings.append(
+                "'%s' does not hold the Claude Developer group, so any change this "
+                "agent sends back will be refused." % user.name
+            )
+        conversation = env["centric.claude.conversation"]
+        if not conversation._bool_param("centric_claude.code_write_enabled", False):
+            warnings.append(
+                "'Allow Code Modifications' is off in Settings, so Developer Mode "
+                "cannot be enabled and no change can be staged."
+            )
+        if not params.get_param("centric_claude.github_token"):
+            warnings.append(
+                "No GitHub token is set, so committing reviewed changes will fail."
+            )
         return {
             "ok": True,
             "user": user.name,
@@ -193,6 +224,8 @@ class CentricClaudeAgentController(http.Controller):
                 params.get_param("centric_claude.github_owner") or "?",
                 params.get_param("centric_claude.github_repo") or "?",
             ),
+            "branch": params.get_param("centric_claude.default_branch") or "?",
+            "warnings": warnings,
             "pending": env["centric.claude.turn"].sudo().search_count(
                 [("state", "=", "pending")]
             ),
