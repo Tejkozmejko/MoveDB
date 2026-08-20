@@ -1,9 +1,32 @@
 .o_centric_claude_workspace {
     min-height: 0;
 
+    // Surfaces follow the active Odoo theme so the workspace stays legible in
+    // both the light and the dark backend bundles. Accents are derived from the
+    // Bootstrap primary so they track the brand colour instead of hardcoding it.
+    --o-cc-surface: var(--o-view-background-color, var(--bs-body-bg, #fff));
+    --o-cc-surface-sunken: var(--o-webclient-background-color, var(--bs-secondary-bg, #f7f7f7));
+    --o-cc-text: var(--bs-body-color, #1f2937);
+    --o-cc-text-strong: var(--bs-emphasis-color, var(--bs-body-color, #111827));
+    --o-cc-border: var(--bs-border-color, #dee2e6);
+    --o-cc-accent: var(--bs-primary, var(--o-brand-primary, #714b67));
+    --o-cc-accent-rgb: var(--bs-primary-rgb, 113, 75, 103);
+    --o-cc-accent-soft: rgba(var(--o-cc-accent-rgb), .1);
+    --o-cc-accent-softer: rgba(var(--o-cc-accent-rgb), .06);
+
+    // The code and diff panes keep a fixed dark surface on purpose: they read as
+    // an editor, and staying theme independent means one contrast check covers
+    // both bundles.
+    --o-cc-code-bg: #0f172a;
+    --o-cc-code-fg: #e8edf7;
+    --o-cc-code-muted: #98a5c0;
+
+    color: var(--o-cc-text);
+
     .o_cc_topbar {
         min-height: 52px;
-        background: var(--o-view-background-color, #fff);
+        background: var(--o-cc-surface);
+        color: var(--o-cc-text);
     }
 
     .o_cc_body,
@@ -17,21 +40,29 @@
     .o_cc_conversations {
         width: 260px;
         min-width: 220px;
-        background: var(--o-view-background-color, #fff);
+        background: var(--o-cc-surface);
     }
 
     .o_cc_conversation {
         padding: .75rem;
         border-left: 3px solid transparent;
+        color: var(--o-cc-text);
+
+        &:hover {
+            background: var(--o-cc-accent-softer);
+            color: var(--o-cc-text);
+        }
 
         &.active {
-            border-left-color: var(--o-brand-primary, #714b67);
-            background: rgba(113, 75, 103, .08);
+            border-left-color: var(--o-cc-accent);
+            background: var(--o-cc-accent-soft);
+            color: var(--o-cc-text-strong);
+            font-weight: 600;
         }
     }
 
     .o_cc_messages {
-        background: var(--o-webclient-background-color, #f7f7f7);
+        background: var(--o-cc-surface-sunken);
     }
 
     .o_cc_message {
@@ -41,9 +72,10 @@
             white-space: pre-wrap;
             overflow-wrap: anywhere;
             padding: .75rem 1rem;
-            border: 1px solid var(--border-color, #dee2e6);
+            border: 1px solid var(--o-cc-border);
             border-radius: .75rem;
-            background: var(--o-view-background-color, #fff);
+            background: var(--o-cc-surface);
+            color: var(--o-cc-text);
         }
 
         &.o_cc_message_user {
@@ -51,30 +83,44 @@
             max-width: 760px;
 
             .o_cc_message_content {
-                background: rgba(113, 75, 103, .08);
+                background: var(--o-cc-accent-soft);
+                border-color: rgba(var(--o-cc-accent-rgb), .28);
+                color: var(--o-cc-text-strong);
             }
         }
     }
 
     .o_cc_composer {
-        background: var(--o-view-background-color, #fff);
+        background: var(--o-cc-surface);
     }
 
     .o_cc_modules {
         width: 230px;
         min-width: 190px;
+        background: var(--o-cc-surface);
     }
 
     .o_cc_files {
         width: 310px;
         min-width: 240px;
+        background: var(--o-cc-surface);
     }
 
-    .o_cc_modules .btn.active,
-    .o_cc_files .btn.active {
-        background: rgba(113, 75, 103, .1);
-        color: inherit;
-        font-weight: 600;
+    .o_cc_modules .btn,
+    .o_cc_files .btn {
+        color: var(--o-cc-text);
+
+        &:hover {
+            background: var(--o-cc-accent-softer);
+            color: var(--o-cc-text);
+        }
+
+        &.active {
+            background: var(--o-cc-accent-soft);
+            color: var(--o-cc-text-strong);
+            font-weight: 600;
+            box-shadow: inset 3px 0 0 var(--o-cc-accent);
+        }
     }
 
     .o_cc_code_pre,
@@ -83,18 +129,57 @@
         font-size: 12.5px;
         line-height: 1.55;
         tab-size: 4;
-        background: #111827;
-        color: #e5e7eb;
+        background: var(--o-cc-code-bg);
+        color: var(--o-cc-code-fg);
+
+        ::selection,
+        &::selection {
+            background: rgba(96, 165, 250, .35);
+            color: #fff;
+        }
     }
 
     .o_cc_code_textarea {
         resize: none;
         outline: none;
+        caret-color: #60a5fa;
     }
 
     .o_cc_diff {
         max-height: 520px;
         white-space: pre;
+    }
+
+    // Unified-diff colouring. Each state also carries a left border so added and
+    // removed lines stay distinguishable without relying on hue alone.
+    .o_cc_diff_line {
+        display: block;
+        min-height: 1.55em;
+        padding-inline: .5rem;
+        border-left: 3px solid transparent;
+        margin-inline: -.5rem; // bleed into the pre's padding so rows read as bands
+    }
+
+    .o_cc_diff_add {
+        background: rgba(34, 197, 94, .16);
+        border-left-color: #22c55e;
+        color: #8ce8b0;
+    }
+
+    .o_cc_diff_del {
+        background: rgba(248, 113, 113, .16);
+        border-left-color: #f87171;
+        color: #ffa8a8;
+    }
+
+    .o_cc_diff_hunk {
+        background: rgba(96, 165, 250, .14);
+        border-left-color: #60a5fa;
+        color: #a8c9ff;
+    }
+
+    .o_cc_diff_meta {
+        color: var(--o-cc-code-muted);
     }
 
     @media (max-width: 992px) {

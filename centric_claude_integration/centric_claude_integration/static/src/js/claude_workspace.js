@@ -4,6 +4,10 @@ import { Component, onWillStart, onWillUnmount, useEffect, useRef, useState } fr
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 
+// Header lines of a unified diff, checked before the +/- prefixes so that the
+// "---" and "+++" file headers are not mistaken for removed and added lines.
+const DIFF_META_RE = /^(diff |index |--- |\+\+\+ |new file |deleted file |similarity |rename |old mode |new mode |Binary files )/;
+
 
 export class ClaudeDeveloperWorkspace extends Component {
     static template = "centric_claude_integration.ClaudeDeveloperWorkspace";
@@ -392,6 +396,26 @@ export class ClaudeDeveloperWorkspace extends Component {
 
     get stagedChanges() {
         return this.state.changes.filter((change) => change.status === "staged");
+    }
+
+    /**
+     * Split a unified diff into classified lines so the template can colour
+     * additions, removals and hunk headers instead of rendering flat text.
+     */
+    diffLines(diffText) {
+        return String(diffText || "").split("\n").map((text, index) => {
+            let kind = "context";
+            if (text.startsWith("@@")) {
+                kind = "hunk";
+            } else if (DIFF_META_RE.test(text)) {
+                kind = "meta";
+            } else if (text.startsWith("+")) {
+                kind = "add";
+            } else if (text.startsWith("-")) {
+                kind = "del";
+            }
+            return { key: index, kind, text };
+        });
     }
 }
 

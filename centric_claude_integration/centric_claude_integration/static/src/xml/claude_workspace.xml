@@ -233,7 +233,7 @@
                                             class="btn btn-sm btn-outline-danger"
                                             t-on-click="() => this.discardChange(change.id)">Discard</button>
                                 </div>
-                                <pre class="o_cc_diff mb-0 p-3 overflow-auto"><t t-esc="change.diff_text"/></pre>
+                                <pre class="o_cc_diff mb-0 p-3 overflow-auto"><t t-foreach="diffLines(change.diff_text)" t-as="line" t-key="line.key"><span t-attf-class="o_cc_diff_line o_cc_diff_{{ line.kind }}" t-esc="line.text"/></t></pre>
                             </div>
                         </div>
                     </t>
