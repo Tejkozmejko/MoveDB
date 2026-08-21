@@ -73,6 +73,12 @@
                         </setting>
                     </block>
 
+                    <block title="Effort" name="centric_claude_effort">
+                        <setting string="Default Effort" help="How hard Claude works on a new conversation. Higher levels think longer and use more of your Claude subscription; each person can change it per conversation.">
+                            <field name="centric_claude_default_effort"/>
+                        </setting>
+                    </block>
+
                     <block title="Odoo Data Access" name="centric_claude_data_permissions">
                         <setting string="Allow Odoo Data Access" help="Let Claude look up real records - tickets, invoices, orders - and, at the Intermediate level and above, propose changes for the user to confirm. Set each person's level on their user under Centric Claude Data.">
                             <field name="centric_claude_data_enabled"/>

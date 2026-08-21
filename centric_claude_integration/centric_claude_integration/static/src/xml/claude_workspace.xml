@@ -19,11 +19,24 @@
                     <i class="fa fa-desktop"/>Local agent
                 </span>
                 <span class="o_cc_chip" t-if="state.access.can_read_data"
-                      t-att-title="'Claude can use Odoo records at this level'">
+                      title="Claude can look up Odoo records at this level.">
                     <i class="fa fa-database"/><t t-esc="state.access.data_level_label"/>
+                </span>
+                <span class="o_cc_chip o_cc_chip_off" t-else=""
+                      title="Claude cannot look up tickets, invoices or other records for you. An administrator sets this on your user, under Centric Claude Data.">
+                    <i class="fa fa-database"/>No database access
                 </span>
 
                 <div class="ms-auto d-flex align-items-center gap-2" t-if="state.conversation">
+                    <select class="o_cc_effort"
+                            t-ref="effortSelect"
+                            title="How hard Claude works on this conversation. Lower levels answer simple questions with less of your Claude subscription."
+                            t-att-disabled="state.busy"
+                            t-on-change="setEffort">
+                        <t t-foreach="effortChoices" t-as="choice" t-key="choice.value">
+                            <option t-att-value="choice.value" t-esc="choice.label"/>
+                        </t>
+                    </select>
                     <span t-if="!state.access.can_develop" class="o_cc_chip o_cc_chip_off">
                         <i class="fa fa-eye"/>Read only
                     </span>
@@ -47,6 +60,21 @@
             <div t-elif="!state.access.enabled" class="flex-grow-1 d-flex align-items-center justify-content-center p-4">
                 <div class="alert alert-warning mb-0">
                     Claude is not enabled. A Centric Claude Administrator must configure it in Odoo Settings.
+                </div>
+            </div>
+
+            <div t-elif="!state.access.can_chat"
+                 class="flex-grow-1 d-flex align-items-center justify-content-center p-4">
+                <div class="o_cc_welcome">
+                    <div class="o_cc_welcome_mark"><i class="fa fa-lock"/></div>
+                    <h5 class="mb-1">Your account does not have Claude access yet</h5>
+                    <p class="o_cc_hint mb-0">
+                        Ask an administrator to open your user in
+                        <strong>Settings, Users &amp; Companies, Users</strong>
+                        and set <strong>Centric Claude</strong> to at least
+                        <strong>User</strong>. To let Claude look up records for
+                        you as well, they also set <strong>Centric Claude Data</strong>.
+                    </p>
                 </div>
             </div>
 
@@ -280,7 +308,22 @@
 
                                 <div t-if="state.busy" class="o_cc_message mb-3">
                                     <div class="o_cc_message_role">Claude</div>
-                                    <div class="o_cc_hint d-flex align-items-center gap-2">
+
+                                    <div t-if="agentOffline" class="o_cc_offline">
+                                        <div class="fw-semibold mb-1">
+                                            <i class="fa fa-plug me-2"/>No local agent is connected
+                                        </div>
+                                        <div class="o_cc_hint mb-2">
+                                            Your question is queued and will be answered as soon as
+                                            the bridge is running on your machine. Start it, or set
+                                            it to start automatically when you log in:
+                                        </div>
+                                        <pre class="o_cc_offline_cmd">python claude_bridge.py --install</pre>
+                                        <button class="btn btn-sm btn-outline-light"
+                                                t-on-click="cancelTurn">Cancel the question</button>
+                                    </div>
+
+                                    <div t-else="" class="o_cc_hint d-flex align-items-center gap-2">
                                         <i class="fa fa-spinner fa-spin"/>
                                         <span t-if="agentStatusText" t-esc="agentStatusText"/>
                                         <span t-else="">Working with the approved tools...</span>

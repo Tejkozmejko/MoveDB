@@ -67,22 +67,27 @@ class CentricClaudeAgentController(http.Controller):
         "/centric_claude/agent/claim",
         type="jsonrpc", auth="public", methods=["POST"], csrf=False,
     )
-    def claim(self, agent_name=None, **kwargs):
-        """Hand the oldest pending turn to the calling bridge."""
+    def claim(self, agent_name=None, serve=None, **kwargs):
+        """Hand the oldest pending turn to the calling bridge.
+
+        `serve` optionally names the Odoo logins this bridge answers for, so
+        several people can each run one without taking each other's turns.
+        """
         user, reason = self._agent_check()
         if not user:
             return self._denied(reason)
         env = request.env(user=user.id)
         Turn = env["centric.claude.turn"].sudo()
+        # Every poll is proof a bridge is alive, which is what lets the chat say
+        # "nothing is listening" instead of waiting forever.
+        Turn._record_heartbeat(agent_name)
         Turn._reclaim_stale()
-        turn = Turn.search([("state", "=", "pending")], order="id asc", limit=1)
+        logins = [
+            login.strip() for login in (serve or "").split(",") if login.strip()
+        ]
+        turn = Turn._claim_next(agent_name=agent_name, logins=logins)
         if not turn:
             return {"turn": None}
-        turn.write({
-            "state": "running",
-            "agent_name": (agent_name or "bridge")[:120],
-            "claimed_at": fields.Datetime.now(),
-        })
         return {"turn": turn._payload_for_agent()}
 
     @http.route(
@@ -321,6 +326,9 @@ class CentricClaudeAgentController(http.Controller):
             warnings.append(
                 "No GitHub token is set, so committing reviewed changes will fail."
             )
+        env["centric.claude.turn"].sudo()._record_heartbeat(
+            kwargs.get("agent_name")
+        )
         return {
             "ok": True,
             "user": user.name,

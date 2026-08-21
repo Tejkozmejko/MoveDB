@@ -1,6 +1,6 @@
 {
     "name": "Centric Claude Integration",
-    "version": "19.0.1.2.3",
+    "version": "19.0.1.7.0",
     "category": "Technical",
     "author": "Centric",
     "website": "https://www.centricmt.com",
@@ -19,6 +19,8 @@ Adds a controlled Claude developer workspace inside Odoo.
   Developer Mode toggle before code can be changed.
 * Commit reviewed changes to a dedicated GitHub review branch.
 * Optionally create a pull request after committing.
+* Choose how hard Claude works per conversation - low to maximum effort -
+  so a quick lookup does not cost the same as a deep code review.
 * Keep an audit trail of repository reads, staged changes, commits and PRs.
 * Look up real Odoo records - tickets, invoices, orders - always with the
   asking user's own permissions, never with elevated rights.

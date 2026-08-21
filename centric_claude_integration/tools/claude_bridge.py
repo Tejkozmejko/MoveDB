@@ -35,6 +35,14 @@ Setup
    machine, which is the whole reason this design needs no inbound port. What
    --install buys is that it is already running by the time you ask.
 
+5. To answer several people at once, give it workers:
+
+     python claude_bridge.py --workers 3 --save
+
+   Each worker gets its own git worktree, so parallel turns never share a
+   working tree. One worker (the default) uses your clone directly, exactly as
+   before.
+
 Safety
 ------
 * Only files under an approved module directory are sent back to Odoo.
@@ -52,6 +60,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import sys
 import time
 import urllib.error
@@ -67,6 +76,10 @@ MAX_FILE_BYTES = 512000
 HOME_DIR = os.path.join(os.path.expanduser("~"), ".centric_claude")
 CONFIG_PATH = os.path.join(HOME_DIR, "bridge.json")
 LOCK_PATH = os.path.join(HOME_DIR, "bridge.lock")
+# Overridable so the worker checkouts can live on a faster disk - and so
+# tests never create them in a real home directory.
+WORKTREE_DIR = (os.environ.get("CENTRIC_CLAUDE_WORKTREES")
+                or os.path.join(HOME_DIR, "worktrees"))
 LOG_PATH = os.path.join(HOME_DIR, "bridge.log")
 TASK_NAME = "Centric Claude Bridge"
 # The per-user Startup folder needs no elevation, unlike a scheduled task.
@@ -79,6 +92,11 @@ LOCK_BYTE_OFFSET = 1024
 # hammering Odoo every few seconds all day.
 IDLE_BACKOFF_AFTER = 60          # seconds of empty queue before slowing down
 IDLE_POLL_SECONDS = 15
+
+# More workers answer more questions at once, at the cost of running that many
+# Claude sessions against the same subscription. Past a handful the machine,
+# not the queue, becomes the bottleneck.
+MAX_WORKERS = 8
 
 SYSTEM_PROMPT = """\
 You are the Claude developer assistant for Centric, invoked from an Odoo workspace.
@@ -193,6 +211,15 @@ def mcp_config_for(turn, config, directory):
     return path, tuple(tools), environment
 
 
+_print_lock = threading.Lock()
+
+
+def say(message, error=False):
+    """One line at a time, so parallel workers do not interleave mid-sentence."""
+    with _print_lock:
+        print(message, file=sys.stderr if error else sys.stdout, flush=True)
+
+
 class BridgeError(RuntimeError):
     pass
 
@@ -208,6 +235,23 @@ def read_settings(path=None):
             return json.load(handle)
     except (OSError, ValueError) as exc:
         raise BridgeError("Could not read %s: %s" % (path, exc)) from exc
+
+
+def check_repo(path):
+    """Reject a repository path that is not a git checkout.
+
+    Worth doing before *saving*, not just before running: a wrong path written
+    to the settings file is silent and sticky - every later run inherits it and
+    reports the same confusing "not a git checkout" from a directory the user
+    never chose.
+    """
+    resolved = os.path.abspath(path or ".")
+    if not os.path.isdir(os.path.join(resolved, ".git")):
+        raise BridgeError(
+            "%s is not a git checkout, so it will not be saved as the "
+            "repository. Pass --repo pointing at your clone." % resolved
+        )
+    return resolved
 
 
 def write_settings(values, path=None):
@@ -233,6 +277,18 @@ def write_settings(values, path=None):
 
 
 # --------------------------------------------------------- single instance ---
+def lock_path_for(config_path):
+    """The lock that belongs to a given settings file.
+
+    Tying the two together means --config isolates everything: a second bridge
+    pointed at different settings is a deliberate act, not an accident, while
+    two started the ordinary way still refuse to double up.
+    """
+    if not config_path or os.path.abspath(config_path) == os.path.abspath(CONFIG_PATH):
+        return LOCK_PATH
+    return os.path.join(os.path.dirname(os.path.abspath(config_path)), "bridge.lock")
+
+
 def acquire_lock(path=None):
     """Refuse to start when another bridge is already running.
 
@@ -310,18 +366,22 @@ def startup_script(config_path):
     )
 
 
-def install_autostart(config_path=None, run=True):
-    """Start the bridge at login. Returns (path, command) it will run."""
+def install_autostart(config_path=None, run=True, path=None):
+    """Start the bridge at login. Returns (path, command) it will run.
+
+    `path` exists so tests can point at a temporary directory: writing to and
+    deleting from the real Startup folder would remove a user's installation.
+    """
     config_path = config_path or CONFIG_PATH
     command = autostart_command(config_path)
     quoted = " ".join('"%s"' % part if " " in part else part for part in command)
-    if os.name != "nt":
+    if os.name != "nt" and path is None:
         raise BridgeError(
             "Automatic startup is only wired up for Windows. On macOS or Linux, "
             "run this from your login items or a systemd user unit:" +
             chr(10) + chr(10) + "    " + quoted
         )
-    path = startup_path()
+    path = path or startup_path()
     if not run:
         return path, quoted
     try:
@@ -333,11 +393,11 @@ def install_autostart(config_path=None, run=True):
     return path, quoted
 
 
-def uninstall_autostart(run=True):
+def uninstall_autostart(run=True, path=None):
     """Stop starting at login. Quiet when nothing was installed."""
-    if os.name != "nt":
+    if os.name != "nt" and path is None:
         raise BridgeError("Automatic startup is only wired up for Windows.")
-    path = startup_path()
+    path = path or startup_path()
     if not run:
         return path
     removed = False
@@ -348,9 +408,10 @@ def uninstall_autostart(run=True):
         pass
     except OSError as exc:
         raise BridgeError("Could not remove %s: %s" % (path, exc)) from exc
-    # Earlier versions registered a scheduled task; clear it if it is still there.
-    subprocess.run(["schtasks", "/Delete", "/TN", TASK_NAME, "/F"],
-                   capture_output=True, text=True)
+    if os.name == "nt":
+        # Earlier versions registered a scheduled task; clear any leftover.
+        subprocess.run(["schtasks", "/Delete", "/TN", TASK_NAME, "/F"],
+                       capture_output=True, text=True)
     return path if removed else ""
 
 
@@ -452,6 +513,42 @@ def git(repo, *args):
     if done.returncode != 0:
         raise BridgeError("git %s failed: %s" % (" ".join(args), done.stderr.strip()))
     return done.stdout
+
+
+def worktree_for(repo, index):
+    """A private checkout for one worker, created once and reused.
+
+    Workers cannot share a working tree: two turns running at once would see
+    each other's edits, and the revert after one would wipe the other's. A
+    worktree is a real checkout backed by the same object store, so this costs
+    a little disk and no clone time.
+
+    Detached on purpose - git refuses to check out one branch in two worktrees
+    at the same time, and every worker wants the same commit.
+    """
+    path = os.path.join(WORKTREE_DIR, "w%d" % index)
+    marker = os.path.join(path, ".git")          # a file in a worktree, not a dir
+    if os.path.exists(marker):
+        return path
+    os.makedirs(WORKTREE_DIR, exist_ok=True)
+    # Drop registrations whose directory was deleted by hand, or `add` refuses.
+    git(repo, "worktree", "prune")
+    head = git(repo, "rev-parse", "HEAD").strip()
+    git(repo, "worktree", "add", "--detach", path, head)
+    return path
+
+
+def sync_worktree(repo, path):
+    """Point a worker's checkout at whatever the main clone is on, cleanly.
+
+    Also what makes each turn independent: the tree is reset before the turn
+    rather than reverted after, so a crashed turn cannot leak into the next.
+    """
+    head = git(repo, "rev-parse", "HEAD").strip()
+    git(path, "checkout", "--detach", head)
+    git(path, "reset", "--hard", head)
+    git(path, "clean", "-fd")
+    return path
 
 
 def require_clean_tree(repo):
@@ -646,13 +743,20 @@ def _start_logging(path):
 
 
 # ------------------------------------------------------------------- loop ---
-def handle_turn(config, turn):
-    repo, prefix = config.repo, (turn.get("allowed_module_prefix") or "centric_")
-    print("  turn %s [%s]: %s" % (
-        turn["turn_id"], effort_for(turn) or "default",
+def handle_turn(config, turn, repo=None, label=""):
+    repo = repo or config.repo
+    prefix = turn.get("allowed_module_prefix") or "centric_"
+    say("%s  turn %s [%s]: %s" % (
+        label, turn["turn_id"], effort_for(turn) or "default",
         turn["prompt"][:70].replace(chr(10), " "),
     ))
-    require_clean_tree(repo)
+    if repo == config.repo:
+        # The user's own clone: refuse to work in it while they have edits in
+        # flight, so Claude's changes stay distinguishable from theirs.
+        require_clean_tree(repo)
+    else:
+        sync_worktree(config.repo, repo)
+
     text = run_claude(repo, turn, config.timeout, config.claude_bin,
                       config.claude_args, config=config)
 
@@ -662,15 +766,56 @@ def handle_turn(config, turn):
         if changes or skipped:
             revert(repo)
     for path, reason in skipped:
-        print("    skipped %s (%s)" % (path, reason))
-        text += "\n\nNot sent to Odoo - %s: %s" % (path, reason)
+        say("%s    skipped %s (%s)" % (label, path, reason))
+        text += chr(10) + chr(10) + "Not sent to Odoo - %s: %s" % (path, reason)
 
     result = call_odoo(config.url, config.token, "/centric_claude/agent/complete", {
         "turn_id": turn["turn_id"],
         "assistant_text": text,
         "changes": changes,
     })
-    print("    done, staged %s file(s)" % len(result.get("staged") or []))
+    say("%s    done, staged %s file(s)" % (label, len(result.get("staged") or [])))
+
+
+def worker_loop(config, repo, label, stop):
+    """One worker: claim a turn, answer it, repeat until told to stop."""
+    idle_since = time.monotonic()
+    while not stop.is_set():
+        try:
+            claimed = call_odoo(config.url, config.token,
+                                "/centric_claude/agent/claim",
+                                {"agent_name": config.name,
+                                 "serve": config.serve or ""})
+        except BridgeError as exc:
+            say("%s  %s" % (label, exc), error=True)
+            stop.wait(max(config.poll, 5))
+            continue
+
+        turn = claimed.get("turn")
+        if not turn:
+            if config.once:
+                say("Queue empty.")
+                return
+            # Ease off while nothing is queued, so a bridge left running all day
+            # is not asking every few seconds for hours.
+            idle_for = time.monotonic() - idle_since
+            stop.wait(config.poll if idle_for < IDLE_BACKOFF_AFTER
+                      else max(config.poll, IDLE_POLL_SECONDS))
+            continue
+        idle_since = time.monotonic()
+
+        try:
+            handle_turn(config, turn, repo=repo, label=label)
+        except BridgeError as exc:
+            say("%s    failed: %s" % (label, exc), error=True)
+            try:
+                call_odoo(config.url, config.token, "/centric_claude/agent/fail",
+                          {"turn_id": turn["turn_id"], "error": str(exc)})
+            except BridgeError as report_failure:
+                say("%s    could not report the failure: %s"
+                    % (label, report_failure), error=True)
+        if config.once:
+            return
 
 
 def main(argv=None):
@@ -679,7 +824,9 @@ def main(argv=None):
                         help="Odoo base URL, e.g. https://centric.odoo.com")
     parser.add_argument("--token", default=os.environ.get("CENTRIC_CLAUDE_TOKEN"),
                         help="Agent token generated in Odoo settings")
-    parser.add_argument("--repo", default=os.environ.get("CENTRIC_CLAUDE_REPO", "."),
+    # No "." default here: a truthy default would outrank the saved setting,
+    # and the bridge would silently use whatever directory you happen to be in.
+    parser.add_argument("--repo", default=os.environ.get("CENTRIC_CLAUDE_REPO"),
                         help="Path to your local clone of the addons repository")
     parser.add_argument("--poll", type=float, default=DEFAULT_POLL_SECONDS,
                         help="Seconds between polls when the queue is empty")
@@ -688,10 +835,16 @@ def main(argv=None):
     parser.add_argument("--claude-bin", default=os.environ.get("CLAUDE_BIN", "claude"),
                         help="Path to the Claude Code CLI. Found automatically if "
                              "it is on PATH or installed as a VS Code extension.")
-    parser.add_argument("--name", default=os.environ.get("COMPUTERNAME")
-                        or os.environ.get("HOSTNAME") or "bridge")
+    parser.add_argument("--name", default=None,
+                        help="Name this bridge reports to Odoo. Defaults to the "
+                             "computer name.")
     parser.add_argument("--once", action="store_true",
                         help="Handle at most one turn, then exit")
+    parser.add_argument("--workers", type=int, default=None,
+                        help="How many questions to answer at once (1 to %d). "
+                             "Each worker gets its own git worktree, so they do "
+                             "not tread on each other. Default 1."
+                             % MAX_WORKERS)
     parser.add_argument("--serve", default=None,
                         help="Comma-separated Odoo logins this bridge answers "
                              "for. Leave unset to answer everyone. Set it when "
@@ -723,9 +876,18 @@ def main(argv=None):
         stored = read_settings(config.config)
     except BridgeError as exc:
         parser.error(str(exc))
-    for key in ("url", "token", "repo", "name", "serve"):
+    for key in ("url", "token", "repo", "name", "serve", "workers"):
         if not getattr(config, key, None) and stored.get(key):
             setattr(config, key, stored[key])
+    # Built-in fallbacks last, so they never shadow a saved setting.
+    config.repo = config.repo or "."
+    # One worker unless asked otherwise, and never more than the cap: each one
+    # is a Claude session against the same subscription.
+    config.workers = max(1, min(int(config.workers or 1), MAX_WORKERS))
+    if config.once:
+        config.workers = 1
+    config.name = (config.name or os.environ.get("COMPUTERNAME")
+                   or os.environ.get("HOSTNAME") or "bridge")
 
     if config.uninstall:
         try:
@@ -746,10 +908,15 @@ def main(argv=None):
         )
 
     if config.save:
+        try:
+            repo = check_repo(config.repo)
+        except BridgeError as exc:
+            print(exc, file=sys.stderr)
+            return 2
         path = write_settings({
             "url": config.url, "token": config.token,
-            "repo": os.path.abspath(config.repo), "name": config.name,
-            "serve": config.serve,
+            "repo": repo, "name": config.name,
+            "serve": config.serve, "workers": config.workers,
         }, config.config)
         print("Saved to %s" % path)
         print("From now on you can just run:  python claude_bridge.py")
@@ -759,8 +926,8 @@ def main(argv=None):
         try:
             write_settings({
                 "url": config.url, "token": config.token,
-                "repo": os.path.abspath(config.repo), "name": config.name,
-                "serve": config.serve,
+                "repo": check_repo(config.repo), "name": config.name,
+                "serve": config.serve, "workers": config.workers,
             }, config.config)
             path, quoted = install_autostart(config.config)
         except BridgeError as exc:
@@ -778,14 +945,17 @@ def main(argv=None):
         _start_logging(log_path)
     config.repo = os.path.abspath(config.repo)
     if not os.path.isdir(os.path.join(config.repo, ".git")):
-        parser.error("%s is not a git checkout." % config.repo)
+        print("%s is not a git checkout. Point --repo at your clone, or save it "
+              "once with --repo <path> --save." % config.repo, file=sys.stderr)
+        return 2
 
     # One bridge at a time: a second would claim turns the first should answer.
     if not config.once:
         try:
-            acquire_lock()
+            acquire_lock(lock_path_for(config.config))
         except BridgeError as exc:
-            parser.error(str(exc))
+            print(exc, file=sys.stderr)
+            return 1
 
     try:
         config.claude_bin = find_claude(config.claude_bin)
@@ -808,43 +978,44 @@ def main(argv=None):
               "questions.")
     print("Watching %s. Ctrl-C to stop." % config.repo)
 
-    idle_since = time.monotonic()
-    while True:
+    # One worker keeps the user's own clone as the working directory, which is
+    # what a single-worker bridge has always done. Beyond that every worker gets
+    # its own worktree, including the first, so no two share a working tree.
+    checkouts = [config.repo]
+    if config.workers > 1:
         try:
-            claimed = call_odoo(config.url, config.token,
-                                "/centric_claude/agent/claim",
-                                {"agent_name": config.name,
-                                 "serve": config.serve or ""})
+            checkouts = [worktree_for(config.repo, index)
+                         for index in range(1, config.workers + 1)]
         except BridgeError as exc:
-            print("  %s" % exc, file=sys.stderr)
-            time.sleep(max(config.poll, 5))
-            continue
+            print("Could not prepare the worker checkouts: %s" % exc,
+                  file=sys.stderr)
+            return 3
+        print("Answering up to %s questions at once, in:" % config.workers)
+        for path in checkouts:
+            print("  %s" % path)
 
-        turn = claimed.get("turn")
-        if not turn:
-            if config.once:
-                print("Queue empty.")
-                return 0
-            # Ease off while nothing is queued, so a bridge left running all day
-            # is not asking every few seconds for hours.
-            idle_for = time.monotonic() - idle_since
-            time.sleep(config.poll if idle_for < IDLE_BACKOFF_AFTER
-                       else max(config.poll, IDLE_POLL_SECONDS))
-            continue
-        idle_since = time.monotonic()
+    stop = threading.Event()
+    threads = []
+    for index, checkout in enumerate(checkouts, start=1):
+        label = "[w%d]" % index if config.workers > 1 else ""
+        thread = threading.Thread(
+            target=worker_loop, args=(config, checkout, label, stop),
+            name="claude-worker-%d" % index, daemon=True,
+        )
+        thread.start()
+        threads.append(thread)
 
-        try:
-            handle_turn(config, turn)
-        except BridgeError as exc:
-            print("    failed: %s" % exc, file=sys.stderr)
-            try:
-                call_odoo(config.url, config.token, "/centric_claude/agent/fail",
-                          {"turn_id": turn["turn_id"], "error": str(exc)})
-            except BridgeError as report_failure:
-                print("    could not report the failure: %s" % report_failure,
-                      file=sys.stderr)
-        if config.once:
-            return 0
+    try:
+        while any(thread.is_alive() for thread in threads):
+            for thread in threads:
+                thread.join(timeout=0.2)
+    except KeyboardInterrupt:
+        stop.set()
+        print(chr(10) + "Stopping, letting the running turns finish...")
+        for thread in threads:
+            thread.join(timeout=config.timeout)
+        raise
+    return 0
 
 
 if __name__ == "__main__":

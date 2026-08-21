@@ -21,6 +21,23 @@ class CentricClaudeConversation(models.Model):
         index=True,
     )
     developer_mode = fields.Boolean(default=False)
+    # Both backends take the same five levels: the Messages API as
+    # output_config.effort, and the Claude Code CLI as --effort. Keeping one
+    # field means the choice means the same thing whichever answers.
+    effort = fields.Selection(
+        [
+            ("low", "Low - quick lookups"),
+            ("medium", "Medium - routine work"),
+            ("high", "High - balanced (default)"),
+            ("xhigh", "Very high - deep code work"),
+            ("max", "Maximum - correctness over cost"),
+        ],
+        default=lambda self: self._default_effort(),
+        required=True,
+        help="How much thinking and how many tokens Claude spends on this "
+             "conversation. Lower levels answer simple questions with less of "
+             "your subscription usage.",
+    )
     base_branch = fields.Char(required=True, default=lambda self: self._default_branch())
     review_branch = fields.Char(readonly=True, copy=False)
     commit_sha = fields.Char(readonly=True, copy=False)
@@ -45,6 +62,15 @@ class CentricClaudeConversation(models.Model):
         return self.env["ir.config_parameter"].sudo().get_param(
             "centric_claude.default_branch", "testing"
         ) or "testing"
+
+    EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+    @api.model
+    def _default_effort(self):
+        value = self.env["ir.config_parameter"].sudo().get_param(
+            "centric_claude.default_effort", "high"
+        )
+        return value if value in self.EFFORT_LEVELS else "high"
 
     @api.model
     def _param(self, key, default=False):
@@ -90,6 +116,7 @@ class CentricClaudeConversation(models.Model):
             "repository": f"{owner}/{repo}" if owner and repo else "",
             "default_branch": self._default_branch(),
             "allowed_module_prefix": self._param("centric_claude.allowed_module_prefix", "centric_"),
+            "effort_choices": self._effort_choices(),
             "user_name": user.name,
         }
 
@@ -138,6 +165,18 @@ class CentricClaudeConversation(models.Model):
         return self._conversation_payload(conv)
 
     @api.model
+    def set_workspace_effort(self, conversation_id, effort):
+        """Change how hard Claude works on this conversation."""
+        conv = self.browse(int(conversation_id)).exists()
+        if not conv:
+            raise UserError(_("Claude conversation not found."))
+        conv._check_owner()
+        if effort not in self.EFFORT_LEVELS:
+            raise UserError(_("'%s' is not an effort level.") % effort)
+        conv.effort = effort
+        return self._conversation_payload(conv)
+
+    @api.model
     def send_workspace_message(self, conversation_id, text):
         conv = self.browse(int(conversation_id)).exists()
         if not conv:
@@ -168,6 +207,7 @@ class CentricClaudeConversation(models.Model):
                 "user_id": self.env.user.id,
                 "prompt": text,
                 "developer_mode": conv.developer_mode,
+                "effort": conv.effort,
                 "base_branch": conv.base_branch,
                 "review_branch": conv.review_branch or False,
             })
@@ -221,6 +261,7 @@ class CentricClaudeConversation(models.Model):
                 messages,
                 system=self._system_prompt(access),
                 tools=tools,
+                effort=self.effort,
             )
             content_blocks = response.get("content", [])
             stop_reason = response.get("stop_reason")
@@ -1300,8 +1341,18 @@ Rules:
         })
 
     @api.model
+    def _effort_choices(self):
+        """The levels and their labels, for the picker."""
+        field = self._fields["effort"]
+        selection = field.selection
+        if callable(selection):
+            selection = selection(self)
+        return [{"value": value, "label": label} for value, label in selection]
+
+    @api.model
     def _conversation_summary(self, conv):
         return {
+            "effort": conv.effort,
             "id": conv.id,
             "name": conv.name,
             "developer_mode": conv.developer_mode,
@@ -1355,7 +1406,12 @@ Rules:
         backend = self._param("centric_claude.backend", "agent")
         if backend != "agent":
             return {"backend": backend, "waiting": False}
-        turn = self.env["centric.claude.turn"].sudo().search(
+        Turn = self.env["centric.claude.turn"]
+        # Whether *a* bridge is alive, separately from what this turn is doing:
+        # a question queued with nothing listening would otherwise spin forever
+        # with no hint that the laptop side is simply not running.
+        online, last_seen, connected_agent = Turn._agent_online()
+        turn = Turn.sudo().search(
             [("conversation_id", "=", conv.id)], order="id desc", limit=1
         )
         return {
@@ -1363,6 +1419,12 @@ Rules:
             "waiting": bool(turn) and turn.state in ("pending", "running"),
             "state": turn.state if turn else "",
             "agent_name": (turn.agent_name or "") if turn else "",
+            "online": online,
+            "last_seen": last_seen,
+            "connected_agent": connected_agent,
+            # Questions are answered one at a time, so a queue behind you is the
+            # difference between "slow" and "broken".
+            "queue_position": Turn._queue_position(turn),
         }
 
     @api.model

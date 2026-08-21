@@ -85,6 +85,20 @@ class ResConfigSettings(models.TransientModel):
         default=True,
         config_parameter="centric_claude.code_read_enabled",
     )
+    centric_claude_default_effort = fields.Selection(
+        [
+            ("low", "Low - quick lookups"),
+            ("medium", "Medium - routine work"),
+            ("high", "High - balanced (default)"),
+            ("xhigh", "Very high - deep code work"),
+            ("max", "Maximum - correctness over cost"),
+        ],
+        string="Default Effort",
+        default="high",
+        config_parameter="centric_claude.default_effort",
+        help="Where new conversations start. Each person can change it per "
+             "conversation. Lower levels use less of the Claude subscription.",
+    )
     centric_claude_data_enabled = fields.Boolean(
         string="Allow Odoo Data Access",
         default=True,
