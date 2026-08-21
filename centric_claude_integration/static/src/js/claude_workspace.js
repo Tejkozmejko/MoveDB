@@ -119,6 +119,22 @@ export class ClaudeDeveloperWorkspace extends Component {
             ]
         );
 
+        // A <select> keeps its own value property once touched, and a rendered
+        // `selected` attribute does not override it. Same trap as the checkbox
+        // above: push the state onto the property.
+        this.effortSelect = useRef("effortSelect");
+        useEffect(
+            (el, effort) => {
+                if (el && effort) {
+                    el.value = effort;
+                }
+            },
+            () => [
+                this.effortSelect.el,
+                this.state.conversation && this.state.conversation.effort,
+            ]
+        );
+
         // Focus the inline name box the moment it appears, as an editor would.
         useEffect(
             (el) => {
@@ -296,9 +312,28 @@ export class ClaudeDeveloperWorkspace extends Component {
             return "";
         }
         if (agent.state === "running") {
-            return `Running on ${agent.agent_name || "your machine"}...`;
+            return `Running on ${agent.connected_agent || agent.agent_name || "your machine"}...`;
         }
-        return "Waiting for the local Claude agent to pick this up...";
+        if (!agent.online) {
+            // Distinguish "thinking" from "nothing is listening", which
+            // otherwise look identical and wait forever.
+            return "No local agent is connected.";
+        }
+        const ahead = agent.queue_position || 0;
+        if (ahead > 0) {
+            // Questions are answered one at a time, so a queue is the whole
+            // explanation for a wait that would otherwise look like a hang.
+            return ahead === 1
+                ? "1 question ahead of yours..."
+                : `${ahead} questions ahead of yours...`;
+        }
+        return `Queued for ${agent.connected_agent || "your machine"}...`;
+    }
+
+    /** True when a turn is queued but no bridge has polled recently. */
+    get agentOffline() {
+        const agent = this.state.agent || {};
+        return agent.backend === "agent" && Boolean(agent.waiting) && !agent.online;
     }
 
     // -------------------------------------------------------- conversations
@@ -323,6 +358,28 @@ export class ClaudeDeveloperWorkspace extends Component {
             this.applyConversationPayload(payload);
             this.resetCodeBrowser();
         } catch (error) {
+            this.notifyError(error);
+        }
+    }
+
+    get effortChoices() {
+        return this.state.access.effort_choices || [];
+    }
+
+    async setEffort(ev) {
+        if (!this.state.conversation || this.state.busy) {
+            return;
+        }
+        const previous = this.state.conversation.effort;
+        const chosen = ev.target.value;
+        try {
+            const payload = await this.call("set_workspace_effort", [
+                this.state.conversation.id,
+                chosen,
+            ]);
+            this.applyConversationPayload(payload);
+        } catch (error) {
+            ev.target.value = previous;
             this.notifyError(error);
         }
     }

@@ -17,12 +17,22 @@ Setup
    where the marketplace install keeps it. Override with --claude-bin if needed.
    The bridge does NOT pass --bare, so Claude Code uses your subscription login;
    no Anthropic API key is involved.
-3. Run it from anywhere:
+3. Save your settings once, so no credential ever sits on a command line:
 
-     export CENTRIC_CLAUDE_URL=https://your-odoo.odoo.com
-     export CENTRIC_CLAUDE_TOKEN=<the generated token>
-     export CENTRIC_CLAUDE_REPO=/path/to/your/local/clone
-     python claude_bridge.py
+     python claude_bridge.py --url URL --token TOKEN --repo PATH --save
+
+   After that, `python claude_bridge.py` is enough.
+
+4. To have it always there, start it at login and forget about it:
+
+     python claude_bridge.py --install
+
+   That registers a login task running without a console window, logging to
+   ~/.centric_claude/bridge.log. Undo with --uninstall.
+
+   Nothing can start the bridge *on demand*: Odoo calls nothing on your
+   machine, which is the whole reason this design needs no inbound port. What
+   --install buys is that it is already running by the time you ask.
 
 Safety
 ------
@@ -30,8 +40,11 @@ Safety
 * Nothing is committed or pushed. Odoo stages the changes; a human clicks Commit.
 * The bridge refuses to run if the repository has uncommitted changes, so it can
   tell which edits belong to Claude.
+* Only one bridge runs at a time. Two would both claim turns, and a question
+  would be answered twice - possibly from different checkouts.
 """
 import argparse
+import atexit
 import json
 import os
 import re
@@ -46,6 +59,23 @@ import urllib.request
 DEFAULT_POLL_SECONDS = 3
 DEFAULT_TIMEOUT_SECONDS = 900
 MAX_FILE_BYTES = 512000
+
+# Where an unattended bridge keeps its settings, lock and log. Credentials live
+# in a file rather than on the command line: a scheduled task shows its
+# arguments in the task list, and any local process can read another's argv.
+HOME_DIR = os.path.join(os.path.expanduser("~"), ".centric_claude")
+CONFIG_PATH = os.path.join(HOME_DIR, "bridge.json")
+LOCK_PATH = os.path.join(HOME_DIR, "bridge.lock")
+LOG_PATH = os.path.join(HOME_DIR, "bridge.log")
+TASK_NAME = "Centric Claude Bridge"
+# The lock is taken on a byte past the PID text, so the PID stays readable.
+LOCK_BYTE_OFFSET = 1024
+
+# An idle bridge should be quiet. Polling stretches out while nothing is queued
+# and snaps back the moment work appears, so an always-on process is not
+# hammering Odoo every few seconds all day.
+IDLE_BACKOFF_AFTER = 60          # seconds of empty queue before slowing down
+IDLE_POLL_SECONDS = 15
 
 SYSTEM_PROMPT = """\
 You are the Claude developer assistant for Centric, invoked from an Odoo workspace.
@@ -95,6 +125,17 @@ def data_prompt(turn):
     if not turn.get("can_read_data"):
         return DATA_PROMPT_NONE
     return DATA_PROMPT_WRITE if turn.get("can_propose_data") else DATA_PROMPT_READ
+
+
+# Claude Code takes the same five levels as the Messages API, so the choice made
+# in Odoo means the same thing whichever backend answers.
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+
+def effort_for(turn):
+    """The effort level for this turn, ignoring anything unrecognised."""
+    level = (turn.get("effort") or "").strip().lower()
+    return level if level in EFFORT_LEVELS else ""
 
 
 ODOO_READ_TOOLS = (
@@ -151,6 +192,128 @@ def mcp_config_for(turn, config, directory):
 
 class BridgeError(RuntimeError):
     pass
+
+
+# ------------------------------------------------------ stored settings ---
+def read_settings(path=None):
+    """Load saved settings, or {} when there are none."""
+    path = path or CONFIG_PATH
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError) as exc:
+        raise BridgeError("Could not read %s: %s" % (path, exc)) from exc
+
+
+def write_settings(values, path=None):
+    """Save settings with the tightest permissions the platform offers."""
+    path = path or CONFIG_PATH
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(values, handle, indent=2)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    user = os.environ.get("USERNAME")
+    if os.name == "nt" and user:
+        # chmod is close to meaningless on Windows, so drop inherited access and
+        # grant this account alone. Best effort: a failure here must not stop the
+        # bridge, but it is worth attempting for a file holding a token.
+        subprocess.run(
+            ["icacls", path, "/inheritance:r", "/grant:r", "%s:F" % user],
+            capture_output=True, text=True,
+        )
+    return path
+
+
+# --------------------------------------------------------- single instance ---
+def acquire_lock(path=None):
+    """Refuse to start when another bridge is already running.
+
+    Two bridges both claim turns, so a question would be answered twice - or
+    worse, answered by whichever checkout happened to be stale. The lock is held
+    by the OS and released when the process dies, so a crash leaves nothing to
+    clean up by hand.
+    """
+    path = path or LOCK_PATH
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    handle = open(path, "a+")
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            # Lock a byte past anything we write. Windows locks deny reads too,
+            # so locking byte 0 would stop anyone opening the file to see which
+            # process is holding it - exactly when they most want to know.
+            handle.seek(LOCK_BYTE_OFFSET)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        raise BridgeError(
+            "Another bridge is already running (lock: %s). Stop that one first; "
+            "it may have been started at login rather than by you." % path
+        )
+    handle.seek(0)
+    handle.write("%-16s" % os.getpid())
+    handle.flush()
+    atexit.register(handle.close)
+    return handle
+
+
+# ------------------------------------------------------------- autostart ---
+def autostart_command(config, pythonw=None):
+    """The command a scheduled task should run."""
+    if pythonw is None:
+        # pythonw runs without a console window; fall back to python if absent.
+        candidate = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+        pythonw = candidate if os.path.isfile(candidate) else sys.executable
+    return [pythonw, os.path.abspath(__file__), "--config", config, "--quiet"]
+
+
+def install_autostart(config_path=None, task_name=TASK_NAME, run=True):
+    """Register the bridge to start at login. Returns the command used."""
+    config_path = config_path or CONFIG_PATH
+    command = autostart_command(config_path)
+    quoted = " ".join('"%s"' % part if " " in part else part for part in command)
+    if os.name != "nt":
+        raise BridgeError(
+            "Automatic startup is only wired up for Windows. On macOS or Linux, "
+            "run this command from your login items or a systemd user unit:" +
+            chr(10) + chr(10) + "    " + quoted
+        )
+    argv = ["schtasks", "/Create", "/SC", "ONLOGON", "/TN", task_name,
+            "/TR", quoted, "/F"]
+    if not run:
+        return argv, quoted
+    done = subprocess.run(argv, capture_output=True, text=True)
+    if done.returncode != 0:
+        raise BridgeError(
+            "Could not register the startup task: %s"
+            % (done.stderr or done.stdout or "").strip()
+        )
+    return argv, quoted
+
+
+def uninstall_autostart(task_name=TASK_NAME, run=True):
+    argv = ["schtasks", "/Delete", "/TN", task_name, "/F"]
+    if os.name != "nt":
+        raise BridgeError("Automatic startup is only wired up for Windows.")
+    if not run:
+        return argv
+    done = subprocess.run(argv, capture_output=True, text=True)
+    if done.returncode != 0:
+        raise BridgeError(
+            "Could not remove the startup task: %s"
+            % (done.stderr or done.stdout or "").strip()
+        )
+    return argv
 
 
 # --------------------------------------------------------- finding claude ---
@@ -367,6 +530,9 @@ def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None):
         "--output-format", "json",
         "--append-system-prompt", system,
     ]
+    level = effort_for(turn)
+    if level:
+        command += ["--effort", level]
     # Without Developer Mode, deny the editing tools outright rather than relying
     # on the prompt alone.
     allowed = ["Read", "Grep", "Glob"]
@@ -410,10 +576,44 @@ def _invoke_claude(command, repo, timeout, claude_bin, environment):
     return (payload.get("result") or "").strip()
 
 
+def _start_logging(path):
+    """Send stdout and stderr to a log file as well, for unattended runs."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    stream = open(path, "a", encoding="utf-8", buffering=1)
+
+    class _Tee:
+        def __init__(self, *targets):
+            self.targets = [t for t in targets if t is not None]
+
+        def write(self, text):
+            for target in self.targets:
+                try:
+                    target.write(text)
+                except (ValueError, OSError):
+                    pass
+            return len(text)
+
+        def flush(self):
+            for target in self.targets:
+                try:
+                    target.flush()
+                except (ValueError, OSError):
+                    pass
+
+    # Under pythonw there is no console at all, so sys.stdout may be None.
+    sys.stdout = _Tee(sys.stdout, stream)
+    sys.stderr = _Tee(sys.stderr, stream)
+    print(chr(10) + "=== bridge started %s ==="
+          % time.strftime("%Y-%m-%d %H:%M:%S"))
+
+
 # ------------------------------------------------------------------- loop ---
 def handle_turn(config, turn):
     repo, prefix = config.repo, (turn.get("allowed_module_prefix") or "centric_")
-    print("  turn %s: %s" % (turn["turn_id"], turn["prompt"][:70].replace("\n", " ")))
+    print("  turn %s [%s]: %s" % (
+        turn["turn_id"], effort_for(turn) or "default",
+        turn["prompt"][:70].replace(chr(10), " "),
+    ))
     require_clean_tree(repo)
     text = run_claude(repo, turn, config.timeout, config.claude_bin,
                       config.claude_args, config=config)
@@ -454,15 +654,98 @@ def main(argv=None):
                         or os.environ.get("HOSTNAME") or "bridge")
     parser.add_argument("--once", action="store_true",
                         help="Handle at most one turn, then exit")
+    parser.add_argument("--serve", default=None,
+                        help="Comma-separated Odoo logins this bridge answers "
+                             "for. Leave unset to answer everyone. Set it when "
+                             "more than one person runs a bridge, or they will "
+                             "take each other's questions and answer them from "
+                             "the wrong checkout.")
+    parser.add_argument("--config", default=CONFIG_PATH,
+                        help="Settings file holding url/token/repo "
+                             "(default: %s)" % CONFIG_PATH)
+    parser.add_argument("--save", action="store_true",
+                        help="Write the given --url/--token/--repo to the "
+                             "settings file and exit")
+    parser.add_argument("--install", action="store_true",
+                        help="Start the bridge automatically at login, then exit")
+    parser.add_argument("--uninstall", action="store_true",
+                        help="Stop starting the bridge at login, then exit")
+    parser.add_argument("--log-file", default=None,
+                        help="Append output here as well as to the console")
+    parser.add_argument("--quiet", action="store_true",
+                        help="Log to the default log file instead of the console. "
+                             "Used by the login task, which has no console.")
     parser.add_argument("claude_args", nargs="*",
                         help="Extra flags passed through to claude, after --")
     config = parser.parse_args(argv)
 
+    # Stored settings fill in whatever was not given, so an unattended run needs
+    # no arguments and no credentials on the command line.
+    try:
+        stored = read_settings(config.config)
+    except BridgeError as exc:
+        parser.error(str(exc))
+    for key in ("url", "token", "repo", "name", "serve"):
+        if not getattr(config, key, None) and stored.get(key):
+            setattr(config, key, stored[key])
+
+    if config.uninstall:
+        try:
+            uninstall_autostart()
+        except BridgeError as exc:
+            parser.error(str(exc))
+        print("The bridge will no longer start at login.")
+        return 0
+
     if not config.url or not config.token:
-        parser.error("Set --url/--token or CENTRIC_CLAUDE_URL/CENTRIC_CLAUDE_TOKEN.")
+        parser.error(
+            "No Odoo URL or agent token. Give them as --url/--token, or as "
+            "CENTRIC_CLAUDE_URL/CENTRIC_CLAUDE_TOKEN, or save them once so you "
+            "never have to pass them again:" + chr(10) + chr(10) +
+            "    python claude_bridge.py --url <url> --token <token> "
+            "--repo <path> --save"
+        )
+
+    if config.save:
+        path = write_settings({
+            "url": config.url, "token": config.token,
+            "repo": os.path.abspath(config.repo), "name": config.name,
+            "serve": config.serve,
+        }, config.config)
+        print("Saved to %s" % path)
+        print("From now on you can just run:  python claude_bridge.py")
+        return 0
+
+    if config.install:
+        try:
+            write_settings({
+                "url": config.url, "token": config.token,
+                "repo": os.path.abspath(config.repo), "name": config.name,
+                "serve": config.serve,
+            }, config.config)
+            _argv, quoted = install_autostart(config.config)
+        except BridgeError as exc:
+            parser.error(str(exc))
+        print("The bridge will now start automatically when you log in.")
+        print("  command: %s" % quoted)
+        print("  log:     %s" % LOG_PATH)
+        print("  undo:    python claude_bridge.py --uninstall")
+        print(chr(10) + "Starting it now so you do not have to log out...")
+        config.install = False
+
+    log_path = config.log_file or (LOG_PATH if config.quiet else None)
+    if log_path:
+        _start_logging(log_path)
     config.repo = os.path.abspath(config.repo)
     if not os.path.isdir(os.path.join(config.repo, ".git")):
         parser.error("%s is not a git checkout." % config.repo)
+
+    # One bridge at a time: a second would claim turns the first should answer.
+    if not config.once:
+        try:
+            acquire_lock()
+        except BridgeError as exc:
+            parser.error(str(exc))
 
     try:
         config.claude_bin = find_claude(config.claude_bin)
@@ -477,13 +760,21 @@ def main(argv=None):
              hello.get("branch", "?"), hello.get("pending")))
     for warning in hello.get("warnings") or []:
         print("  WARNING: %s" % warning)
+    if config.serve:
+        print("Answering only for: %s" % config.serve)
+    else:
+        print("Answering for everyone. If a colleague also runs a bridge, give "
+              "each one --serve <their-login> so they do not take each other's "
+              "questions.")
     print("Watching %s. Ctrl-C to stop." % config.repo)
 
+    idle_since = time.monotonic()
     while True:
         try:
             claimed = call_odoo(config.url, config.token,
                                 "/centric_claude/agent/claim",
-                                {"agent_name": config.name})
+                                {"agent_name": config.name,
+                                 "serve": config.serve or ""})
         except BridgeError as exc:
             print("  %s" % exc, file=sys.stderr)
             time.sleep(max(config.poll, 5))
@@ -494,8 +785,13 @@ def main(argv=None):
             if config.once:
                 print("Queue empty.")
                 return 0
-            time.sleep(config.poll)
+            # Ease off while nothing is queued, so a bridge left running all day
+            # is not asking every few seconds for hours.
+            idle_for = time.monotonic() - idle_since
+            time.sleep(config.poll if idle_for < IDLE_BACKOFF_AFTER
+                       else max(config.poll, IDLE_POLL_SECONDS))
             continue
+        idle_since = time.monotonic()
 
         try:
             handle_turn(config, turn)

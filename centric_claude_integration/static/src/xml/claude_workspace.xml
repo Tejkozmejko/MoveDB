@@ -24,6 +24,15 @@
                 </span>
 
                 <div class="ms-auto d-flex align-items-center gap-2" t-if="state.conversation">
+                    <select class="o_cc_effort"
+                            t-ref="effortSelect"
+                            title="How hard Claude works on this conversation. Lower levels answer simple questions with less of your Claude subscription."
+                            t-att-disabled="state.busy"
+                            t-on-change="setEffort">
+                        <t t-foreach="effortChoices" t-as="choice" t-key="choice.value">
+                            <option t-att-value="choice.value" t-esc="choice.label"/>
+                        </t>
+                    </select>
                     <span t-if="!state.access.can_develop" class="o_cc_chip o_cc_chip_off">
                         <i class="fa fa-eye"/>Read only
                     </span>
@@ -280,7 +289,22 @@
 
                                 <div t-if="state.busy" class="o_cc_message mb-3">
                                     <div class="o_cc_message_role">Claude</div>
-                                    <div class="o_cc_hint d-flex align-items-center gap-2">
+
+                                    <div t-if="agentOffline" class="o_cc_offline">
+                                        <div class="fw-semibold mb-1">
+                                            <i class="fa fa-plug me-2"/>No local agent is connected
+                                        </div>
+                                        <div class="o_cc_hint mb-2">
+                                            Your question is queued and will be answered as soon as
+                                            the bridge is running on your machine. Start it, or set
+                                            it to start automatically when you log in:
+                                        </div>
+                                        <pre class="o_cc_offline_cmd">python claude_bridge.py --install</pre>
+                                        <button class="btn btn-sm btn-outline-light"
+                                                t-on-click="cancelTurn">Cancel the question</button>
+                                    </div>
+
+                                    <div t-else="" class="o_cc_hint d-flex align-items-center gap-2">
                                         <i class="fa fa-spinner fa-spin"/>
                                         <span t-if="agentStatusText" t-esc="agentStatusText"/>
                                         <span t-else="">Working with the approved tools...</span>

@@ -42,6 +42,9 @@ class CentricClaudeTurn(models.Model):
     developer_mode = fields.Boolean(
         help="Snapshot of the conversation's Developer Mode when the turn was queued.",
     )
+    effort = fields.Char(
+        help="Snapshot of the conversation's effort level when the turn was queued.",
+    )
     base_branch = fields.Char()
     review_branch = fields.Char()
     agent_name = fields.Char(help="Identifies the bridge that claimed this turn.")
@@ -53,6 +56,108 @@ class CentricClaudeTurn(models.Model):
 
     # A turn left running longer than this is assumed dead and can be re-claimed.
     CLAIM_TIMEOUT_MINUTES = 30
+
+    # How recently a bridge must have polled to count as connected. It polls
+    # every few seconds while busy and every 15 while idle, so a minute is
+    # comfortably longer than a healthy gap.
+    HEARTBEAT_SECONDS = 60
+
+    @api.model
+    def _claim_next(self, agent_name=None, logins=None):
+        """Take the oldest pending turn, atomically. Empty recordset if none.
+
+        Reading a pending row and then writing "running" is two steps, and two
+        bridges polling at the same moment both pass the read before either
+        writes - so the same question gets answered twice, on two machines,
+        from two checkouts. SKIP LOCKED is the standard queue primitive: each
+        caller takes a row nobody else has locked, instead of colliding on the
+        same one.
+
+        `logins` restricts a bridge to particular people, so a team can run one
+        bridge each without answering each other's questions.
+        """
+        domain = [("state", "=", "pending")]
+        if logins:
+            domain.append(("user_id.login", "in", list(logins)))
+        # Narrow with the ORM first, so record rules and the login filter apply,
+        # then lock within that set.
+        candidates = self.search(domain, order="id asc", limit=50)
+        if not candidates:
+            return self.browse(())
+
+        turn = self.browse(())
+        try:
+            self.env.cr.execute(
+                "SELECT id FROM centric_claude_turn "
+                "WHERE id IN %s AND state = 'pending' "
+                "ORDER BY id ASC FOR UPDATE SKIP LOCKED LIMIT 1",
+                (tuple(candidates.ids),),
+            )
+            row = self.env.cr.fetchone()
+            if row:
+                turn = self.browse(row[0])
+        except Exception:  # noqa: BLE001
+            # No SQL cursor (or a database without SKIP LOCKED): fall back to
+            # the plain read. Still correct for a single bridge, which is the
+            # common case; only concurrent bridges need the lock.
+            turn = candidates[:1]
+
+        if not turn:
+            return self.browse(())
+        turn.write({
+            "state": "running",
+            "agent_name": (agent_name or "bridge")[:120],
+            "claimed_at": fields.Datetime.now(),
+        })
+        return turn
+
+    @api.model
+    def _queue_position(self, turn):
+        """How many pending turns are ahead of this one."""
+        if not turn or turn.state != "pending":
+            return 0
+        return self.sudo().search_count([
+            ("state", "=", "pending"), ("id", "<", turn.id),
+        ])
+
+    @api.model
+    def _record_heartbeat(self, agent_name=None):
+        """Note that a bridge just polled.
+
+        Written at most every 20 seconds: a poll happens every few seconds and
+        this would otherwise be a database write per poll, all day.
+        """
+        params = self.env["ir.config_parameter"].sudo()
+        now = fields.Datetime.now()
+        last = params.get_param("centric_claude.agent_last_seen")
+        if last:
+            try:
+                previous = fields.Datetime.from_string(last)
+                if previous and (now - previous).total_seconds() < 20:
+                    return
+            except (TypeError, ValueError):
+                pass
+        params.set_param("centric_claude.agent_last_seen",
+                         fields.Datetime.to_string(now))
+        if agent_name:
+            params.set_param("centric_claude.agent_name", agent_name[:120])
+
+    @api.model
+    def _agent_online(self):
+        """(online, last_seen, name) for the local bridge."""
+        params = self.env["ir.config_parameter"].sudo()
+        raw = params.get_param("centric_claude.agent_last_seen")
+        name = params.get_param("centric_claude.agent_name") or ""
+        if not raw:
+            return False, "", name
+        try:
+            last = fields.Datetime.from_string(raw)
+        except (TypeError, ValueError):
+            return False, "", name
+        if not last:
+            return False, "", name
+        age = (fields.Datetime.now() - last).total_seconds()
+        return age <= self.HEARTBEAT_SECONDS, raw, name
 
     @api.model
     def _reclaim_stale(self):
@@ -85,6 +190,7 @@ class CentricClaudeTurn(models.Model):
             self.user_id or self.env.user
         )._data_access()
         return {
+            "effort": self.effort or "high",
             "data_level": level["level"],
             "can_read_data": level["can_read"],
             "can_propose_data": level["can_propose"],
