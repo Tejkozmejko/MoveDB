@@ -27,7 +27,8 @@ Setup
 
      python claude_bridge.py --install
 
-   That registers a login task running without a console window, logging to
+   That drops a launcher in your Startup folder - no administrator rights
+   needed - running without a console window and logging to
    ~/.centric_claude/bridge.log. Undo with --uninstall.
 
    Nothing can start the bridge *on demand*: Odoo calls nothing on your
@@ -68,6 +69,8 @@ CONFIG_PATH = os.path.join(HOME_DIR, "bridge.json")
 LOCK_PATH = os.path.join(HOME_DIR, "bridge.lock")
 LOG_PATH = os.path.join(HOME_DIR, "bridge.log")
 TASK_NAME = "Centric Claude Bridge"
+# The per-user Startup folder needs no elevation, unlike a scheduled task.
+STARTUP_FILENAME = "centric-claude-bridge.cmd"
 # The lock is taken on a byte past the PID text, so the PID stays readable.
 LOCK_BYTE_OFFSET = 1024
 
@@ -277,43 +280,78 @@ def autostart_command(config, pythonw=None):
     return [pythonw, os.path.abspath(__file__), "--config", config, "--quiet"]
 
 
-def install_autostart(config_path=None, task_name=TASK_NAME, run=True):
-    """Register the bridge to start at login. Returns the command used."""
+def startup_path():
+    """The per-user Startup folder entry for the bridge."""
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        raise BridgeError("APPDATA is not set, so the Startup folder cannot be found.")
+    return os.path.join(appdata, "Microsoft", "Windows", "Start Menu",
+                        "Programs", "Startup", STARTUP_FILENAME)
+
+
+def startup_script(config_path):
+    """The launcher written into the Startup folder.
+
+    A registered scheduled task would be tidier, but `schtasks /SC ONLOGON`
+    needs administrator rights - it registers a system-wide trigger. This is a
+    per-user background helper, so the per-user Startup folder is both
+    sufficient and the thing a user can inspect and delete themselves.
+
+    `start "" /B` detaches immediately so the console host closes rather than
+    lingering, and pythonw (where present) means no window at all.
+    """
+    command = autostart_command(config_path)
+    quoted = " ".join('"%s"' % part for part in command)
+    return (
+        "@echo off" + chr(13) + chr(10) +
+        "rem Started at login by claude_bridge.py --install." + chr(13) + chr(10) +
+        "rem Delete this file, or run claude_bridge.py --uninstall, to stop." + chr(13) + chr(10) +
+        'start "" /B ' + quoted + chr(13) + chr(10)
+    )
+
+
+def install_autostart(config_path=None, run=True):
+    """Start the bridge at login. Returns (path, command) it will run."""
     config_path = config_path or CONFIG_PATH
     command = autostart_command(config_path)
     quoted = " ".join('"%s"' % part if " " in part else part for part in command)
     if os.name != "nt":
         raise BridgeError(
             "Automatic startup is only wired up for Windows. On macOS or Linux, "
-            "run this command from your login items or a systemd user unit:" +
+            "run this from your login items or a systemd user unit:" +
             chr(10) + chr(10) + "    " + quoted
         )
-    argv = ["schtasks", "/Create", "/SC", "ONLOGON", "/TN", task_name,
-            "/TR", quoted, "/F"]
+    path = startup_path()
     if not run:
-        return argv, quoted
-    done = subprocess.run(argv, capture_output=True, text=True)
-    if done.returncode != 0:
-        raise BridgeError(
-            "Could not register the startup task: %s"
-            % (done.stderr or done.stdout or "").strip()
-        )
-    return argv, quoted
+        return path, quoted
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(startup_script(config_path))
+    except OSError as exc:
+        raise BridgeError("Could not write %s: %s" % (path, exc)) from exc
+    return path, quoted
 
 
-def uninstall_autostart(task_name=TASK_NAME, run=True):
-    argv = ["schtasks", "/Delete", "/TN", task_name, "/F"]
+def uninstall_autostart(run=True):
+    """Stop starting at login. Quiet when nothing was installed."""
     if os.name != "nt":
         raise BridgeError("Automatic startup is only wired up for Windows.")
+    path = startup_path()
     if not run:
-        return argv
-    done = subprocess.run(argv, capture_output=True, text=True)
-    if done.returncode != 0:
-        raise BridgeError(
-            "Could not remove the startup task: %s"
-            % (done.stderr or done.stdout or "").strip()
-        )
-    return argv
+        return path
+    removed = False
+    try:
+        os.remove(path)
+        removed = True
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise BridgeError("Could not remove %s: %s" % (path, exc)) from exc
+    # Earlier versions registered a scheduled task; clear it if it is still there.
+    subprocess.run(["schtasks", "/Delete", "/TN", TASK_NAME, "/F"],
+                   capture_output=True, text=True)
+    return path if removed else ""
 
 
 # --------------------------------------------------------- finding claude ---
@@ -691,10 +729,11 @@ def main(argv=None):
 
     if config.uninstall:
         try:
-            uninstall_autostart()
+            removed = uninstall_autostart()
         except BridgeError as exc:
             parser.error(str(exc))
-        print("The bridge will no longer start at login.")
+        print("Removed %s" % removed if removed
+              else "It was not set to start at login.")
         return 0
 
     if not config.url or not config.token:
@@ -723,13 +762,14 @@ def main(argv=None):
                 "repo": os.path.abspath(config.repo), "name": config.name,
                 "serve": config.serve,
             }, config.config)
-            _argv, quoted = install_autostart(config.config)
+            path, quoted = install_autostart(config.config)
         except BridgeError as exc:
             parser.error(str(exc))
         print("The bridge will now start automatically when you log in.")
-        print("  command: %s" % quoted)
-        print("  log:     %s" % LOG_PATH)
-        print("  undo:    python claude_bridge.py --uninstall")
+        print("  installed: %s" % path)
+        print("  command:   %s" % quoted)
+        print("  log:       %s" % LOG_PATH)
+        print("  undo:      python claude_bridge.py --uninstall")
         print(chr(10) + "Starting it now so you do not have to log out...")
         config.install = False
 
