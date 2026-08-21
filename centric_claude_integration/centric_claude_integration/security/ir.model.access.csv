@@ -1,9 +1,0 @@
-id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_claude_conversation_user,Claude Conversation User,model_centric_claude_conversation,centric_claude_integration.group_claude_user,1,1,1,1
-access_claude_message_user,Claude Message User,model_centric_claude_message,centric_claude_integration.group_claude_user,1,1,1,1
-access_claude_change_user,Claude Change User,model_centric_claude_change,centric_claude_integration.group_claude_user,1,1,1,1
-access_claude_turn_user,Claude Turn User,model_centric_claude_turn,centric_claude_integration.group_claude_user,1,1,1,0
-access_claude_turn_admin,Claude Turn Administrator,model_centric_claude_turn,centric_claude_integration.group_claude_admin,1,1,1,1
-access_claude_audit_admin,Claude Audit Administrator,model_centric_claude_audit_log,centric_claude_integration.group_claude_admin,1,0,0,0
-access_centric_claude_operation_user,centric.claude.operation.user,model_centric_claude_operation,centric_claude_integration.group_claude_user,1,1,1,1
-access_centric_claude_operation_admin,centric.claude.operation.admin,model_centric_claude_operation,centric_claude_integration.group_claude_admin,1,1,1,1
