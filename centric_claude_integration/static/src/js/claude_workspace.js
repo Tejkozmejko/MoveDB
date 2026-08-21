@@ -3,10 +3,12 @@
 import {
     Component, markup, onWillStart, onWillUnmount, useEffect, useRef, useState,
 } from "@odoo/owl";
+import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 
 import { highlight, highlightDiff, languageOf } from "./claude_highlight";
+import { renderMarkdown } from "./claude_markdown";
 
 
 /** Starter content for a newly created file, keyed by extension. */
@@ -55,8 +57,7 @@ function moduleScaffold(name) {
         "}\n";
     return [
         { path: "__manifest__.py", content: manifest },
-        { path: "__init__.py", content: "# from . import models
-" },
+        { path: "__init__.py", content: "# from . import models\n" },
     ];
 }
 
@@ -67,18 +68,27 @@ export class ClaudeDeveloperWorkspace extends Component {
     setup() {
         this.orm = useService("orm");
         this.notification = useService("notification");
+        this.dialog = useService("dialog");
         this.state = useState({
             loading: true,
             busy: false,
             access: {},
             conversations: [],
             activeConversationId: null,
+            // Projects: folders of chats that share standing instructions.
+            projects: [],
+            activeProjectId: null,
+            projectName: "",
+            projectInstructions: "",
+            // { id, value } while a chat name is being edited in the list.
+            renaming: null,
             conversation: null,
             messages: [],
             changes: [],
             operations: [],
             messageDraft: "",
-            // Which activity-bar panel is showing: chat, explorer or scm.
+            // Which activity-bar panel is showing: chat, projects,
+            // explorer or scm.
             view: "chat",
             modules: [],
             modulesLoaded: false,
@@ -100,6 +110,13 @@ export class ClaudeDeveloperWorkspace extends Component {
         this.codePane = useRef("codePane");
         this.gutter = useRef("gutter");
         this.newNameInput = useRef("newNameInput");
+        this.renameInput = useRef("renameInput");
+        this.composerInput = useRef("composerInput");
+        this.chatScroll = useRef("chatScroll");
+        // Rendering Markdown on every re-render would re-parse the whole
+        // transcript each time the spinner ticks. Message text never changes
+        // once stored, so cache on the id and check the source anyway.
+        this.renderedMessages = new Map();
 
         onWillUnmount(() => this.stopPolling());
 
@@ -145,12 +162,104 @@ export class ClaudeDeveloperWorkspace extends Component {
             () => [this.newNameInput.el]
         );
 
+        // Same trap as the checkbox: a <select> keeps whatever the user last
+        // picked, so the current project has to be pushed onto the property.
+        this.projectSelect = useRef("projectSelect");
+        useEffect(
+            (el, projectId) => {
+                if (el) {
+                    el.value = projectId ? String(projectId) : "";
+                }
+            },
+            () => [
+                this.projectSelect.el,
+                this.state.conversation && this.state.conversation.project_id,
+            ]
+        );
+
+        // Focus the chat-rename box the moment it appears.
+        useEffect(
+            (el) => {
+                if (el) {
+                    el.focus();
+                    el.select();
+                }
+            },
+            () => [this.renameInput.el]
+        );
+
+        // The composer grows with the draft, up to a point, then scrolls - the
+        // way every chat box behaves. A fixed three rows wasted space on short
+        // questions and hid the end of long ones.
+        useEffect(
+            (el) => {
+                if (el) {
+                    el.style.height = "auto";
+                    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+                }
+            },
+            () => [this.composerInput.el, this.state.messageDraft]
+        );
+
+        // Follow the conversation as it grows, so a new answer is not left
+        // below the fold.
+        useEffect(
+            (el) => {
+                if (el) {
+                    el.scrollTop = el.scrollHeight;
+                }
+            },
+            () => [
+                this.chatScroll.el,
+                this.state.messages.length,
+                this.state.busy,
+                this.state.operations.length,
+            ]
+        );
+
         onWillStart(() => this.loadBootstrap());
     }
 
     // ------------------------------------------------------------- plumbing
     async call(method, args = []) {
         return this.orm.call("centric.claude.conversation", method, args, {});
+    }
+
+    async callProject(method, args = []) {
+        return this.orm.call("centric.claude.project", method, args, {});
+    }
+
+    /** Refresh the sidebar from any payload that carries a list of either. */
+    applySidebar(payload) {
+        if (!payload) {
+            return;
+        }
+        if (payload.projects) {
+            this.state.projects = payload.projects;
+        }
+        if (payload.conversations) {
+            this.state.conversations = payload.conversations;
+        }
+    }
+
+    /** Ask before anything irreversible. Resolves false if the box is dismissed. */
+    confirm(title, body, confirmLabel) {
+        return new Promise((resolve) => {
+            this.dialog.add(
+                ConfirmationDialog,
+                {
+                    title,
+                    body,
+                    confirmLabel,
+                    confirmClass: "btn-danger",
+                    confirm: () => resolve(true),
+                    cancel: () => resolve(false),
+                },
+                // Closing the dialog any other way still has to settle the
+                // promise, or the caller waits forever.
+                { onClose: () => resolve(false) }
+            );
+        });
     }
 
     errorMessage(error) {
@@ -165,7 +274,7 @@ export class ClaudeDeveloperWorkspace extends Component {
         try {
             const data = await this.call("workspace_bootstrap");
             this.state.access = data.access || {};
-            this.state.conversations = data.conversations || [];
+            this.applySidebar(data);
             if (this.state.conversations.length) {
                 await this.selectConversation(this.state.conversations[0].id);
             }
@@ -177,6 +286,7 @@ export class ClaudeDeveloperWorkspace extends Component {
     }
 
     applyConversationPayload(payload) {
+        this.applySidebar(payload);
         this.state.agent = payload.agent || {};
         this.state.busy = Boolean(this.state.agent.waiting);
         this.state.conversation = payload.conversation;
@@ -337,15 +447,240 @@ export class ClaudeDeveloperWorkspace extends Component {
     }
 
     // -------------------------------------------------------- conversations
-    async newConversation() {
+    async newConversation(projectId = null) {
         try {
-            const payload = await this.call("create_workspace_conversation", []);
+            const payload = await this.call("create_workspace_conversation", [
+                null,
+                projectId || false,
+            ]);
             this.applyConversationPayload(payload);
             this.resetCodeBrowser();
             this.state.view = "chat";
         } catch (error) {
             this.notifyError(error);
         }
+    }
+
+    /** Move the open chat into a project, or out of every project. */
+    async onProjectPicked(ev) {
+        if (!this.state.conversation || this.state.busy) {
+            return;
+        }
+        const previous = this.state.conversation.project_id;
+        const chosen = ev.target.value ? Number(ev.target.value) : false;
+        try {
+            const payload = await this.call("set_workspace_conversation_project", [
+                this.state.conversation.id,
+                chosen,
+            ]);
+            this.applyConversationPayload(payload);
+        } catch (error) {
+            ev.target.value = previous ? String(previous) : "";
+            this.notifyError(error);
+        }
+    }
+
+    startRename(conv) {
+        this.state.renaming = { id: conv.id, value: conv.name };
+    }
+
+    onRenameKeydown(ev) {
+        if (ev.key === "Escape") {
+            ev.preventDefault();
+            this.state.renaming = null;
+        } else if (ev.key === "Enter") {
+            // Blurring is what commits, so Enter and clicking away agree.
+            ev.preventDefault();
+            ev.target.blur();
+        }
+    }
+
+    async commitRename() {
+        const renaming = this.state.renaming;
+        if (!renaming) {
+            return;
+        }
+        this.state.renaming = null;
+        const name = (renaming.value || "").trim();
+        const conv = this.state.conversations.find((item) => item.id === renaming.id);
+        if (!name || !conv || name === conv.name) {
+            return;
+        }
+        try {
+            this.applySidebar(
+                await this.call("rename_workspace_conversation", [renaming.id, name])
+            );
+            if (this.state.conversation && this.state.conversation.id === renaming.id) {
+                this.state.conversation.name = name;
+            }
+        } catch (error) {
+            this.notifyError(error);
+        }
+    }
+
+    async deleteConversation(conv) {
+        const confirmed = await this.confirm(
+            "Delete chat",
+            `"${conv.name}" and everything in it will be deleted. This cannot be undone.`,
+            "Delete"
+        );
+        if (!confirmed) {
+            return;
+        }
+        try {
+            const data = await this.call("delete_workspace_conversation", [conv.id]);
+            this.applySidebar(data);
+            if (this.state.activeConversationId === conv.id) {
+                // The open chat just went away: clear the pane rather than
+                // leaving it showing a transcript that no longer exists.
+                this.stopPolling();
+                this.state.busy = false;
+                this.state.conversation = null;
+                this.state.activeConversationId = null;
+                this.state.messages = [];
+                this.state.changes = [];
+                this.state.operations = [];
+                this.renderedMessages.clear();
+                this.resetCodeBrowser();
+                if (this.state.conversations.length) {
+                    await this.selectConversation(this.state.conversations[0].id);
+                }
+            }
+        } catch (error) {
+            this.notifyError(error);
+        }
+    }
+
+    // ------------------------------------------------------------- projects
+    get activeProject() {
+        return (
+            this.state.projects.find((item) => item.id === this.state.activeProjectId) ||
+            null
+        );
+    }
+
+    get projectConversations() {
+        const projectId = this.state.activeProjectId;
+        if (!projectId) {
+            return [];
+        }
+        return this.state.conversations.filter((conv) => conv.project_id === projectId);
+    }
+
+    get projectInstructionsDirty() {
+        const project = this.activeProject;
+        return (
+            Boolean(project) &&
+            this.state.projectInstructions !== (project.instructions || "")
+        );
+    }
+
+    /** The project chip shown on a chat row, empty when the chat is unfiled. */
+    projectNameOf(conv) {
+        if (!conv.project_id) {
+            return "";
+        }
+        const project = this.state.projects.find((item) => item.id === conv.project_id);
+        return project ? project.name : "";
+    }
+
+    selectProject(projectId) {
+        this.state.activeProjectId = projectId;
+        const project = this.activeProject;
+        this.state.projectName = project ? project.name : "";
+        this.state.projectInstructions = project ? project.instructions || "" : "";
+    }
+
+    async newProject() {
+        try {
+            const data = await this.callProject("create_workspace_project", []);
+            this.applySidebar(data);
+            this.state.view = "projects";
+            this.selectProject(data.project_id);
+        } catch (error) {
+            this.notifyError(error);
+        }
+    }
+
+    onProjectNameKeydown(ev) {
+        if (ev.key === "Enter") {
+            ev.preventDefault();
+            ev.target.blur();
+        } else if (ev.key === "Escape") {
+            ev.preventDefault();
+            this.state.projectName = this.activeProject ? this.activeProject.name : "";
+        }
+    }
+
+    async saveProjectName() {
+        const project = this.activeProject;
+        if (!project) {
+            return;
+        }
+        const name = (this.state.projectName || "").trim();
+        if (!name || name === project.name) {
+            this.state.projectName = project.name;
+            return;
+        }
+        try {
+            this.applySidebar(
+                await this.callProject("rename_workspace_project", [project.id, name])
+            );
+        } catch (error) {
+            this.state.projectName = project.name;
+            this.notifyError(error);
+        }
+    }
+
+    async saveProjectInstructions() {
+        const project = this.activeProject;
+        if (!project) {
+            return;
+        }
+        try {
+            this.applySidebar(
+                await this.callProject("set_workspace_project_instructions", [
+                    project.id,
+                    this.state.projectInstructions,
+                ])
+            );
+            this.notification.add("Project instructions saved.", { type: "success" });
+        } catch (error) {
+            this.notifyError(error);
+        }
+    }
+
+    async deleteProject() {
+        const project = this.activeProject;
+        if (!project) {
+            return;
+        }
+        const confirmed = await this.confirm(
+            "Delete project",
+            `"${project.name}" will be deleted. Its chats are kept, but they will ` +
+                "no longer start from these instructions.",
+            "Delete"
+        );
+        if (!confirmed) {
+            return;
+        }
+        try {
+            const data = await this.callProject("delete_workspace_project", [project.id]);
+            this.applySidebar(data);
+            this.selectProject(null);
+            if (this.state.conversation) {
+                // The open chat may have been filed here; re-read it so the
+                // picker in the title bar stops naming a project that is gone.
+                await this.selectConversation(this.state.conversation.id);
+            }
+        } catch (error) {
+            this.notifyError(error);
+        }
+    }
+
+    async openConversationFromProject(conversationId) {
+        this.state.view = "chat";
+        await this.selectConversation(conversationId);
     }
 
     async selectConversation(id) {
@@ -355,6 +690,9 @@ export class ClaudeDeveloperWorkspace extends Component {
         this.stopPolling();
         try {
             const payload = await this.call("get_workspace_conversation", [id]);
+            // Rendered Markdown is keyed on message id, so leaving the previous
+            // transcript's entries behind would only grow the map.
+            this.renderedMessages.clear();
             this.applyConversationPayload(payload);
             this.resetCodeBrowser();
         } catch (error) {
@@ -438,6 +776,39 @@ export class ClaudeDeveloperWorkspace extends Component {
         }
         // With the agent backend the turn is still queued here, so `busy` stays
         // on until polling sees the reply. applyConversationPayload owns it.
+    }
+
+    get userInitials() {
+        const name = (this.state.access.user_name || "").trim();
+        if (!name) {
+            return "?";
+        }
+        return name
+            .split(/\s+/)
+            .slice(0, 2)
+            .map((part) => part.charAt(0).toUpperCase())
+            .join("");
+    }
+
+    /**
+     * A message body, ready for `t-out`.
+     *
+     * Claude answers in Markdown, so an assistant message is rendered; a user
+     * message is returned as a plain string, which `t-out` escapes, because
+     * there is nothing to gain from formatting what the user typed and plenty
+     * to lose from parsing it.
+     */
+    messageHtml(message) {
+        if (message.role === "user") {
+            return message.content;
+        }
+        const cached = this.renderedMessages.get(message.id);
+        if (cached && cached.source === message.content) {
+            return cached.html;
+        }
+        const html = markup(renderMarkdown(message.content));
+        this.renderedMessages.set(message.id, { source: message.content, html });
+        return html;
     }
 
     get suggestions() {

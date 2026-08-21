@@ -197,6 +197,12 @@ class CentricClaudeTurn(models.Model):
             "turn_id": self.id,
             "conversation_id": conversation.id,
             "conversation_name": conversation.name,
+            # A project's standing instructions belong to every turn in it, so
+            # the local agent gets the same context the hosted backend does.
+            "project_name": conversation.project_id.name or "",
+            "project_instructions": (conversation.project_id.instructions or "")[
+                : self.env["centric.claude.project"].MAX_INSTRUCTIONS
+            ],
             "prompt": self.prompt,
             "developer_mode": self.developer_mode,
             "base_branch": self.base_branch or "",

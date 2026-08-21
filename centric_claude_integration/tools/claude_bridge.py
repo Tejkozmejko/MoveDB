@@ -644,6 +644,14 @@ def revert(repo):
 # ----------------------------------------------------------------- claude ---
 def build_prompt(turn):
     lines = []
+    instructions = (turn.get("project_instructions") or "").strip()
+    if instructions:
+        # Standing project context, ahead of the transcript: it frames every
+        # question in the project rather than answering this one.
+        lines.append("Standing instructions for project %s:"
+                     % (turn.get("project_name") or "this project"))
+        lines.append(instructions)
+        lines.append("")
     history = turn.get("history") or []
     if len(history) > 1:
         lines.append("Earlier in this conversation:")

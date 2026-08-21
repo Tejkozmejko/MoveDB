@@ -4,7 +4,10 @@ This addon puts a controlled Claude developer workspace inside Odoo.
 
 ## What it does
 
-- Chat with Claude from Odoo.
+- Chat with Claude from Odoo, or from the Claude mark in the Odoo navbar.
+- Group chats into projects, each with its own standing instructions, added
+  to the system prompt of every chat filed under that project.
+- Rename and delete chats.
 - Discover approved custom modules in one GitHub repository.
 - Browse source files without opening VS Code.
 - Let Claude read code through Anthropic client tools.

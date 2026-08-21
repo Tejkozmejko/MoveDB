@@ -83,6 +83,20 @@
         <field name="implied_ids" eval="[(6, 0, [ref('group_claude_developer')])]"/>
     </record>
 
+    <record id="rule_claude_project_own" model="ir.rule">
+        <field name="name">Claude projects: own</field>
+        <field name="model_id" ref="model_centric_claude_project"/>
+        <field name="domain_force">[('user_id', '=', user.id)]</field>
+        <field name="groups" eval="[(4, ref('group_claude_user'))]"/>
+    </record>
+
+    <record id="rule_claude_project_admin" model="ir.rule">
+        <field name="name">Claude projects: administrator all</field>
+        <field name="model_id" ref="model_centric_claude_project"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('group_claude_admin'))]"/>
+    </record>
+
     <record id="rule_claude_conversation_own" model="ir.rule">
         <field name="name">Claude conversations: own</field>
         <field name="model_id" ref="model_centric_claude_conversation"/>

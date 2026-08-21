@@ -1,0 +1,46 @@
+// The Claude mark in the Odoo navbar.
+//
+// Scoped tightly and styled outright: the navbar is Odoo's, not ours, and
+// inheriting from it would give a dark tray a dark glyph.
+$cc-brand: #d97757;
+$cc-brand-hover: #e3865f;
+
+.o_cc_systray {
+    display: flex;
+    align-items: center;
+
+    .o_cc_systray_btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: $cc-brand;
+        cursor: pointer;
+        transition: background-color .12s ease, transform .12s ease;
+
+        &:hover {
+            background: rgba(217, 119, 87, .16);
+            color: $cc-brand-hover;
+        }
+
+        &:active {
+            transform: scale(.94);
+        }
+
+        &:focus-visible {
+            outline: 2px solid rgba(217, 119, 87, .6);
+            outline-offset: 1px;
+        }
+    }
+
+    .o_cc_mark {
+        width: 19px;
+        height: 19px;
+        display: block;
+    }
+}

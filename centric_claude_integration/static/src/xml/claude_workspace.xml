@@ -5,10 +5,12 @@
         <div class="o_centric_claude_workspace h-100 d-flex flex-column">
 
             <!-- title bar -->
-            <div class="o_cc_titlebar d-flex align-items-center gap-3 px-3">
+            <div class="o_cc_titlebar d-flex align-items-center gap-2 px-3">
                 <span class="o_cc_titlebar_brand">
-                    <i class="fa fa-cube me-2"/>Claude Developer
+                    <t t-call="centric_claude_integration.ClaudeMark"/>
+                    <span>Claude Developer</span>
                 </span>
+
                 <span class="o_cc_chip" t-if="state.access.repository">
                     <i class="fa fa-github"/><t t-esc="state.access.repository"/>
                 </span>
@@ -28,7 +30,18 @@
                 </span>
 
                 <div class="ms-auto d-flex align-items-center gap-2" t-if="state.conversation">
-                    <select class="o_cc_effort"
+                    <select class="o_cc_select o_cc_project_picker"
+                            t-ref="projectSelect"
+                            title="File this conversation under a project, so it starts from that project's instructions."
+                            t-att-disabled="state.busy"
+                            t-on-change="onProjectPicked">
+                        <option value="">No project</option>
+                        <t t-foreach="state.projects" t-as="project" t-key="project.id">
+                            <option t-att-value="project.id" t-esc="project.name"/>
+                        </t>
+                    </select>
+
+                    <select class="o_cc_select o_cc_effort"
                             t-ref="effortSelect"
                             title="How hard Claude works on this conversation. Lower levels answer simple questions with less of your Claude subscription."
                             t-att-disabled="state.busy"
@@ -37,18 +50,19 @@
                             <option t-att-value="choice.value" t-esc="choice.label"/>
                         </t>
                     </select>
+
                     <span t-if="!state.access.can_develop" class="o_cc_chip o_cc_chip_off">
                         <i class="fa fa-eye"/>Read only
                     </span>
-                    <span class="small">Developer Mode</span>
-                    <div class="form-check form-switch m-0">
-                        <input class="form-check-input"
-                               type="checkbox"
+                    <label class="o_cc_switch" title="Let Claude stage code changes in this conversation.">
+                        <span>Developer Mode</span>
+                        <input type="checkbox"
                                t-ref="developerModeToggle"
                                t-att-checked="state.conversation.developer_mode"
                                t-att-disabled="!state.access.can_develop"
                                t-on-change="toggleDeveloperMode"/>
-                    </div>
+                        <span class="o_cc_switch_track"><span class="o_cc_switch_thumb"/></span>
+                    </label>
                 </div>
             </div>
 
@@ -83,10 +97,17 @@
 
                 <!-- activity bar -->
                 <nav class="o_cc_activitybar d-flex flex-column">
-                    <button class="o_cc_activity" title="Chat"
+                    <button class="o_cc_activity" title="Chats"
                             t-att-class="{'active': state.view === 'chat'}"
                             t-on-click="() => this.setView('chat')">
-                        <i class="fa fa-comments-o"/>
+                        <i class="fa fa-comment-o"/>
+                    </button>
+                    <button class="o_cc_activity" title="Projects"
+                            t-att-class="{'active': state.view === 'projects'}"
+                            t-on-click="() => this.setView('projects')">
+                        <i class="fa fa-folder-o"/>
+                        <span t-if="state.projects.length" class="o_cc_activity_badge"
+                              t-esc="state.projects.length"/>
                     </button>
                     <button class="o_cc_activity" title="Explorer"
                             t-att-class="{'active': state.view === 'explorer'}"
@@ -109,24 +130,80 @@
                     <!-- Chat: conversation list -->
                     <t t-if="state.view === 'chat'">
                         <div class="o_cc_sidebar_head d-flex align-items-center">
-                            <span class="flex-grow-1">Conversations</span>
-                            <button class="o_cc_icon_btn" title="New conversation"
-                                    t-on-click="newConversation">
+                            <span class="flex-grow-1">Chats</span>
+                            <button class="o_cc_icon_btn" title="New chat"
+                                    t-on-click="() => this.newConversation()">
                                 <i class="fa fa-plus"/>
                             </button>
                         </div>
-                        <div class="overflow-auto flex-grow-1 o_cc_tree">
+                        <div class="overflow-auto flex-grow-1 o_cc_list">
                             <t t-foreach="state.conversations" t-as="conv" t-key="conv.id">
-                                <button class="o_cc_row"
-                                        style="padding-left: 8px"
-                                        t-att-class="{'active': state.activeConversationId === conv.id}"
-                                        t-on-click="() => this.selectConversation(conv.id)">
-                                    <i class="fa fa-comment-o o_cc_twisty"/>
-                                    <span class="o_cc_row_label" t-esc="conv.name"/>
-                                </button>
+                                <div class="o_cc_chat_row"
+                                     t-att-class="{'active': state.activeConversationId === conv.id}">
+
+                                    <t t-if="state.renaming &amp;&amp; state.renaming.id === conv.id">
+                                        <input class="o_cc_inline_input"
+                                               t-ref="renameInput"
+                                               t-model="state.renaming.value"
+                                               t-on-keydown="onRenameKeydown"
+                                               t-on-blur="commitRename"/>
+                                    </t>
+
+                                    <t t-else="">
+                                        <button class="o_cc_chat_open"
+                                                t-att-title="conv.name"
+                                                t-on-click="() => this.selectConversation(conv.id)">
+                                            <i class="fa fa-comment-o o_cc_chat_icon"/>
+                                            <span class="o_cc_chat_name" t-esc="conv.name"/>
+                                            <span t-if="projectNameOf(conv)"
+                                                  class="o_cc_chat_project"
+                                                  t-esc="projectNameOf(conv)"/>
+                                        </button>
+                                        <div class="o_cc_chat_actions">
+                                            <button class="o_cc_icon_btn" title="Rename"
+                                                    t-on-click="() => this.startRename(conv)">
+                                                <i class="fa fa-pencil"/>
+                                            </button>
+                                            <button class="o_cc_icon_btn o_cc_icon_btn_danger"
+                                                    title="Delete this chat"
+                                                    t-on-click="() => this.deleteConversation(conv)">
+                                                <i class="fa fa-trash-o"/>
+                                            </button>
+                                        </div>
+                                    </t>
+                                </div>
                             </t>
                             <div t-if="!state.conversations.length" class="o_cc_hint p-3">
-                                No conversations yet. Press <i class="fa fa-plus"/> to start one.
+                                No chats yet. Press <i class="fa fa-plus"/> to start one.
+                            </div>
+                        </div>
+                    </t>
+
+                    <!-- Projects: project list -->
+                    <t t-if="state.view === 'projects'">
+                        <div class="o_cc_sidebar_head d-flex align-items-center">
+                            <span class="flex-grow-1">Projects</span>
+                            <button class="o_cc_icon_btn" title="New project"
+                                    t-on-click="newProject">
+                                <i class="fa fa-plus"/>
+                            </button>
+                        </div>
+                        <div class="overflow-auto flex-grow-1 o_cc_list">
+                            <t t-foreach="state.projects" t-as="project" t-key="project.id">
+                                <div class="o_cc_chat_row"
+                                     t-att-class="{'active': state.activeProjectId === project.id}">
+                                    <button class="o_cc_chat_open"
+                                            t-att-title="project.name"
+                                            t-on-click="() => this.selectProject(project.id)">
+                                        <i class="fa fa-folder-o o_cc_chat_icon"/>
+                                        <span class="o_cc_chat_name" t-esc="project.name"/>
+                                        <span class="o_cc_count" t-esc="project.conversation_count"/>
+                                    </button>
+                                </div>
+                            </t>
+                            <div t-if="!state.projects.length" class="o_cc_hint p-3">
+                                No projects yet. A project keeps related chats together and
+                                gives every one of them the same standing instructions.
                             </div>
                         </div>
                     </t>
@@ -157,7 +234,7 @@
                                     New file in <t t-esc="state.creating.module"/>
                                 </div>
                                 <div class="o_cc_hint mb-1" t-else="">New module name</div>
-                                <input class="o_cc_new_input"
+                                <input class="o_cc_inline_input"
                                        t-ref="newNameInput"
                                        t-att-placeholder="state.creating.kind === 'file' ? 'models/my_model.py' : 'centric_my_module'"
                                        t-model="state.creating.value"
@@ -243,106 +320,220 @@
                 <!-- main pane -->
                 <main class="flex-grow-1 d-flex flex-column overflow-hidden">
 
-                    <div t-if="!state.conversation"
-                         class="flex-grow-1 d-flex align-items-center justify-content-center">
-                        <div class="o_cc_empty">
-                            <i class="fa fa-comments-o fa-3x mb-3 d-block"/>
-                            <div>Create a conversation to start.</div>
+                    <!-- projects: a project page, whether or not a chat is open -->
+                    <t t-if="state.view === 'projects'">
+                        <div t-if="!activeProject"
+                             class="flex-grow-1 d-flex align-items-center justify-content-center p-4">
+                            <div class="o_cc_welcome">
+                                <div class="o_cc_welcome_mark"><i class="fa fa-folder-o"/></div>
+                                <h5 class="mb-1">Projects</h5>
+                                <p class="o_cc_hint mb-4">
+                                    A project groups the chats about one piece of work and gives
+                                    each of them the same standing instructions, so the background
+                                    does not have to be retyped in every question.
+                                </p>
+                                <button class="btn btn-primary btn-sm" t-on-click="newProject">
+                                    <i class="fa fa-plus me-1"/>Create a project
+                                </button>
+                            </div>
                         </div>
-                    </div>
+
+                        <div t-else="" class="o_cc_scroll_panel flex-grow-1 overflow-auto">
+                            <div class="o_cc_page">
+                                <div class="d-flex align-items-center gap-2 mb-4">
+                                    <div class="o_cc_page_mark"><i class="fa fa-folder-open-o"/></div>
+                                    <input class="o_cc_page_title flex-grow-1"
+                                           t-model="state.projectName"
+                                           t-on-blur="saveProjectName"
+                                           t-on-keydown="onProjectNameKeydown"/>
+                                    <button class="btn btn-outline-light btn-sm"
+                                            t-on-click="() => this.newConversation(activeProject.id)">
+                                        <i class="fa fa-plus me-1"/>New chat
+                                    </button>
+                                    <button class="btn btn-outline-danger btn-sm"
+                                            title="Delete this project. Its chats are kept."
+                                            t-on-click="deleteProject">
+                                        <i class="fa fa-trash-o"/>
+                                    </button>
+                                </div>
+
+                                <div class="o_cc_panel mb-4">
+                                    <div class="o_cc_panel_head">
+                                        <span class="flex-grow-1">Project instructions</span>
+                                        <button class="btn btn-primary btn-sm"
+                                                t-att-disabled="!projectInstructionsDirty"
+                                                t-on-click="saveProjectInstructions">
+                                            Save
+                                        </button>
+                                    </div>
+                                    <div class="o_cc_panel_body">
+                                        <textarea class="o_cc_textarea"
+                                                  rows="8"
+                                                  placeholder="Standing context for every chat in this project. For example: which modules it covers, the conventions to follow, what to leave alone."
+                                                  t-model="state.projectInstructions"/>
+                                        <div class="o_cc_hint mt-2">
+                                            Added to Claude's system prompt for every chat filed
+                                            under this project. The workspace security rules
+                                            always win over anything written here.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="o_cc_panel">
+                                    <div class="o_cc_panel_head">
+                                        <span class="flex-grow-1">
+                                            Chats in this project
+                                            <span class="o_cc_count ms-1"
+                                                  t-esc="projectConversations.length"/>
+                                        </span>
+                                    </div>
+                                    <div class="o_cc_panel_body p-0">
+                                        <t t-foreach="projectConversations" t-as="conv" t-key="conv.id">
+                                            <button class="o_cc_page_row"
+                                                    t-on-click="() => this.openConversationFromProject(conv.id)">
+                                                <i class="fa fa-comment-o"/>
+                                                <span class="flex-grow-1 text-truncate" t-esc="conv.name"/>
+                                                <span class="o_cc_hint" t-esc="conv.write_date"/>
+                                            </button>
+                                        </t>
+                                        <div t-if="!projectConversations.length" class="o_cc_hint p-3">
+                                            No chats yet. Press New chat to start one here.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </t>
+
+                    <t t-elif="!state.conversation">
+                        <div class="flex-grow-1 d-flex align-items-center justify-content-center">
+                            <div class="o_cc_empty">
+                                <i class="fa fa-comment-o fa-3x mb-3 d-block"/>
+                                <div>Create a chat to start.</div>
+                            </div>
+                        </div>
+                    </t>
 
                     <t t-else="">
                         <!-- chat -->
                         <t t-if="state.view === 'chat'">
-                            <div class="o_cc_chat_scroll flex-grow-1 overflow-auto p-3">
-                                <div t-if="!state.messages.length" class="o_cc_welcome">
-                                    <div class="o_cc_welcome_mark"><i class="fa fa-cube"/></div>
-                                    <h5 class="mb-1">Claude Developer</h5>
-                                    <p class="o_cc_hint mb-4">
-                                        Ask about an approved module, an error, or a code change.
-                                        Answers come from the source on
-                                        <code><t t-esc="activeBranch"/></code>.
-                                    </p>
-                                    <div class="o_cc_suggestions">
-                                        <t t-foreach="suggestions" t-as="idea" t-key="idea">
-                                            <button class="o_cc_suggestion"
-                                                    t-on-click="() => this.useSuggestion(idea)">
-                                                <i class="fa fa-angle-right me-2"/><t t-esc="idea"/>
-                                            </button>
-                                        </t>
-                                    </div>
-                                </div>
-                                <t t-foreach="state.messages" t-as="msg" t-key="msg.id">
-                                    <div class="o_cc_message mb-3"
-                                         t-att-class="msg.role === 'user' ? 'o_cc_message_user' : 'o_cc_message_assistant'">
-                                        <div class="o_cc_message_role"
-                                             t-esc="msg.role === 'user' ? 'You' : 'Claude'"/>
-                                        <div class="o_cc_message_content"><t t-esc="msg.content"/></div>
-                                    </div>
-                                </t>
-                                <t t-foreach="pendingOperations" t-as="op" t-key="op.id">
-                                    <div class="o_cc_confirm mb-3">
-                                        <div class="o_cc_confirm_head">
-                                            <i class="fa me-2" t-att-class="operationIcon(op)"/>
-                                            <span class="flex-grow-1" t-esc="op.summary"/>
-                                            <span class="o_cc_confirm_tag" t-esc="op.model"/>
+                            <div class="o_cc_chat_scroll flex-grow-1 overflow-auto" t-ref="chatScroll">
+                                <div class="o_cc_thread">
+                                    <div t-if="!state.messages.length" class="o_cc_welcome">
+                                        <div class="o_cc_welcome_mark">
+                                            <t t-call="centric_claude_integration.ClaudeMark"/>
                                         </div>
-                                        <pre class="o_cc_confirm_body"><t t-esc="op.preview"/></pre>
-                                        <div class="o_cc_confirm_actions">
-                                            <span class="o_cc_hint flex-grow-1">
-                                                Nothing has changed yet.
-                                            </span>
-                                            <button class="btn btn-sm btn-outline-light"
-                                                    t-att-disabled="state.busy"
-                                                    t-on-click="() => this.answerOperation(op.id, false)">
-                                                No
-                                            </button>
-                                            <button class="btn btn-sm btn-primary"
-                                                    t-att-disabled="state.busy"
-                                                    t-on-click="() => this.answerOperation(op.id, true)">
-                                                <i class="fa fa-check me-1"/>Yes, do it
-                                            </button>
+                                        <h5 class="mb-1">Claude Developer</h5>
+                                        <p class="o_cc_hint mb-4">
+                                            Ask about an approved module, an error, or a code change.
+                                            Answers come from the source on
+                                            <code><t t-esc="activeBranch"/></code>.
+                                        </p>
+                                        <div class="o_cc_suggestions">
+                                            <t t-foreach="suggestions" t-as="idea" t-key="idea">
+                                                <button class="o_cc_suggestion"
+                                                        t-on-click="() => this.useSuggestion(idea)">
+                                                    <span class="flex-grow-1" t-esc="idea"/>
+                                                    <i class="fa fa-angle-right"/>
+                                                </button>
+                                            </t>
                                         </div>
-                                    </div>
-                                </t>
-
-                                <div t-if="state.busy" class="o_cc_message mb-3">
-                                    <div class="o_cc_message_role">Claude</div>
-
-                                    <div t-if="agentOffline" class="o_cc_offline">
-                                        <div class="fw-semibold mb-1">
-                                            <i class="fa fa-plug me-2"/>No local agent is connected
-                                        </div>
-                                        <div class="o_cc_hint mb-2">
-                                            Your question is queued and will be answered as soon as
-                                            the bridge is running on your machine. Start it, or set
-                                            it to start automatically when you log in:
-                                        </div>
-                                        <pre class="o_cc_offline_cmd">python claude_bridge.py --install</pre>
-                                        <button class="btn btn-sm btn-outline-light"
-                                                t-on-click="cancelTurn">Cancel the question</button>
                                     </div>
 
-                                    <div t-else="" class="o_cc_hint d-flex align-items-center gap-2">
-                                        <i class="fa fa-spinner fa-spin"/>
-                                        <span t-if="agentStatusText" t-esc="agentStatusText"/>
-                                        <span t-else="">Working with the approved tools...</span>
-                                        <button t-if="state.agent.waiting"
-                                                class="btn btn-sm btn-link text-danger p-0 ms-2"
-                                                t-on-click="cancelTurn">Cancel</button>
+                                    <t t-foreach="state.messages" t-as="msg" t-key="msg.id">
+                                        <div class="o_cc_msg"
+                                             t-att-class="msg.role === 'user' ? 'o_cc_msg_user' : 'o_cc_msg_assistant'">
+                                            <div class="o_cc_msg_avatar">
+                                                <span t-if="msg.role === 'user'" t-esc="userInitials"/>
+                                                <t t-else=""
+                                                   t-call="centric_claude_integration.ClaudeMark"/>
+                                            </div>
+                                            <div class="o_cc_msg_body">
+                                                <div class="o_cc_msg_who"
+                                                     t-esc="msg.role === 'user' ? 'You' : 'Claude'"/>
+                                                <div class="o_cc_msg_text"
+                                                     t-out="messageHtml(msg)"/>
+                                            </div>
+                                        </div>
+                                    </t>
+
+                                    <t t-foreach="pendingOperations" t-as="op" t-key="op.id">
+                                        <div class="o_cc_confirm">
+                                            <div class="o_cc_confirm_head">
+                                                <i class="fa me-2" t-att-class="operationIcon(op)"/>
+                                                <span class="flex-grow-1" t-esc="op.summary"/>
+                                                <span class="o_cc_confirm_tag" t-esc="op.model"/>
+                                            </div>
+                                            <pre class="o_cc_confirm_body"><t t-esc="op.preview"/></pre>
+                                            <div class="o_cc_confirm_actions">
+                                                <span class="o_cc_hint flex-grow-1">
+                                                    Nothing has changed yet.
+                                                </span>
+                                                <button class="btn btn-sm btn-outline-light"
+                                                        t-att-disabled="state.busy"
+                                                        t-on-click="() => this.answerOperation(op.id, false)">
+                                                    No
+                                                </button>
+                                                <button class="btn btn-sm btn-primary"
+                                                        t-att-disabled="state.busy"
+                                                        t-on-click="() => this.answerOperation(op.id, true)">
+                                                    <i class="fa fa-check me-1"/>Yes, do it
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </t>
+
+                                    <div t-if="state.busy" class="o_cc_msg o_cc_msg_assistant">
+                                        <div class="o_cc_msg_avatar">
+                                            <t t-call="centric_claude_integration.ClaudeMark"/>
+                                        </div>
+                                        <div class="o_cc_msg_body">
+                                            <div class="o_cc_msg_who">Claude</div>
+
+                                            <div t-if="agentOffline" class="o_cc_offline">
+                                                <div class="fw-semibold mb-1">
+                                                    <i class="fa fa-plug me-2"/>No local agent is connected
+                                                </div>
+                                                <div class="o_cc_hint mb-2">
+                                                    Your question is queued and will be answered as soon as
+                                                    the bridge is running on your machine. Start it, or set
+                                                    it to start automatically when you log in:
+                                                </div>
+                                                <pre class="o_cc_offline_cmd">python claude_bridge.py --install</pre>
+                                                <button class="btn btn-sm btn-outline-light"
+                                                        t-on-click="cancelTurn">Cancel the question</button>
+                                            </div>
+
+                                            <div t-else="" class="o_cc_working">
+                                                <span class="o_cc_dots"><i/><i/><i/></span>
+                                                <span t-if="agentStatusText" t-esc="agentStatusText"/>
+                                                <span t-else="">Working with the approved tools...</span>
+                                                <button t-if="state.agent.waiting"
+                                                        class="btn btn-sm btn-link text-danger p-0 ms-2"
+                                                        t-on-click="cancelTurn">Cancel</button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <form class="o_cc_composer p-3" t-on-submit="sendMessage">
-                                <textarea class="form-control"
-                                          rows="3"
-                                          placeholder="Ask Claude to inspect or fix an approved custom module..."
-                                          t-model="state.messageDraft"
-                                          t-on-keydown="onComposerKeydown"
-                                          t-att-disabled="state.busy"/>
-                                <div class="d-flex align-items-center mt-2 gap-2">
-                                    <div class="o_cc_hint flex-grow-1">
+                            <form class="o_cc_composer" t-on-submit="sendMessage">
+                                <div class="o_cc_composer_box">
+                                    <textarea class="o_cc_composer_input"
+                                              rows="1"
+                                              t-ref="composerInput"
+                                              placeholder="Ask Claude to inspect or fix an approved custom module..."
+                                              t-model="state.messageDraft"
+                                              t-on-keydown="onComposerKeydown"
+                                              t-att-disabled="state.busy"/>
+                                    <button class="o_cc_send" type="submit"
+                                            title="Send (Enter)"
+                                            t-att-disabled="state.busy || !state.messageDraft.trim()">
+                                        <i class="fa fa-arrow-up"/>
+                                    </button>
+                                </div>
+                                <div class="o_cc_composer_foot">
+                                    <span class="o_cc_hint flex-grow-1">
                                         <t t-if="canEdit">
                                             Developer Mode is ON. Claude may stage code changes,
                                             but cannot commit them itself.
@@ -351,11 +542,12 @@
                                             Read-only chat. Enable Developer Mode to let Claude
                                             stage code changes.
                                         </t>
-                                    </div>
-                                    <button class="btn btn-primary btn-sm" type="submit"
-                                            t-att-disabled="state.busy || !state.messageDraft.trim()">
-                                        Send
-                                    </button>
+                                    </span>
+                                    <span class="o_cc_hint o_cc_keyhint">
+                                        <kbd>Enter</kbd> to send
+                                        <span class="mx-1">&#183;</span>
+                                        <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line
+                                    </span>
                                 </div>
                             </form>
                         </t>
@@ -429,66 +621,68 @@
 
                         <!-- source control -->
                         <t t-if="state.view === 'scm'">
-                            <div class="o_cc_scroll_panel flex-grow-1 overflow-auto p-3">
-                                <div class="d-flex align-items-center gap-2 mb-3">
-                                    <div class="flex-grow-1">
-                                        <h6 class="mb-1">Staged and committed changes</h6>
-                                        <div class="o_cc_hint">
-                                            Nothing reaches GitHub until an authorised developer clicks Commit.
-                                        </div>
-                                    </div>
-                                    <button t-if="stagedChanges.length &amp;&amp; canEdit"
-                                            class="btn btn-primary btn-sm"
-                                            t-att-disabled="state.busy"
-                                            t-on-click="commitChanges">
-                                        <i class="fa fa-check me-1"/>Commit to Review Branch
-                                    </button>
-                                    <button t-if="state.conversation.commit_sha &amp;&amp; !state.conversation.pull_request_url &amp;&amp; state.access.can_create_pr"
-                                            class="btn btn-outline-light btn-sm"
-                                            t-att-disabled="state.busy"
-                                            t-on-click="createPullRequest">
-                                        Create Pull Request
-                                    </button>
-                                    <button t-if="state.conversation.pull_request_url"
-                                            class="btn btn-outline-light btn-sm"
-                                            t-on-click="openPullRequest">
-                                        Open Pull Request
-                                    </button>
-                                </div>
-
-                                <div t-if="state.conversation.review_branch"
-                                     class="o_cc_hint mb-3">
-                                    Review branch: <code><t t-esc="state.conversation.review_branch"/></code>
-                                    <t t-if="state.conversation.commit_sha">
-                                        <span class="ms-3">Commit:
-                                            <code><t t-esc="state.conversation.commit_sha.slice(0, 12)"/></code>
-                                        </span>
-                                    </t>
-                                </div>
-
-                                <div t-if="!state.changes.length" class="o_cc_empty py-5">
-                                    No code changes have been staged in this conversation.
-                                </div>
-
-                                <div t-foreach="state.changes" t-as="change" t-key="change.id"
-                                     class="o_cc_change_card mb-3">
-                                    <div class="o_cc_change_head d-flex align-items-center gap-2 p-2">
+                            <div class="o_cc_scroll_panel flex-grow-1 overflow-auto">
+                                <div class="o_cc_page">
+                                    <div class="d-flex align-items-center gap-2 mb-3">
                                         <div class="flex-grow-1">
-                                            <div class="fw-bold">
-                                                <t t-esc="change.module_name"/>/<t t-esc="change.file_path"/>
+                                            <h6 class="mb-1">Staged and committed changes</h6>
+                                            <div class="o_cc_hint">
+                                                Nothing reaches GitHub until an authorised developer clicks Commit.
                                             </div>
-                                            <div class="o_cc_hint" t-esc="change.summary"/>
                                         </div>
-                                        <span class="badge"
-                                              t-att-class="change.status === 'staged' ? 'text-bg-warning' : (change.status === 'committed' ? 'text-bg-success' : 'text-bg-secondary')"
-                                              t-esc="change.status"/>
-                                        <button t-if="change.status === 'staged'"
-                                                class="btn btn-sm btn-outline-danger"
-                                                t-on-click="() => this.discardChange(change.id)">
-                                            Discard
+                                        <button t-if="stagedChanges.length &amp;&amp; canEdit"
+                                                class="btn btn-primary btn-sm"
+                                                t-att-disabled="state.busy"
+                                                t-on-click="commitChanges">
+                                            <i class="fa fa-check me-1"/>Commit to Review Branch
+                                        </button>
+                                        <button t-if="state.conversation.commit_sha &amp;&amp; !state.conversation.pull_request_url &amp;&amp; state.access.can_create_pr"
+                                                class="btn btn-outline-light btn-sm"
+                                                t-att-disabled="state.busy"
+                                                t-on-click="createPullRequest">
+                                            Create Pull Request
+                                        </button>
+                                        <button t-if="state.conversation.pull_request_url"
+                                                class="btn btn-outline-light btn-sm"
+                                                t-on-click="openPullRequest">
+                                            Open Pull Request
                                         </button>
                                     </div>
-                                    <pre class="o_cc_diff"><t t-out="diffMarkup(change)"/></pre>
+
+                                    <div t-if="state.conversation.review_branch"
+                                         class="o_cc_hint mb-3">
+                                        Review branch: <code><t t-esc="state.conversation.review_branch"/></code>
+                                        <t t-if="state.conversation.commit_sha">
+                                            <span class="ms-3">Commit:
+                                                <code><t t-esc="state.conversation.commit_sha.slice(0, 12)"/></code>
+                                            </span>
+                                        </t>
+                                    </div>
+
+                                    <div t-if="!state.changes.length" class="o_cc_empty py-5">
+                                        No code changes have been staged in this conversation.
+                                    </div>
+
+                                    <div t-foreach="state.changes" t-as="change" t-key="change.id"
+                                         class="o_cc_change_card mb-3">
+                                        <div class="o_cc_change_head d-flex align-items-center gap-2 p-2">
+                                            <div class="flex-grow-1">
+                                                <div class="fw-bold">
+                                                    <t t-esc="change.module_name"/>/<t t-esc="change.file_path"/>
+                                                </div>
+                                                <div class="o_cc_hint" t-esc="change.summary"/>
+                                            </div>
+                                            <span class="badge"
+                                                  t-att-class="change.status === 'staged' ? 'text-bg-warning' : (change.status === 'committed' ? 'text-bg-success' : 'text-bg-secondary')"
+                                                  t-esc="change.status"/>
+                                            <button t-if="change.status === 'staged'"
+                                                    class="btn btn-sm btn-outline-danger"
+                                                    t-on-click="() => this.discardChange(change.id)">
+                                                Discard
+                                            </button>
+                                        </div>
+                                        <pre class="o_cc_diff"><t t-out="diffMarkup(change)"/></pre>
+                                    </div>
                                 </div>
                             </div>
                         </t>

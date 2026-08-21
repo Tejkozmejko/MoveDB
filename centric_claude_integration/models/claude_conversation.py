@@ -20,6 +20,14 @@ class CentricClaudeConversation(models.Model):
         ondelete="cascade",
         index=True,
     )
+    project_id = fields.Many2one(
+        "centric.claude.project",
+        string="Project",
+        ondelete="set null",
+        index=True,
+        help="Groups this conversation with related ones and gives it the "
+             "project's standing instructions.",
+    )
     developer_mode = fields.Boolean(default=False)
     # Both backends take the same five levels: the Messages API as
     # output_config.effort, and the Claude Code CLI as --effort. Keeping one
@@ -121,25 +129,89 @@ class CentricClaudeConversation(models.Model):
         }
 
     @api.model
-    def workspace_bootstrap(self):
-        access = self._workspace_access()
-        conversations = self.search([("user_id", "=", self.env.user.id)], limit=50)
+    def _workspace_sidebar(self):
+        """Everything the sidebar shows: the projects and the chat list."""
+        conversations = self.search([("user_id", "=", self.env.user.id)], limit=200)
         return {
-            "access": access,
-            "conversations": [self._conversation_summary(conv) for conv in conversations],
+            "projects": self.env["centric.claude.project"]._workspace_projects(),
+            "conversations": [
+                self._conversation_summary(conv) for conv in conversations
+            ],
         }
 
     @api.model
-    def create_workspace_conversation(self, name=None):
+    def workspace_bootstrap(self):
+        return {"access": self._workspace_access()} | self._workspace_sidebar()
+
+    @api.model
+    def create_workspace_conversation(self, name=None, project_id=None):
         access = self._workspace_access()
         if not access["can_chat"]:
             raise AccessError(_("You do not have access to the Claude workspace."))
+        project = self.env["centric.claude.project"]
+        if project_id:
+            project = project.browse(int(project_id)).exists()
+            if project:
+                project._check_owner()
         conv = self.create({
             "name": (name or _("New Claude Conversation")).strip()[:120],
             "user_id": self.env.user.id,
             "base_branch": access["default_branch"],
+            "project_id": project.id or False,
         })
         return self._conversation_payload(conv)
+
+    @api.model
+    def rename_workspace_conversation(self, conversation_id, name):
+        conv = self.browse(int(conversation_id)).exists()
+        if not conv:
+            raise UserError(_("Claude conversation not found."))
+        conv._check_owner()
+        clean = (name or "").strip()[:120]
+        if not clean:
+            raise ValidationError(_("A conversation needs a name."))
+        conv.name = clean
+        return self._workspace_sidebar()
+
+    @api.model
+    def set_workspace_conversation_project(self, conversation_id, project_id):
+        """File a chat under a project, or take it out of one with a false id."""
+        conv = self.browse(int(conversation_id)).exists()
+        if not conv:
+            raise UserError(_("Claude conversation not found."))
+        conv._check_owner()
+        project = self.env["centric.claude.project"]
+        if project_id:
+            project = project.browse(int(project_id)).exists()
+            if not project:
+                raise UserError(_("That Claude project no longer exists."))
+            project._check_owner()
+        conv.project_id = project.id or False
+        return self._conversation_payload(conv)
+
+    @api.model
+    def delete_workspace_conversation(self, conversation_id):
+        """Delete one chat and everything cascading from it.
+
+        A queued turn is cancelled first: the bridge would otherwise claim a
+        turn whose conversation no longer exists and fail posting the answer
+        back.
+        """
+        conv = self.browse(int(conversation_id)).exists()
+        if not conv:
+            # Already gone - deleting twice is not an error worth raising.
+            return self._workspace_sidebar()
+        conv._check_owner()
+        self.env["centric.claude.turn"].sudo().search([
+            ("conversation_id", "=", conv.id),
+            ("state", "in", ("pending", "running")),
+        ]).write({"state": "cancelled", "finished_at": fields.Datetime.now()})
+        conv._audit(
+            "conversation_delete",
+            details="Conversation deleted: %s" % conv.name,
+        )
+        conv.unlink()
+        return self._workspace_sidebar()
 
     @api.model
     def get_workspace_conversation(self, conversation_id):
@@ -354,7 +426,23 @@ Rules:
 - You cannot commit, merge, deploy, or push production. A human developer controls GitHub commit/PR actions in Odoo.
 - If required context is unavailable, say what is missing instead of inventing it.
 {self._data_prompt(access)}
+{self._project_prompt()}
 """.strip()
+
+    def _project_prompt(self):
+        """The standing instructions of the project this conversation sits in."""
+        self.ensure_one()
+        project = self.project_id
+        text = (project.instructions or "").strip() if project else ""
+        if not text:
+            return ""
+        limit = self.env["centric.claude.project"].MAX_INSTRUCTIONS
+        return (
+            "\nProject: %s\n"
+            "The user filed this conversation under a project with standing "
+            "instructions. Follow them unless they conflict with the rules "
+            "above, which always win:\n%s\n"
+        ) % (project.name, text[:limit])
 
     def _data_prompt(self, access):
         """The part of the system prompt that governs live Odoo records."""
@@ -1355,6 +1443,7 @@ Rules:
             "effort": conv.effort,
             "id": conv.id,
             "name": conv.name,
+            "project_id": conv.project_id.id or False,
             "developer_mode": conv.developer_mode,
             "base_branch": conv.base_branch,
             "review_branch": conv.review_branch or "",
@@ -1398,6 +1487,9 @@ Rules:
             ],
             "access": self._workspace_access(),
             "agent": self._agent_status(conv),
+            # The sidebar shows a per-project chat count, so it has to follow
+            # every payload that could have moved a chat between projects.
+            "projects": self.env["centric.claude.project"]._workspace_projects(),
         }
 
     @api.model

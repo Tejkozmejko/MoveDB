@@ -636,3 +636,135 @@ class TestClaudeWorkspace(TransactionCase):
         self.assertEqual(access["level"], "none")
         with self.assertRaises(AccessError):
             self._data().search_records("res.partner")
+
+    # -- projects, renaming and deletion -----------------------------------
+    def test_bootstrap_carries_projects_and_chats(self):
+        self._conversation()
+        self.env["centric.claude.project"].create_workspace_project("Website")
+        data = self.Conversation.workspace_bootstrap()
+        self.assertIn("projects", data)
+        self.assertIn("conversations", data)
+        self.assertEqual([p["name"] for p in data["projects"]], ["Website"])
+
+    def test_a_chat_can_be_filed_and_unfiled(self):
+        conversation = self._conversation()
+        created = self.env["centric.claude.project"].create_workspace_project("Website")
+        project_id = created["project_id"]
+
+        payload = self.Conversation.set_workspace_conversation_project(
+            conversation.id, project_id
+        )
+        self.assertEqual(payload["conversation"]["project_id"], project_id)
+        self.assertEqual(
+            [p["conversation_count"] for p in payload["projects"]], [1]
+        )
+
+        payload = self.Conversation.set_workspace_conversation_project(
+            conversation.id, False
+        )
+        self.assertFalse(payload["conversation"]["project_id"])
+
+    def test_project_instructions_reach_the_system_prompt(self):
+        conversation = self._conversation()
+        created = self.env["centric.claude.project"].create_workspace_project("Website")
+        self.env["centric.claude.project"].set_workspace_project_instructions(
+            created["project_id"], "Always check the POS session first."
+        )
+        self.Conversation.set_workspace_conversation_project(
+            conversation.id, created["project_id"]
+        )
+        access = self.Conversation._workspace_access()
+        prompt = conversation._system_prompt(access)
+        self.assertIn("Always check the POS session first.", prompt)
+        self.assertIn("Project: Website", prompt)
+
+    def test_a_chat_without_a_project_gets_no_project_prompt(self):
+        conversation = self._conversation()
+        self.assertEqual(conversation._project_prompt(), "")
+
+    def test_project_instructions_travel_with_a_queued_turn(self):
+        self._configure(**{"centric_claude.backend": "agent"})
+        conversation = self._conversation()
+        created = self.env["centric.claude.project"].create_workspace_project("Website")
+        self.env["centric.claude.project"].set_workspace_project_instructions(
+            created["project_id"], "Prefer the smallest change."
+        )
+        self.Conversation.set_workspace_conversation_project(
+            conversation.id, created["project_id"]
+        )
+        self.Conversation.send_workspace_message(conversation.id, "hello")
+        turn = self.env["centric.claude.turn"].search([
+            ("conversation_id", "=", conversation.id)
+        ])
+        payload = turn._payload_for_agent()
+        self.assertEqual(payload["project_name"], "Website")
+        self.assertEqual(payload["project_instructions"], "Prefer the smallest change.")
+
+    def test_deleting_a_project_keeps_its_chats(self):
+        conversation = self._conversation()
+        created = self.env["centric.claude.project"].create_workspace_project("Website")
+        self.Conversation.set_workspace_conversation_project(
+            conversation.id, created["project_id"]
+        )
+        self.env["centric.claude.project"].delete_workspace_project(
+            created["project_id"]
+        )
+        self.assertTrue(conversation.exists())
+        self.assertFalse(conversation.project_id)
+
+    def test_deleting_a_chat_removes_its_messages(self):
+        conversation = self._conversation()
+        self.env["centric.claude.message"].create({
+            "conversation_id": conversation.id,
+            "role": "user",
+            "content": "hello",
+        })
+        conversation_id = conversation.id
+        data = self.Conversation.delete_workspace_conversation(conversation_id)
+        self.assertFalse(conversation.exists())
+        self.assertNotIn(
+            conversation_id, [c["id"] for c in data["conversations"]]
+        )
+        self.assertFalse(self.env["centric.claude.message"].search([
+            ("conversation_id", "=", conversation_id)
+        ]))
+
+    def test_deleting_a_chat_cancels_a_queued_turn(self):
+        """The bridge must not be left holding a turn with no conversation."""
+        self._configure(**{"centric_claude.backend": "agent"})
+        conversation = self._conversation()
+        self.Conversation.send_workspace_message(conversation.id, "hello")
+        turn = self.env["centric.claude.turn"].search([
+            ("conversation_id", "=", conversation.id)
+        ])
+        self.assertEqual(turn.state, "pending")
+        self.Conversation.delete_workspace_conversation(conversation.id)
+        self.assertFalse(turn.exists())
+
+    def test_deleting_a_chat_twice_is_not_an_error(self):
+        conversation = self._conversation()
+        conversation_id = conversation.id
+        self.Conversation.delete_workspace_conversation(conversation_id)
+        self.Conversation.delete_workspace_conversation(conversation_id)
+
+    def test_a_chat_can_be_renamed(self):
+        conversation = self._conversation()
+        self.Conversation.rename_workspace_conversation(conversation.id, "  Payroll  ")
+        self.assertEqual(conversation.name, "Payroll")
+        with self.assertRaises(Exception):
+            self.Conversation.rename_workspace_conversation(conversation.id, "   ")
+
+    def test_a_new_chat_can_start_inside_a_project(self):
+        created = self.env["centric.claude.project"].create_workspace_project("Website")
+        payload = self.Conversation.create_workspace_conversation(
+            None, created["project_id"]
+        )
+        self.assertEqual(payload["conversation"]["project_id"], created["project_id"])
+
+    def test_project_instructions_are_length_limited(self):
+        created = self.env["centric.claude.project"].create_workspace_project("Website")
+        Project = self.env["centric.claude.project"]
+        with self.assertRaises(Exception):
+            Project.set_workspace_project_instructions(
+                created["project_id"], "x" * (Project.MAX_INSTRUCTIONS + 1)
+            )

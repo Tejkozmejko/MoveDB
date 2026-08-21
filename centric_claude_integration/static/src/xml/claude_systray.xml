@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="centric_claude_integration.ClaudeSystrayItem">
+        <div class="o_cc_systray">
+            <button t-if="state.allowed"
+                    class="o_cc_systray_btn"
+                    type="button"
+                    title="Claude Developer"
+                    aria-label="Claude Developer"
+                    t-on-click="openWorkspace">
+                <t t-call="centric_claude_integration.ClaudeMark"/>
+            </button>
+        </div>
+    </t>
+
+    <!-- The Claude sunburst: eleven tapered blades around a solid centre.
+         Drawn as one path so a single `fill: currentColor` colours the mark
+         wherever it is used. -->
+    <t t-name="centric_claude_integration.ClaudeMark">
+        <svg class="o_cc_mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path fill="currentColor" d="M13.15 10.95Q12.71 6.03 12.5 2.5Q12 2 11.5 2.5Q11.29 6.03 10.85 10.95ZM13.54 11.74Q15.12 8.47 16.26 6.3Q16.11 5.61 15.42 5.76Q13.92 7.7 11.6 10.49ZM13.43 12.61Q17.73 10.17 20.85 8.51Q21.1 7.85 20.43 7.6Q17.14 8.87 12.48 10.52ZM12.88 13.29Q16.5 13.37 18.96 13.51Q19.52 13.08 19.1 12.52Q16.71 11.96 13.2 11.01ZM12.04 13.56Q16.05 16.45 18.85 18.6Q19.56 18.55 19.51 17.84Q16.98 15.37 13.55 11.82ZM11.19 13.33Q12.63 16.66 13.52 18.95Q14.14 19.29 14.48 18.67Q13.99 16.26 13.4 12.68ZM10.6 12.68Q9.63 17.53 8.84 20.97Q9.18 21.59 9.8 21.26Q11 17.93 12.81 13.33ZM10.45 11.82Q8.02 14.51 6.31 16.27Q6.26 16.98 6.96 17.03Q8.95 15.59 11.96 13.56ZM10.8 11.01Q5.99 12.14 2.53 12.86Q2.1 13.42 2.67 13.85Q6.19 13.56 11.12 13.29ZM11.52 10.52Q8.06 9.42 5.75 8.6Q5.09 8.84 5.33 9.51Q7.47 10.72 10.57 12.61ZM12.4 10.49Q9.37 6.59 7.28 3.74Q6.59 3.59 6.44 4.28Q8.17 7.36 10.46 11.74Z"/>
+        </svg>
+    </t>
+
+</templates>
