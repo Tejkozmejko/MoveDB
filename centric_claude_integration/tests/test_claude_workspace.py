@@ -923,6 +923,14 @@ class TestClaudeWorkspace(TransactionCase):
         Attachment._gc_workspace_attachments()
         self.assertTrue(Attachment.browse(summary["id"]).exists())
 
+    def test_the_stored_bytes_survive_a_round_trip(self):
+        """What the bridge downloads has to be the file that was uploaded."""
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        attachment = self.env["centric.claude.attachment"].browse(summary["id"])
+        self.assertEqual(base64.b64decode(attachment.datas), self.PNG_BYTES)
+        self.assertEqual(attachment.file_size, len(self.PNG_BYTES))
+
     def test_deleting_a_chat_removes_its_images(self):
         conversation = self._conversation()
         summary = self._attach(conversation)

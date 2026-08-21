@@ -325,12 +325,15 @@ class CentricClaudeAgentController(http.Controller):
         if not attachment or attachment.conversation_id != turn.conversation_id:
             return {"error": "That image does not belong to this turn."}
         data = attachment.datas or b""
-        return {"result": {
+        # Returned flat, like /complete and /ping. Only /agent/odoo wraps its
+        # payload in "result", because its caller has to tell a tool result
+        # that is itself a list or a scalar apart from an error.
+        return {
             "id": attachment.id,
             "name": attachment.name,
             "mimetype": attachment.mimetype,
             "data": data.decode() if isinstance(data, bytes) else data,
-        }}
+        }
 
     @http.route(
         "/centric_claude/agent/ping",

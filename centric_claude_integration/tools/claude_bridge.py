@@ -684,6 +684,13 @@ def fetch_attachments(config, turn, repo):
         except (BridgeError, ValueError, TypeError, binascii.Error) as exc:
             say("  WARNING: could not fetch image %s (%s)" % (item.get("name"), exc))
             continue
+        if not raw:
+            # An empty download is silent otherwise: a zero-byte file gets
+            # written and named in the prompt, and Claude is left reading
+            # nothing while the turn looks like it worked.
+            say("  WARNING: image %s came back empty; not attaching it."
+                % item.get("name"))
+            continue
         target = os.path.join(folder, safe_attachment_name(item, index))
         try:
             with open(target, "wb") as handle:
