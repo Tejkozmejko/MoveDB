@@ -298,6 +298,41 @@ class CentricClaudeAgentController(http.Controller):
         raise UserError("Unknown Odoo operation: %s" % op)
 
     @http.route(
+        "/centric_claude/agent/attachment",
+        type="jsonrpc", auth="public", methods=["POST"], csrf=False,
+    )
+    def attachment(self, turn_id=None, attachment_id=None, **kwargs):
+        """Hand one attached image to the bridge working on this turn.
+
+        Scoped the same way as the Odoo operations endpoint: only while the
+        turn is actually running, and only for images belonging to that turn's
+        own conversation. A leaked token is therefore not a way to walk the
+        whole filestore.
+        """
+        agent_user, reason = self._agent_check()
+        if not agent_user:
+            return self._denied(reason)
+        turn = request.env["centric.claude.turn"].sudo().browse(
+            int(turn_id or 0)
+        ).exists()
+        if not turn:
+            return {"error": "Unknown turn."}
+        if turn.state != "running":
+            return {"error": "Turn %s is %s, not running." % (turn.id, turn.state)}
+        attachment = request.env["centric.claude.attachment"].sudo().browse(
+            int(attachment_id or 0)
+        ).exists()
+        if not attachment or attachment.conversation_id != turn.conversation_id:
+            return {"error": "That image does not belong to this turn."}
+        data = attachment.datas or b""
+        return {"result": {
+            "id": attachment.id,
+            "name": attachment.name,
+            "mimetype": attachment.mimetype,
+            "data": data.decode() if isinstance(data, bytes) else data,
+        }}
+
+    @http.route(
         "/centric_claude/agent/ping",
         type="jsonrpc", auth="public", methods=["POST"], csrf=False,
     )

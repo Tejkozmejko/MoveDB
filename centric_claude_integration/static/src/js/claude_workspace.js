@@ -62,6 +62,20 @@ function moduleScaffold(name) {
 }
 
 
+/** A File as bare base64, without the `data:...;base64,` prefix Odoo will not want. */
+function readAsBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = String(reader.result || "");
+            resolve(result.slice(result.indexOf(",") + 1));
+        };
+        reader.onerror = () => reject(reader.error || new Error("Could not read the file."));
+        reader.readAsDataURL(file);
+    });
+}
+
+
 export class ClaudeDeveloperWorkspace extends Component {
     static template = "centric_claude_integration.ClaudeDeveloperWorkspace";
 
@@ -86,6 +100,10 @@ export class ClaudeDeveloperWorkspace extends Component {
             projectInstructions: "",
             // { id, value } while a chat name is being edited in the list.
             renaming: null,
+            // Images uploaded but not yet sent, and how many are in flight.
+            pendingAttachments: [],
+            uploading: 0,
+            dragging: false,
             conversation: null,
             messages: [],
             changes: [],
@@ -116,6 +134,7 @@ export class ClaudeDeveloperWorkspace extends Component {
         this.newNameInput = useRef("newNameInput");
         this.renameInput = useRef("renameInput");
         this.composerInput = useRef("composerInput");
+        this.fileInput = useRef("fileInput");
         this.chatScroll = useRef("chatScroll");
         // Rendering Markdown on every re-render would re-parse the whole
         // transcript each time the spinner ticks. Message text never changes
@@ -301,6 +320,9 @@ export class ClaudeDeveloperWorkspace extends Component {
 
     applyConversationPayload(payload) {
         this.applySidebar(payload);
+        // Unsent images survive a reload or a conversation switch, so a pasted
+        // screenshot is not silently lost.
+        this.state.pendingAttachments = payload.pending_attachments || [];
         this.state.agent = payload.agent || {};
         this.state.busy = Boolean(this.state.agent.waiting);
         this.state.conversation = payload.conversation;
@@ -766,7 +788,10 @@ export class ClaudeDeveloperWorkspace extends Component {
     async sendMessage(ev) {
         ev.preventDefault();
         const text = this.state.messageDraft.trim();
-        if (!text || this.state.busy) {
+        const attached = this.state.pendingAttachments;
+        // An image on its own is a valid question; wait for uploads first, or
+        // they would be left behind by the message they belong to.
+        if ((!text && !attached.length) || this.state.busy || this.state.uploading) {
             return;
         }
         if (!this.state.conversation) {
@@ -777,14 +802,17 @@ export class ClaudeDeveloperWorkspace extends Component {
         }
         this.state.busy = true;
         this.state.messageDraft = "";
+        this.state.pendingAttachments = [];
         try {
             const payload = await this.call("send_workspace_message", [
                 this.state.conversation.id,
                 text,
+                attached.map((item) => item.id),
             ]);
             this.applyConversationPayload(payload);
         } catch (error) {
             this.state.messageDraft = text;
+            this.state.pendingAttachments = attached;
             this.state.busy = false;
             this.notifyError(error);
         }
@@ -823,6 +851,140 @@ export class ClaudeDeveloperWorkspace extends Component {
         const html = markup(renderMarkdown(message.content));
         this.renderedMessages.set(message.id, { source: message.content, html });
         return html;
+    }
+
+    // ---------------------------------------------------------- attachments
+    get attachmentsEnabled() {
+        return Boolean(this.state.access.attachments_enabled);
+    }
+
+    get canSend() {
+        return Boolean(
+            !this.state.busy &&
+            !this.state.uploading &&
+            (this.state.messageDraft.trim() || this.state.pendingAttachments.length)
+        );
+    }
+
+    pickFiles() {
+        if (this.fileInput.el) {
+            this.fileInput.el.click();
+        }
+    }
+
+    onFilesPicked(ev) {
+        const files = [...(ev.target.files || [])];
+        // Clear it, or picking the same file twice in a row fires no change.
+        ev.target.value = "";
+        this.uploadFiles(files);
+    }
+
+    onComposerPaste(ev) {
+        if (!this.attachmentsEnabled) {
+            return;
+        }
+        const items = [...(ev.clipboardData?.items || [])];
+        const files = items
+            .filter((item) => item.kind === "file")
+            .map((item) => item.getAsFile())
+            .filter((file) => file && file.type.startsWith("image/"));
+        if (!files.length) {
+            // An ordinary text paste: leave the textarea to handle it.
+            return;
+        }
+        ev.preventDefault();
+        this.uploadFiles(files);
+    }
+
+    onComposerDragOver(ev) {
+        if (this.attachmentsEnabled && [...(ev.dataTransfer?.types || [])].includes("Files")) {
+            ev.preventDefault();
+            this.state.dragging = true;
+        }
+    }
+
+    onComposerDragLeave() {
+        this.state.dragging = false;
+    }
+
+    onComposerDrop(ev) {
+        this.state.dragging = false;
+        if (!this.attachmentsEnabled) {
+            return;
+        }
+        const files = [...(ev.dataTransfer?.files || [])];
+        if (!files.length) {
+            return;
+        }
+        ev.preventDefault();
+        this.uploadFiles(files);
+    }
+
+    async uploadFiles(files) {
+        if (!this.attachmentsEnabled || !files.length) {
+            return;
+        }
+        // Sending an image is a perfectly good way to start a conversation, so
+        // create one rather than refusing the paste.
+        if (!this.state.conversation) {
+            await this.newConversation();
+            if (!this.state.conversation) {
+                return;
+            }
+        }
+        const conversationId = this.state.conversation.id;
+        for (const file of files) {
+            if (!file.type.startsWith("image/")) {
+                this.notification.add(
+                    `${file.name || "That file"} is not an image, so it was not attached.`,
+                    { type: "warning" }
+                );
+                continue;
+            }
+            this.state.uploading += 1;
+            try {
+                const data = await readAsBase64(file);
+                const summary = await this.orm.call(
+                    "centric.claude.attachment",
+                    "upload_workspace_attachment",
+                    [conversationId, file.name || "", data],
+                    {}
+                );
+                // The conversation can be switched mid-upload; only keep the
+                // image if we are still looking at the chat it belongs to.
+                if (this.state.conversation && this.state.conversation.id === conversationId) {
+                    this.state.pendingAttachments.push(summary);
+                }
+            } catch (error) {
+                this.notifyError(error);
+            } finally {
+                this.state.uploading -= 1;
+            }
+        }
+    }
+
+    async removeAttachment(attachment) {
+        try {
+            await this.orm.call(
+                "centric.claude.attachment",
+                "discard_workspace_attachment",
+                [attachment.id],
+                {}
+            );
+        } catch (error) {
+            this.notifyError(error);
+            return;
+        }
+        const index = this.state.pendingAttachments.findIndex(
+            (item) => item.id === attachment.id
+        );
+        if (index >= 0) {
+            this.state.pendingAttachments.splice(index, 1);
+        }
+    }
+
+    openAttachment(attachment) {
+        window.open(attachment.url, "_blank", "noopener,noreferrer");
     }
 
     get suggestions() {

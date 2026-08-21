@@ -1,6 +1,7 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_claude_conversation_user,Claude Conversation User,model_centric_claude_conversation,centric_claude_integration.group_claude_user,1,1,1,1
 access_claude_project_user,Claude Project User,model_centric_claude_project,centric_claude_integration.group_claude_user,1,1,1,1
+access_claude_attachment_user,Claude Attachment User,model_centric_claude_attachment,centric_claude_integration.group_claude_user,1,1,1,1
 access_claude_message_user,Claude Message User,model_centric_claude_message,centric_claude_integration.group_claude_user,1,1,1,1
 access_claude_change_user,Claude Change User,model_centric_claude_change,centric_claude_integration.group_claude_user,1,1,1,1
 access_claude_turn_user,Claude Turn User,model_centric_claude_turn,centric_claude_integration.group_claude_user,1,1,1,0

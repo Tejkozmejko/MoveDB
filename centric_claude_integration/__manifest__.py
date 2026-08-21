@@ -1,6 +1,6 @@
 {
     "name": "Centric Claude Integration",
-    "version": "19.0.1.8.0",
+    "version": "19.0.1.9.0",
     "category": "Technical",
     "author": "Centric",
     "website": "https://www.centricmt.com",
@@ -16,6 +16,8 @@ Adds a controlled Claude developer workspace inside Odoo.
 * Group chats into projects, each with its own standing instructions, the way
   projects work on claude.ai.
 * Rename and delete chats.
+* Paste or attach images - a screenshot of an error, say - and have Claude
+  look at them. Images are deleted automatically after a configurable age.
 * Let Claude inspect approved Centric modules in a configured GitHub repository.
 * Browse repository files from Odoo without opening VS Code.
 * Stage AI or manual code changes inside Odoo before anything is committed.
@@ -44,6 +46,7 @@ GitHub, so Odoo.sh can build and validate the resulting branch normally.
         "views/claude_audit_log_views.xml",
         "views/claude_turn_views.xml",
         "views/claude_workspace_menus.xml",
+        "data/claude_cron.xml",
     ],
     "assets": {
         "web.assets_backend": [

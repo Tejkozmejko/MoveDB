@@ -1,6 +1,8 @@
+import base64
 from unittest.mock import patch
 
-from odoo.exceptions import AccessError, UserError
+from odoo import fields
+from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests import TransactionCase, tagged
 
 
@@ -768,3 +770,163 @@ class TestClaudeWorkspace(TransactionCase):
             Project.set_workspace_project_instructions(
                 created["project_id"], "x" * (Project.MAX_INSTRUCTIONS + 1)
             )
+
+    # -- image attachments -------------------------------------------------
+    PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+    JPEG_BYTES = b"\xff\xd8\xff\xe0" + b"\x00" * 32
+
+    def _b64(self, raw):
+        return base64.b64encode(raw).decode()
+
+    def _attach(self, conversation, raw=None, name="shot.png"):
+        return self.env["centric.claude.attachment"].upload_workspace_attachment(
+            conversation.id, name, self._b64(self.PNG_BYTES if raw is None else raw)
+        )
+
+    def test_an_image_can_be_attached_and_sent(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        self.assertEqual(summary["mimetype"], "image/png")
+        self.assertIn("/web/image/centric.claude.attachment/", summary["url"])
+
+        payload = self.Conversation.send_workspace_message(
+            conversation.id, "what is this?", [summary["id"]]
+        )
+        message = payload["messages"][-1]
+        self.assertEqual(message["role"], "user")
+        self.assertEqual([a["id"] for a in message["attachments"]], [summary["id"]])
+        # Nothing is left waiting once it has been sent.
+        self.assertFalse(payload["pending_attachments"])
+
+    def test_the_claimed_file_type_is_ignored(self):
+        """A disguised file must not reach a developer's disk as an image."""
+        conversation = self._conversation()
+        with self.assertRaises(ValidationError):
+            self._attach(conversation, raw=b"#!/bin/sh\nrm -rf /\n", name="shot.png")
+
+    def test_a_jpeg_is_recognised_from_its_bytes(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation, raw=self.JPEG_BYTES, name="photo")
+        self.assertEqual(summary["mimetype"], "image/jpeg")
+        # The extension follows the sniffed type, not the supplied name.
+        self.assertTrue(summary["name"].endswith(".jpg"))
+
+    def test_an_oversized_image_is_refused(self):
+        conversation = self._conversation()
+        self.params.set_param("centric_claude.attachment_max_mb", "0.1")
+        with self.assertRaises(ValidationError):
+            self._attach(conversation, raw=self.PNG_BYTES + b"\x00" * (200 * 1024))
+
+    def test_attachments_can_be_switched_off(self):
+        conversation = self._conversation()
+        self.params.set_param("centric_claude.attachments_enabled", "False")
+        with self.assertRaises(UserError):
+            self._attach(conversation)
+
+    def test_an_image_only_message_is_allowed_and_names_the_chat(self):
+        conversation = self.Conversation.create({
+            "name": "New Claude Conversation",
+            "user_id": self.env.user.id,
+            "base_branch": "testing",
+        })
+        summary = self._attach(conversation, name="traceback.png")
+        self.Conversation.send_workspace_message(conversation.id, "", [summary["id"]])
+        self.assertEqual(conversation.name, "traceback.png")
+        self.assertTrue(conversation.message_ids[0].content)
+
+    def test_an_empty_message_with_no_image_is_still_refused(self):
+        conversation = self._conversation()
+        with self.assertRaises(ValidationError):
+            self.Conversation.send_workspace_message(conversation.id, "   ")
+
+    def test_an_already_sent_image_cannot_be_reattached(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        self.Conversation.send_workspace_message(conversation.id, "one", [summary["id"]])
+        payload = self.Conversation.send_workspace_message(
+            conversation.id, "two", [summary["id"]]
+        )
+        self.assertFalse(payload["messages"][-1]["attachments"])
+
+    def test_an_unsent_image_can_be_discarded(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        Attachment = self.env["centric.claude.attachment"]
+        Attachment.discard_workspace_attachment(summary["id"])
+        self.assertFalse(Attachment.browse(summary["id"]).exists())
+
+    def test_a_sent_image_cannot_be_discarded(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        self.Conversation.send_workspace_message(conversation.id, "hi", [summary["id"]])
+        with self.assertRaises(UserError):
+            self.env["centric.claude.attachment"].discard_workspace_attachment(
+                summary["id"]
+            )
+
+    def test_images_travel_with_a_queued_turn(self):
+        self._configure(**{"centric_claude.backend": "agent"})
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        self.Conversation.send_workspace_message(
+            conversation.id, "what is this?", [summary["id"]]
+        )
+        turn = self.env["centric.claude.turn"].search([
+            ("conversation_id", "=", conversation.id)
+        ])
+        payload = turn._payload_for_agent()
+        self.assertEqual([a["id"] for a in payload["attachments"]], [summary["id"]])
+        # Metadata only: the bytes are fetched one at a time instead, so
+        # claiming a turn does not drag every screenshot down with it.
+        self.assertNotIn("data", payload["attachments"][0])
+
+    def test_the_api_backend_sends_an_image_block(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        self.Conversation.send_workspace_message(conversation.id, "look", [summary["id"]])
+        history = conversation.message_ids.filtered(
+            lambda msg: msg.role in {"user", "assistant"}
+        ).sorted("id")
+        blocks = conversation._api_messages(history)[-1]["content"]
+        self.assertIsInstance(blocks, list)
+        self.assertEqual(blocks[0]["type"], "image")
+        self.assertEqual(blocks[0]["source"]["media_type"], "image/png")
+        self.assertEqual(blocks[-1]["type"], "text")
+
+    def test_a_message_without_images_stays_plain_text(self):
+        conversation = self._conversation()
+        self.Conversation.send_workspace_message(conversation.id, "no pictures")
+        history = conversation.message_ids.sorted("id")
+        self.assertEqual(conversation._api_messages(history)[-1]["content"], "no pictures")
+
+    def test_old_images_are_deleted_and_the_transcript_is_kept(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        self.Conversation.send_workspace_message(conversation.id, "hi", [summary["id"]])
+        Attachment = self.env["centric.claude.attachment"]
+        self.params.set_param("centric_claude.attachment_retention_days", "30")
+        Attachment.browse(summary["id"]).sudo().write({
+            "create_date": fields.Datetime.subtract(fields.Datetime.now(), days=60),
+        })
+        Attachment._gc_workspace_attachments()
+        self.assertFalse(Attachment.browse(summary["id"]).exists())
+        self.assertTrue(conversation.message_ids)
+
+    def test_retention_of_zero_keeps_images_forever(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        Attachment = self.env["centric.claude.attachment"]
+        self.params.set_param("centric_claude.attachment_retention_days", "0")
+        Attachment.browse(summary["id"]).sudo().write({
+            "create_date": fields.Datetime.subtract(fields.Datetime.now(), days=900),
+        })
+        Attachment._gc_workspace_attachments()
+        self.assertTrue(Attachment.browse(summary["id"]).exists())
+
+    def test_deleting_a_chat_removes_its_images(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        self.Conversation.delete_workspace_conversation(conversation.id)
+        self.assertFalse(
+            self.env["centric.claude.attachment"].browse(summary["id"]).exists()
+        )

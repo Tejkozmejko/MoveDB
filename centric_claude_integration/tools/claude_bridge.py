@@ -54,6 +54,8 @@ Safety
 """
 import argparse
 import atexit
+import base64
+import binascii
 import json
 import os
 import re
@@ -81,6 +83,22 @@ LOCK_PATH = os.path.join(HOME_DIR, "bridge.lock")
 WORKTREE_DIR = (os.environ.get("CENTRIC_CLAUDE_WORKTREES")
                 or os.path.join(HOME_DIR, "worktrees"))
 LOG_PATH = os.path.join(HOME_DIR, "bridge.log")
+# Attached images are dropped here, inside the checkout Claude is working in.
+# Inside on purpose: Claude Code will not read a file outside its working
+# directory, and `claude -p` has no prompt to approve one. Git never sees the
+# folder because the bridge adds it to the repository's local exclude file, so
+# it trips neither the clean-tree check nor the "what did Claude change" scan.
+ATTACHMENT_DIRNAME = ".centric_claude_files"
+# Extensions are chosen from the type Odoo sniffed from the bytes, never from
+# anything the uploader claimed, so a disguised file cannot land as one.
+ATTACHMENT_EXTENSIONS = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+}
+# How many images from earlier in the conversation to bring down as well.
+MAX_HISTORY_IMAGES = 8
 TASK_NAME = "Centric Claude Bridge"
 # The per-user Startup folder needs no elevation, unlike a scheduled task.
 STARTUP_FILENAME = "centric-claude-bridge.cmd"
@@ -559,6 +577,124 @@ def sync_worktree(repo, path):
     return path
 
 
+def exclude_dir(repo, name):
+    """Make git ignore `name` in this checkout, without touching the repo.
+
+    Written to the checkout's own info/exclude rather than a committed
+    .gitignore: this is a local working detail of one machine, not something to
+    push to everyone. A worktree shares the common git dir, so this covers all
+    the workers at once.
+    """
+    try:
+        common = git(repo, "rev-parse", "--git-common-dir").strip()
+    except BridgeError:
+        return
+    if not os.path.isabs(common):
+        common = os.path.join(repo, common)
+    exclude = os.path.join(common, "info", "exclude")
+    line = "/" + name + "/"
+    try:
+        os.makedirs(os.path.dirname(exclude), exist_ok=True)
+        existing = ""
+        if os.path.isfile(exclude):
+            with open(exclude, encoding="utf-8", errors="replace") as handle:
+                existing = handle.read()
+        if line not in existing.splitlines():
+            with open(exclude, "a", encoding="utf-8") as handle:
+                if existing and not existing.endswith(chr(10)):
+                    handle.write(chr(10))
+                handle.write("# Centric Claude chat attachments" + chr(10))
+                handle.write(line + chr(10))
+    except OSError as exc:
+        say("  WARNING: could not write %s (%s); attachments may look like "
+            "changes to git." % (exclude, exc))
+
+
+def attachment_root(repo):
+    return os.path.join(repo, ATTACHMENT_DIRNAME)
+
+
+def purge_attachments(repo, turn_id=None):
+    """Delete downloaded images. Whole folder when no turn is named.
+
+    Called after every turn, on failure as well as success, and once at
+    start-up so a crash never leaves somebody's screenshot on the disk.
+    """
+    target = attachment_root(repo)
+    if turn_id is not None:
+        target = os.path.join(target, str(turn_id))
+    if not os.path.isdir(target):
+        return
+    try:
+        shutil.rmtree(target, ignore_errors=True)
+    except OSError as exc:
+        say("  WARNING: could not delete %s (%s)" % (target, exc))
+
+
+def wanted_attachments(turn):
+    """This turn's images first, then recent ones from earlier in the chat.
+
+    Older screenshots are worth having - people say "the error I sent before" -
+    but not without a bound, so the oldest drop once the budget is spent.
+    """
+    wanted, seen = [], set()
+    for item in turn.get("attachments") or []:
+        if item.get("id") not in seen:
+            seen.add(item.get("id"))
+            wanted.append(item)
+    history = turn.get("history") or []
+    # Skip the last entry: that is this turn's own message, already covered.
+    for message in reversed(history[:-1]):
+        for item in message.get("attachments") or []:
+            if len(wanted) >= MAX_HISTORY_IMAGES:
+                return wanted
+            if item.get("id") not in seen:
+                seen.add(item.get("id"))
+                wanted.append(item)
+    return wanted
+
+
+def safe_attachment_name(item, index):
+    """A filename built here, never taken from the upload.
+
+    An uploaded name is attacker-controlled text; joining it onto a path is how
+    a "screenshot.png" turns out to be ../../something. Only the extension is
+    kept, and only from the sniffed content type.
+    """
+    extension = ATTACHMENT_EXTENSIONS.get(item.get("mimetype") or "", ".img")
+    return "image-%d%s" % (index, extension)
+
+
+def fetch_attachments(config, turn, repo):
+    """Bring this turn's images down to disk. Returns [(path, original name)]."""
+    wanted = wanted_attachments(turn)
+    if not wanted:
+        return []
+    exclude_dir(repo, ATTACHMENT_DIRNAME)
+    folder = os.path.join(attachment_root(repo), str(turn["turn_id"]))
+    os.makedirs(folder, exist_ok=True)
+    placed = []
+    for index, item in enumerate(wanted, start=1):
+        try:
+            result = call_odoo(
+                config.url, config.token, "/centric_claude/agent/attachment",
+                {"turn_id": turn["turn_id"], "attachment_id": item["id"]},
+            )
+            raw = base64.b64decode(result.get("data") or "")
+        except (BridgeError, ValueError, TypeError, binascii.Error) as exc:
+            say("  WARNING: could not fetch image %s (%s)" % (item.get("name"), exc))
+            continue
+        target = os.path.join(folder, safe_attachment_name(item, index))
+        try:
+            with open(target, "wb") as handle:
+                handle.write(raw)
+        except OSError as exc:
+            say("  WARNING: could not write %s (%s)" % (target, exc))
+            continue
+        placed.append((target, item.get("name") or os.path.basename(target)))
+    return placed
+
+
 def require_clean_tree(repo):
     if git(repo, "status", "--porcelain").strip():
         raise BridgeError(
@@ -584,10 +720,9 @@ def find_module(repo, path):
     """Resolve a repo-relative file to (module_name, path_within_module).
 
     Walks up from the file to the nearest directory holding __manifest__.py,
-    exactly as Odoo discovers modules. Assuming the module is the first path
-    segment breaks on nested layouts such as
-    `centric_claude_integration/centric_claude_integration/models/x.py`,
-    where the real module directory sits one level down.
+    exactly as Odoo discovers modules, rather than assuming the module is the
+    first path segment: a repository is free to keep its addons under a
+    subdirectory, and the first segment is then the wrong answer.
     """
     parts = path.split("/")
     for depth in range(len(parts) - 1, 0, -1):
@@ -642,7 +777,7 @@ def revert(repo):
 
 
 # ----------------------------------------------------------------- claude ---
-def build_prompt(turn):
+def build_prompt(turn, images=()):
     lines = []
     instructions = (turn.get("project_instructions") or "").strip()
     if instructions:
@@ -660,10 +795,20 @@ def build_prompt(turn):
             lines.append("%s: %s" % (who, message["content"][:2000]))
         lines.append("")
     lines.append(turn["prompt"])
+    if images:
+        # Claude Code takes a text prompt, so an attachment can only be named,
+        # not handed over. Saying it plainly, with the paths, is what gets the
+        # Read tool pointed at them.
+        lines.append("")
+        lines.append("The user attached %d image(s) to this conversation. "
+                     "Read each one with the Read tool before answering:"
+                     % len(images))
+        for path, name in images:
+            lines.append("- %s (sent as %s)" % (path, name))
     return "\n".join(lines)
 
 
-def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None):
+def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None, images=()):
     developer_mode = bool(turn.get("developer_mode"))
     system = SYSTEM_PROMPT.format(
         prefix=turn.get("allowed_module_prefix") or "centric_",
@@ -677,7 +822,7 @@ def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None):
         data=data_prompt(turn),
     )
     command = [
-        claude_bin, "-p", build_prompt(turn),
+        claude_bin, "-p", build_prompt(turn, images),
         "--output-format", "json",
         "--append-system-prompt", system,
     ]
@@ -773,8 +918,16 @@ def handle_turn(config, turn, repo=None, label=""):
     else:
         sync_worktree(config.repo, repo)
 
-    text = run_claude(repo, turn, config.timeout, config.claude_bin,
-                      config.claude_args, config=config)
+    # Somebody else's screenshot must not outlive the question it came with, so
+    # the download is wrapped in a finally rather than deleted on the way out.
+    images = fetch_attachments(config, turn, repo)
+    try:
+        if images:
+            say("%s    %d image(s) attached" % (label, len(images)))
+        text = run_claude(repo, turn, config.timeout, config.claude_bin,
+                          config.claude_args, config=config, images=images)
+    finally:
+        purge_attachments(repo, turn["turn_id"])
 
     changes, skipped = [], []
     if turn.get("developer_mode"):
@@ -1019,6 +1172,11 @@ def main(argv=None):
         print("Answering up to %s questions at once, in:" % config.workers)
         for path in checkouts:
             print("  %s" % path)
+
+    # A crash mid-turn can leave images behind; clear them before starting.
+    for checkout in checkouts:
+        exclude_dir(checkout, ATTACHMENT_DIRNAME)
+        purge_attachments(checkout)
 
     stop = threading.Event()
     threads = []

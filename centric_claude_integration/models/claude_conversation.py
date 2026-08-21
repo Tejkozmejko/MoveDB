@@ -125,6 +125,10 @@ class CentricClaudeConversation(models.Model):
             "default_branch": self._default_branch(),
             "allowed_module_prefix": self._param("centric_claude.allowed_module_prefix", "centric_"),
             "effort_choices": self._effort_choices(),
+            "attachments_enabled": self.env["centric.claude.attachment"]._enabled(),
+            "attachment_max_mb": round(
+                self.env["centric.claude.attachment"]._max_bytes() / 1024 / 1024, 1
+            ),
             "user_name": user.name,
         }
 
@@ -249,7 +253,7 @@ class CentricClaudeConversation(models.Model):
         return self._conversation_payload(conv)
 
     @api.model
-    def send_workspace_message(self, conversation_id, text):
+    def send_workspace_message(self, conversation_id, text, attachment_ids=None):
         conv = self.browse(int(conversation_id)).exists()
         if not conv:
             raise UserError(_("Claude conversation not found."))
@@ -257,19 +261,35 @@ class CentricClaudeConversation(models.Model):
         access = self._workspace_access()
         if not access["can_chat"]:
             raise AccessError(_("Claude is disabled or you do not have workspace access."))
-        text = (text or "").strip()
-        if not text:
+        typed = (text or "").strip()
+        # Only images that are still unsent, and only this user's: an id from an
+        # older message must not be re-attachable to a new one.
+        attachments = self.env["centric.claude.attachment"]._pending_for(
+            conv, attachment_ids
+        )
+        if not typed and not attachments:
             raise ValidationError(_("Enter a message first."))
-        if len(text) > 30000:
+        if len(typed) > 30000:
             raise ValidationError(_("Messages are limited to 30,000 characters."))
 
-        self.env["centric.claude.message"].create({
+        # `content` is required, and an image on its own still has to say
+        # something to Claude, so an image-only message carries the obvious ask.
+        text = typed or (
+            _("Please look at the attached image.") if len(attachments) == 1
+            else _("Please look at the attached images.")
+        )
+        message = self.env["centric.claude.message"].create({
             "conversation_id": conv.id,
             "role": "user",
             "content": text,
         })
+        if attachments:
+            attachments.write({"message_id": message.id})
         if conv.name in conv._default_names():
-            conv.name = text.splitlines()[0][:80]
+            # An image-only message names the chat after the image; "Please look
+            # at the attached image" would name every one of them the same.
+            label = typed or (attachments[:1].name if attachments else text)
+            conv.name = label.splitlines()[0][:80]
 
         if self._param("centric_claude.backend", "agent") == "agent":
             # Odoo.sh cannot run the Claude Code CLI, so the turn is queued for the
@@ -277,6 +297,9 @@ class CentricClaudeConversation(models.Model):
             self.env["centric.claude.turn"].create({
                 "conversation_id": conv.id,
                 "user_id": self.env.user.id,
+                # The turn points at its message so the bridge can find the
+                # images without guessing which message it came from.
+                "message_id": message.id,
                 "prompt": text,
                 "developer_mode": conv.developer_mode,
                 "effort": conv.effort,
@@ -317,10 +340,7 @@ class CentricClaudeConversation(models.Model):
         history_records = self.message_ids.filtered(
             lambda msg: msg.role in {"user", "assistant"}
         ).sorted("id")[-30:]
-        messages = [
-            {"role": msg.role, "content": msg.content}
-            for msg in history_records
-        ]
+        messages = self._api_messages(history_records)
         tools = self._tool_definitions(access)
         max_rounds = int(self._param("centric_claude.max_tool_rounds", "8") or 8)
         max_rounds = min(max(max_rounds, 1), 20)
@@ -396,6 +416,31 @@ class CentricClaudeConversation(models.Model):
             "Review the staged changes, or send a narrower follow-up request."
         ) % max_rounds)
         return "\n\n".join(narration).strip()
+
+    def _api_messages(self, history_records):
+        """History as Messages API content, with images attached where sent.
+
+        Walked newest-first so that when the image budget runs out it is the
+        oldest screenshots that drop, not the ones just sent.
+        """
+        Attachment = self.env["centric.claude.attachment"]
+        budget = Attachment.HISTORY_IMAGE_LIMIT
+        messages = []
+        for msg in reversed(history_records):
+            blocks = []
+            if msg.role == "user":
+                for attachment in msg.attachment_ids:
+                    if budget <= 0:
+                        break
+                    blocks.append(attachment._image_block())
+                    budget -= 1
+            if blocks:
+                blocks.append({"type": "text", "text": msg.content})
+                messages.append({"role": msg.role, "content": blocks})
+            else:
+                messages.append({"role": msg.role, "content": msg.content})
+        messages.reverse()
+        return messages
 
     def _system_prompt(self, access):
         self.ensure_one()
@@ -1465,6 +1510,9 @@ Rules:
                     "id": msg.id,
                     "role": msg.role,
                     "content": msg.content,
+                    "attachments": [
+                        attachment._summary() for attachment in msg.attachment_ids
+                    ],
                     "create_date": fields.Datetime.to_string(msg.create_date) if msg.create_date else "",
                 }
                 for msg in conv.message_ids.filtered(lambda msg: msg.role in {"user", "assistant"}).sorted("id")
@@ -1487,6 +1535,11 @@ Rules:
             ],
             "access": self._workspace_access(),
             "agent": self._agent_status(conv),
+            # Images uploaded but not yet sent, so a reload does not lose them.
+            "pending_attachments": [
+                attachment._summary()
+                for attachment in self.env["centric.claude.attachment"]._pending_for(conv)
+            ],
             # The sidebar shows a per-project chat count, so it has to follow
             # every payload that could have moved a chat between projects.
             "projects": self.env["centric.claude.project"]._workspace_projects(),
@@ -1614,6 +1667,9 @@ class CentricClaudeMessage(models.Model):
         index=True,
     )
     content = fields.Text(required=True)
+    attachment_ids = fields.One2many(
+        "centric.claude.attachment", "message_id", string="Attachments",
+    )
 
 
 class CentricClaudeChange(models.Model):

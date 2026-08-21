@@ -474,6 +474,18 @@
                                             <div class="o_cc_msg_body">
                                                 <div class="o_cc_msg_who"
                                                      t-esc="msg.role === 'user' ? 'You' : 'Claude'"/>
+                                                <div t-if="msg.attachments &amp;&amp; msg.attachments.length"
+                                                     class="o_cc_msg_images">
+                                                    <t t-foreach="msg.attachments" t-as="image"
+                                                       t-key="image.id">
+                                                        <button class="o_cc_thumb" type="button"
+                                                                t-att-title="image.name"
+                                                                t-on-click="() => this.openAttachment(image)">
+                                                            <img t-att-src="image.url"
+                                                                 t-att-alt="image.name"/>
+                                                        </button>
+                                                    </t>
+                                                </div>
                                                 <div class="o_cc_msg_text"
                                                      t-out="messageHtml(msg)"/>
                                             </div>
@@ -541,20 +553,60 @@
                             </div>
 
                             <form class="o_cc_composer" t-on-submit="sendMessage">
-                                <div class="o_cc_composer_box">
-                                    <textarea class="o_cc_composer_input"
-                                              rows="1"
-                                              t-ref="composerInput"
-                                              placeholder="Ask Claude to inspect or fix an approved custom module..."
-                                              t-model="state.messageDraft"
-                                              t-on-keydown="onComposerKeydown"
-                                              t-att-disabled="state.busy"/>
-                                    <button class="o_cc_send" type="submit"
-                                            title="Send (Enter)"
-                                            t-att-disabled="state.busy || !state.messageDraft.trim()">
-                                        <i class="fa fa-arrow-up"/>
-                                    </button>
+                                <div class="o_cc_composer_box"
+                                     t-att-class="{'o_cc_dropping': state.dragging}"
+                                     t-on-dragover="onComposerDragOver"
+                                     t-on-dragleave="onComposerDragLeave"
+                                     t-on-drop="onComposerDrop">
+
+                                    <div t-if="state.pendingAttachments.length || state.uploading"
+                                         class="o_cc_attach_strip">
+                                        <t t-foreach="state.pendingAttachments" t-as="image"
+                                           t-key="image.id">
+                                            <div class="o_cc_attach" t-att-title="image.name">
+                                                <img t-att-src="image.url" t-att-alt="image.name"/>
+                                                <button class="o_cc_attach_remove" type="button"
+                                                        title="Remove this image"
+                                                        t-on-click="() => this.removeAttachment(image)">
+                                                    <i class="fa fa-times"/>
+                                                </button>
+                                            </div>
+                                        </t>
+                                        <div t-if="state.uploading" class="o_cc_attach o_cc_attach_busy">
+                                            <i class="fa fa-spinner fa-spin"/>
+                                        </div>
+                                    </div>
+
+                                    <div class="o_cc_composer_row">
+                                        <button t-if="attachmentsEnabled"
+                                                class="o_cc_attach_btn" type="button"
+                                                title="Attach an image"
+                                                t-att-disabled="state.busy"
+                                                t-on-click="pickFiles">
+                                            <i class="fa fa-paperclip"/>
+                                        </button>
+                                        <textarea class="o_cc_composer_input"
+                                                  rows="1"
+                                                  t-ref="composerInput"
+                                                  placeholder="Ask Claude to inspect or fix an approved custom module..."
+                                                  t-model="state.messageDraft"
+                                                  t-on-keydown="onComposerKeydown"
+                                                  t-on-paste="onComposerPaste"
+                                                  t-att-disabled="state.busy"/>
+                                        <button class="o_cc_send" type="submit"
+                                                title="Send (Enter)"
+                                                t-att-disabled="!canSend">
+                                            <i class="fa fa-arrow-up"/>
+                                        </button>
+                                    </div>
                                 </div>
+
+                                <input type="file" class="o_cc_file_input"
+                                       t-ref="fileInput"
+                                       accept="image/png,image/jpeg,image/gif,image/webp"
+                                       multiple="multiple"
+                                       t-on-change="onFilesPicked"/>
+
                                 <div class="o_cc_composer_foot">
                                     <span class="o_cc_hint flex-grow-1">
                                         <t t-if="canEdit">
@@ -570,6 +622,9 @@
                                         <kbd>Enter</kbd> to send
                                         <span class="mx-1">&#183;</span>
                                         <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line
+                                        <t t-if="attachmentsEnabled">
+                                            <span class="mx-1">&#183;</span>paste to attach
+                                        </t>
                                     </span>
                                 </div>
                             </form>

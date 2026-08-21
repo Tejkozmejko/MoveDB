@@ -85,6 +85,18 @@
                         </setting>
                     </block>
 
+                    <block title="Attachments" name="centric_claude_attachments">
+                        <setting string="Allow Image Attachments" help="Let users paste or attach PNG, JPEG, GIF and WebP images in the chat. With the local agent backend the image is copied to the machine running the bridge for the length of one question, then deleted.">
+                            <field name="centric_claude_attachments_enabled"/>
+                        </setting>
+                        <setting string="Maximum Image Size (MB)" help="Largest single image a user may attach." invisible="not centric_claude_attachments_enabled">
+                            <field name="centric_claude_attachment_max_mb"/>
+                        </setting>
+                        <setting string="Delete Images After (days)" help="Attached images are deleted at this age so the filestore does not grow forever. Transcripts are kept either way. Set 0 to keep images indefinitely.">
+                            <field name="centric_claude_attachment_retention_days"/>
+                        </setting>
+                    </block>
+
                     <block title="Code Permissions" name="centric_claude_code_permissions">
                         <setting string="Allow Source Code Reading" help="Code Reader, Developer and Administrator users can browse approved repository modules.">
                             <field name="centric_claude_code_read_enabled"/>

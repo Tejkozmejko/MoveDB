@@ -26,6 +26,12 @@ class CentricClaudeTurn(models.Model):
         default=lambda self: self.env.user,
         index=True,
     )
+    message_id = fields.Many2one(
+        "centric.claude.message",
+        ondelete="set null",
+        index=True,
+        help="The chat message this turn answers. Carries the attachments.",
+    )
     prompt = fields.Text(required=True)
     state = fields.Selection(
         [
@@ -210,8 +216,21 @@ class CentricClaudeTurn(models.Model):
             "allowed_module_prefix": conversation._param(
                 "centric_claude.allowed_module_prefix", "centric_"
             ),
+            # Metadata only: the bytes are fetched one at a time from
+            # /agent/attachment, so claiming a turn stays a small request.
+            "attachments": [
+                attachment._agent_summary()
+                for attachment in self.message_id.attachment_ids
+            ],
             "history": [
-                {"role": message.role, "content": message.content}
+                {
+                    "role": message.role,
+                    "content": message.content,
+                    "attachments": [
+                        attachment._agent_summary()
+                        for attachment in message.attachment_ids
+                    ],
+                }
                 for message in history
             ],
         }

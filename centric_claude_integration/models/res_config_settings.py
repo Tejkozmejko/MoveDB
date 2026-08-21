@@ -107,6 +107,28 @@ class ResConfigSettings(models.TransientModel):
              "still needs a Centric Claude Data level, and every query runs "
              "with that user's own Odoo permissions.",
     )
+    centric_claude_attachments_enabled = fields.Boolean(
+        string="Allow Image Attachments",
+        default=True,
+        config_parameter="centric_claude.attachments_enabled",
+        help="Let users paste or attach images in the chat. With the local "
+             "agent backend the image is copied to the machine running the "
+             "bridge for the length of one question, then deleted.",
+    )
+    centric_claude_attachment_max_mb = fields.Float(
+        string="Maximum Image Size (MB)",
+        default=5.0,
+        config_parameter="centric_claude.attachment_max_mb",
+        help="Largest single image a user may attach.",
+    )
+    centric_claude_attachment_retention_days = fields.Integer(
+        string="Delete Images After (days)",
+        default=30,
+        config_parameter="centric_claude.attachment_retention_days",
+        help="Attached images are deleted once they reach this age, so the "
+             "filestore does not grow forever. Transcripts are kept. Set 0 to "
+             "keep images indefinitely.",
+    )
     centric_claude_code_write_enabled = fields.Boolean(
         string="Allow Code Modifications",
         default=False,
@@ -126,6 +148,7 @@ class ResConfigSettings(models.TransientModel):
         "centric_claude_code_read_enabled": "centric_claude.code_read_enabled",
         "centric_claude_code_write_enabled": "centric_claude.code_write_enabled",
         "centric_claude_data_enabled": "centric_claude.data_enabled",
+        "centric_claude_attachments_enabled": "centric_claude.attachments_enabled",
         "centric_claude_pull_request_enabled": "centric_claude.pull_request_enabled",
     }
 

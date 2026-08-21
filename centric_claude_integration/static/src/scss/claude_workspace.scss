@@ -1089,9 +1089,9 @@ $cc-brand-active: #c96540;
 
     .o_cc_composer_box {
         display: flex;
-        align-items: flex-end;
+        flex-direction: column;
         gap: .5rem;
-        padding: .5rem .5rem .5rem .9rem;
+        padding: .5rem;
         border: 1px solid var(--cc-border);
         border-radius: 14px;
         background: var(--cc-surface);
@@ -1101,6 +1101,127 @@ $cc-brand-active: #c96540;
             border-color: #5a4f49;
             box-shadow: 0 0 0 3px rgba(217, 119, 87, .1);
         }
+
+        // Dragging a file anywhere over the box, not just onto the text area.
+        &.o_cc_dropping {
+            border-color: var(--cc-brand);
+            box-shadow: 0 0 0 3px rgba(217, 119, 87, .18);
+        }
+    }
+
+    .o_cc_composer_row {
+        display: flex;
+        align-items: flex-end;
+        gap: .4rem;
+    }
+
+    // The picker is driven by the paperclip button; it is never shown itself.
+    .o_cc_file_input {
+        display: none;
+    }
+
+    .o_cc_attach_btn {
+        flex: 0 0 auto;
+        width: 30px;
+        height: 30px;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        color: var(--cc-muted);
+        font-size: 13px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: background-color .13s ease, color .13s ease;
+
+        &:hover:not(:disabled) {
+            background: var(--cc-surface-3);
+            color: var(--cc-text-strong);
+        }
+
+        &:disabled { opacity: .4; cursor: default; }
+    }
+
+    // ------------------------------------------------------- attachments
+    .o_cc_attach_strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .45rem;
+        padding: .15rem .15rem 0;
+    }
+
+    .o_cc_attach {
+        position: relative;
+        width: 56px;
+        height: 56px;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid var(--cc-border);
+        background: var(--cc-code-bg);
+        flex: 0 0 auto;
+
+        img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+    }
+
+    .o_cc_attach_busy {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--cc-muted);
+        font-size: 13px;
+    }
+
+    .o_cc_attach_remove {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 17px;
+        height: 17px;
+        border: 0;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, .68);
+        color: #fff;
+        font-size: 9px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        opacity: .85;
+
+        &:hover { opacity: 1; background: #000; }
+    }
+
+    .o_cc_msg_images {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .45rem;
+        margin-bottom: .45rem;
+    }
+
+    .o_cc_thumb {
+        padding: 0;
+        border: 1px solid var(--cc-border);
+        border-radius: 8px;
+        overflow: hidden;
+        background: var(--cc-code-bg);
+        cursor: zoom-in;
+        max-width: 220px;
+        line-height: 0;
+        transition: border-color .13s ease;
+
+        img {
+            max-width: 100%;
+            max-height: 180px;
+            display: block;
+        }
+
+        &:hover { border-color: var(--cc-brand); }
     }
 
     .o_cc_composer_input {
