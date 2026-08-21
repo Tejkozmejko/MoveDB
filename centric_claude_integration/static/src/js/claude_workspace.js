@@ -72,6 +72,10 @@ export class ClaudeDeveloperWorkspace extends Component {
         this.state = useState({
             loading: true,
             busy: false,
+            // Why the workspace could not be loaded at all. An empty
+            // `access` is indistinguishable from "Claude is switched off",
+            // so a failure has to say so in its own right.
+            loadError: "",
             access: {},
             conversations: [],
             activeConversationId: null,
@@ -271,6 +275,7 @@ export class ClaudeDeveloperWorkspace extends Component {
     }
 
     async loadBootstrap() {
+        this.state.loadError = "";
         try {
             const data = await this.call("workspace_bootstrap");
             this.state.access = data.access || {};
@@ -279,10 +284,19 @@ export class ClaudeDeveloperWorkspace extends Component {
                 await this.selectConversation(this.state.conversations[0].id);
             }
         } catch (error) {
+            // A missing column after a deploy without a module update reads
+            // exactly like "Claude is not enabled" if this is swallowed, which
+            // sends people to the settings page for a schema problem.
+            this.state.loadError = this.errorMessage(error);
             this.notifyError(error);
         } finally {
             this.state.loading = false;
         }
+    }
+
+    async retryBootstrap() {
+        this.state.loading = true;
+        await this.loadBootstrap();
     }
 
     applyConversationPayload(payload) {

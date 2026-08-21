@@ -71,6 +71,29 @@
                 <div class="o_cc_hint"><i class="fa fa-spinner fa-spin me-2"/>Loading workspace...</div>
             </div>
 
+            <!-- A load failure has to be told apart from "switched off": both
+                 leave `access` empty, and blaming the settings page for a
+                 server error sends people looking in the wrong place. -->
+            <div t-elif="state.loadError"
+                 class="flex-grow-1 d-flex align-items-center justify-content-center p-4">
+                <div class="o_cc_welcome">
+                    <div class="o_cc_welcome_mark o_cc_welcome_mark_error">
+                        <i class="fa fa-exclamation-triangle"/>
+                    </div>
+                    <h5 class="mb-1">The workspace could not be loaded</h5>
+                    <p class="o_cc_hint mb-3">
+                        Odoo returned an error rather than the workspace. If this
+                        followed a deploy, the module's Python is newer than the
+                        database: upgrade <strong>Centric Claude Integration</strong>
+                        under Apps, then reload.
+                    </p>
+                    <pre class="o_cc_offline_cmd text-start mb-3"><t t-esc="state.loadError"/></pre>
+                    <button class="btn btn-primary btn-sm" t-on-click="retryBootstrap">
+                        <i class="fa fa-refresh me-1"/>Try again
+                    </button>
+                </div>
+            </div>
+
             <div t-elif="!state.access.enabled" class="flex-grow-1 d-flex align-items-center justify-content-center p-4">
                 <div class="alert alert-warning mb-0">
                     Claude is not enabled. A Centric Claude Administrator must configure it in Odoo Settings.

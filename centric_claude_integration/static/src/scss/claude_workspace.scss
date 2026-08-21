@@ -832,6 +832,10 @@ $cc-brand-active: #c96540;
         .o_cc_mark { width: 28px; height: 28px; }
     }
 
+    .o_cc_welcome_mark_error {
+        background: linear-gradient(140deg, #c9634f, #92402f);
+    }
+
     .o_cc_suggestions {
         display: flex;
         flex-direction: column;
