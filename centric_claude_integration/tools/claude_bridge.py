@@ -87,16 +87,24 @@ STARTUP_FILENAME = "centric-claude-bridge.cmd"
 # The lock is taken on a byte past the PID text, so the PID stays readable.
 LOCK_BYTE_OFFSET = 1024
 
-# An idle bridge should be quiet. Polling stretches out while nothing is queued
-# and snaps back the moment work appears, so an always-on process is not
-# hammering Odoo every few seconds all day.
-IDLE_BACKOFF_AFTER = 60          # seconds of empty queue before slowing down
-IDLE_POLL_SECONDS = 15
+# An idle bridge should be quiet, but not at the cost of the wait people
+# actually feel. Backing off after a minute to a 15-second poll meant the first
+# question after any pause sat "Queued" for up to 15 seconds before a worker
+# even looked. A poll is one small request; the saving was never worth that.
+# So: full speed through any working session, easing off only after real
+# silence, and never past a few seconds.
+IDLE_BACKOFF_AFTER = 300         # seconds of empty queue before slowing down
+IDLE_POLL_SECONDS = 5
 
 # More workers answer more questions at once, at the cost of running that many
-# Claude sessions against the same subscription. Past a handful the machine,
-# not the queue, becomes the bottleneck.
-MAX_WORKERS = 8
+# Claude sessions against the same subscription.
+#
+# RECOMMENDED is advice, not a limit: past a handful the binding constraint is
+# usually the Claude plan rather than the machine, and that is the user's call
+# to make, not this script's. ABSOLUTE exists only so a mistyped --workers 300
+# does not fork three hundred Claude sessions.
+RECOMMENDED_MAX_WORKERS = 8
+ABSOLUTE_MAX_WORKERS = 64
 
 SYSTEM_PROMPT = """\
 You are the Claude developer assistant for Centric, invoked from an Odoo workspace.
@@ -841,10 +849,12 @@ def main(argv=None):
     parser.add_argument("--once", action="store_true",
                         help="Handle at most one turn, then exit")
     parser.add_argument("--workers", type=int, default=None,
-                        help="How many questions to answer at once (1 to %d). "
-                             "Each worker gets its own git worktree, so they do "
-                             "not tread on each other. Default 1."
-                             % MAX_WORKERS)
+                        help="How many questions to answer at once. Each worker "
+                             "gets its own git worktree, so they do not tread on "
+                             "each other. Default 1; more than %d is allowed but "
+                             "warns, since each one is a concurrent Claude "
+                             "session on your plan."
+                             % RECOMMENDED_MAX_WORKERS)
     parser.add_argument("--serve", default=None,
                         help="Comma-separated Odoo logins this bridge answers "
                              "for. Leave unset to answer everyone. Set it when "
@@ -881,9 +891,17 @@ def main(argv=None):
             setattr(config, key, stored[key])
     # Built-in fallbacks last, so they never shadow a saved setting.
     config.repo = config.repo or "."
-    # One worker unless asked otherwise, and never more than the cap: each one
-    # is a Claude session against the same subscription.
-    config.workers = max(1, min(int(config.workers or 1), MAX_WORKERS))
+    # One worker unless asked otherwise. Honour whatever is asked for, short of
+    # something that can only be a typo.
+    requested = int(config.workers or 1)
+    config.workers = max(1, min(requested, ABSOLUTE_MAX_WORKERS))
+    if requested > ABSOLUTE_MAX_WORKERS:
+        print("Capping --workers at %d; %d would be %d Claude sessions at once."
+              % (ABSOLUTE_MAX_WORKERS, requested, requested), file=sys.stderr)
+    elif config.workers > RECOMMENDED_MAX_WORKERS:
+        print("Running %d workers: that is %d Claude sessions at once, all on "
+              "the same plan. Fine if your machine and allowance can take it."
+              % (config.workers, config.workers), file=sys.stderr)
     if config.once:
         config.workers = 1
     config.name = (config.name or os.environ.get("COMPUTERNAME")
