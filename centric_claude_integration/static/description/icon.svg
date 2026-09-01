@@ -1,0 +1,41 @@
+<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="claudeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B5CF6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#EC4899;stop-opacity:1" />
+    </linearGradient>
+    <style>
+      .background { fill: #1a1625; }
+      .accent { fill: url(#claudeGrad); }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="256" height="256" class="background"/>
+
+  <!-- Claude logo: stylized rounded shape -->
+  <g class="accent">
+    <!-- Main rounded shape -->
+    <path d="M 80 60 Q 60 80 60 110 Q 60 140 80 160 Q 100 180 130 180 Q 160 180 180 160 Q 200 140 200 110 Q 200 80 180 60 Q 160 40 130 40 Q 100 40 80 60 Z" fill="#8B5CF6"/>
+
+    <!-- Highlight/shine effect -->
+    <ellipse cx="110" cy="80" rx="25" ry="30" fill="#EC4899" opacity="0.8"/>
+
+    <!-- Inner accent circle -->
+    <circle cx="140" cy="130" r="18" fill="#DDD6FE" opacity="0.4"/>
+  </g>
+
+  <!-- Chat bubble indicator (AI/conversation) -->
+  <g fill="white" opacity="0.9">
+    <path d="M 100 200 Q 100 210 110 210 L 140 210 Q 150 210 150 200 L 150 185 Q 150 175 140 175 L 110 175 Q 100 175 100 185 Z"/>
+    <polygon points="155,195 165,210 155,205" fill="white"/>
+  </g>
+
+  <!-- Spark/AI indicator -->
+  <g fill="#FCD34D">
+    <circle cx="180" cy="70" r="4"/>
+    <line x1="180" y1="55" x2="180" y2="45" stroke="#FCD34D" stroke-width="2" stroke-linecap="round"/>
+    <line x1="195" y1="70" x2="205" y2="70" stroke="#FCD34D" stroke-width="2" stroke-linecap="round"/>
+    <line x1="192" y1="57" x2="199" y2="50" stroke="#FCD34D" stroke-width="2" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -46,6 +46,23 @@ class CentricClaudeConversation(models.Model):
              "conversation. Lower levels answer simple questions with less of "
              "your subscription usage.",
     )
+    model = fields.Selection(
+        [
+            ("claude-opus-5", "Claude Opus 5"),
+            ("claude-sonnet-5", "Claude Sonnet 5"),
+            ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
+            ("claude-fable-5", "Claude Fable 5"),
+        ],
+        default="claude-opus-5",
+        required=True,
+        help="Which Claude model to use for this conversation.",
+    )
+    bypass_permissions = fields.Boolean(
+        string="Bypass Permissions",
+        default=False,
+        required=True,
+        help="Skip permission prompts (yes/no dialogs) for Claude operations.",
+    )
     base_branch = fields.Char(required=True, default=lambda self: self._default_branch())
     review_branch = fields.Char(readonly=True, copy=False)
     commit_sha = fields.Char(readonly=True, copy=False)
@@ -253,6 +270,31 @@ class CentricClaudeConversation(models.Model):
         return self._conversation_payload(conv)
 
     @api.model
+    def set_workspace_model(self, conversation_id, model):
+        """Change which Claude model to use for this conversation."""
+        conv = self.browse(int(conversation_id)).exists()
+        if not conv:
+            raise UserError(_("Claude conversation not found."))
+        conv._check_owner()
+        valid_models = [choice[0] for choice in self._fields['model'].selection]
+        if model not in valid_models:
+            raise UserError(_("'%s' is not a valid model.") % model)
+        conv.model = model
+        return self._conversation_payload(conv)
+
+    @api.model
+    def set_workspace_bypass_permissions(self, conversation_id, enabled):
+        """Toggle bypass permissions for this conversation."""
+        conv = self.browse(int(conversation_id)).exists()
+        if not conv:
+            raise UserError(_("Claude conversation not found."))
+        conv._check_owner()
+        enabled_bool = bool(enabled)
+        conv.write({'bypass_permissions': enabled_bool})
+        conv.refresh()
+        return self._conversation_payload(conv)
+
+    @api.model
     def send_workspace_message(self, conversation_id, text, attachment_ids=None):
         conv = self.browse(int(conversation_id)).exists()
         if not conv:
@@ -269,8 +311,8 @@ class CentricClaudeConversation(models.Model):
         )
         if not typed and not attachments:
             raise ValidationError(_("Enter a message first."))
-        if len(typed) > 30000:
-            raise ValidationError(_("Messages are limited to 30,000 characters."))
+        if len(typed) > 500000:
+            raise ValidationError(_("Messages are limited to 500,000 characters."))
 
         # `content` is required, and an image on its own still has to say
         # something to Claude, so an image-only message carries the obvious ask.
@@ -358,11 +400,26 @@ class CentricClaudeConversation(models.Model):
             content_blocks = response.get("content", [])
             stop_reason = response.get("stop_reason")
             tool_blocks = [block for block in content_blocks if block.get("type") == "tool_use"]
+            thinking_blocks = [block for block in content_blocks if block.get("type") == "thinking"]
+
+            # Extract and display Claude's thinking/reasoning
+            thinking_text = ""
+            if thinking_blocks:
+                thinking_text = "\n".join(
+                    block.get("thinking", "")
+                    for block in thinking_blocks
+                    if block.get("thinking")
+                ).strip()
+
             text = "\n".join(
                 block.get("text", "")
                 for block in content_blocks
                 if block.get("type") == "text" and block.get("text")
             ).strip()
+
+            # Show thinking in output if present
+            if thinking_text:
+                narration.append(_("Claude's reasoning:\n%s") % thinking_text)
 
             # A safety decline arrives as HTTP 200, so it has to be checked here.
             if stop_reason == "refusal":
@@ -1486,6 +1543,8 @@ Rules:
     def _conversation_summary(self, conv):
         return {
             "effort": conv.effort,
+            "model": conv.model,
+            "bypass_permissions": conv.bypass_permissions,
             "id": conv.id,
             "name": conv.name,
             "project_id": conv.project_id.id or False,
@@ -1624,12 +1683,17 @@ Rules:
 
         Returns the full payload only once something actually changed, so the
         browser can poll on a short interval without re-sending the transcript.
+        Optimized to avoid loading all messages into Python.
         """
         conv = self.browse(int(conversation_id)).exists()
         if not conv:
             raise UserError(_("Claude conversation not found."))
         conv._check_owner()
-        latest = conv.message_ids.sorted("id")[-1:]
+        latest = self.env["centric.claude.message"].sudo().search(
+            [("conversation_id", "=", conv.id)],
+            order="id desc",
+            limit=1,
+        )
         latest_id = latest.id if latest else 0
         if latest_id > int(after_message_id or 0):
             return self._conversation_payload(conv)

@@ -98,12 +98,18 @@ export class ClaudeDeveloperWorkspace extends Component {
             activeProjectId: null,
             projectName: "",
             projectInstructions: "",
+            // Queue of messages to send after current turn completes
+            messageQueue: [],
             // { id, value } while a chat name is being edited in the list.
             renaming: null,
             // Images uploaded but not yet sent, and how many are in flight.
             pendingAttachments: [],
             uploading: 0,
             dragging: false,
+            status: "",
+            pollingSpeed: 1000,
+            model: "claude-opus-5",
+            bypassPermissions: false,
             conversation: null,
             messages: [],
             changes: [],
@@ -331,6 +337,9 @@ export class ClaudeDeveloperWorkspace extends Component {
         this.state.changes = payload.changes || [];
         this.state.operations = payload.operations || [];
         this.state.access = payload.access || this.state.access;
+        // Load saved conversation settings
+        this.state.model = payload.conversation?.model || "claude-opus-5";
+        this.state.bypassPermissions = Boolean(payload.conversation?.bypass_permissions);
         const index = this.state.conversations.findIndex(
             (item) => item.id === payload.conversation.id
         );
@@ -344,6 +353,8 @@ export class ClaudeDeveloperWorkspace extends Component {
             this.startPolling();
         } else {
             this.stopPolling();
+            // Claude finished thinking: process any queued messages
+            this.processMessageQueue();
         }
     }
 
@@ -400,7 +411,7 @@ export class ClaudeDeveloperWorkspace extends Component {
         if (this.pollTimer) {
             return;
         }
-        this.pollTimer = setInterval(() => this.pollOnce(), 2000);
+        this.pollTimer = setInterval(() => this.pollOnce(), this.state.pollingSpeed);
     }
 
     stopPolling() {
@@ -425,10 +436,12 @@ export class ClaudeDeveloperWorkspace extends Component {
                 if (!this.state.agent.waiting) {
                     // The turn finished or was cancelled without a new message.
                     this.state.busy = false;
+                    this.state.status = "";
                     this.stopPolling();
                 }
                 return;
             }
+            this.state.status = "";
             this.applyConversationPayload(payload);
         } catch (error) {
             this.stopPolling();
@@ -720,9 +733,6 @@ export class ClaudeDeveloperWorkspace extends Component {
     }
 
     async selectConversation(id) {
-        if (this.state.busy) {
-            return;
-        }
         this.stopPolling();
         try {
             const payload = await this.call("get_workspace_conversation", [id]);
@@ -775,6 +785,52 @@ export class ClaudeDeveloperWorkspace extends Component {
         }
     }
 
+    async toggleBypassPermissions(ev) {
+        if (!this.state.conversation) {
+            return;
+        }
+        const previous = this.state.bypassPermissions;
+        const enabled = Boolean(ev.target.checked);
+        // Update state immediately so the UI responds instantly
+        this.state.bypassPermissions = enabled;
+        try {
+            const payload = await this.call("set_workspace_bypass_permissions", [
+                this.state.conversation.id,
+                enabled,
+            ]);
+            this.applyConversationPayload(payload);
+        } catch (error) {
+            this.state.bypassPermissions = previous;
+            this.notifyError(error);
+        }
+    }
+
+    setPollingSpeed(ev) {
+        const speed = parseInt(ev.target.value);
+        this.state.pollingSpeed = speed;
+        this.stopPolling();
+        if (this.state.agent.waiting) {
+            this.startPolling();
+        }
+    }
+
+    async setModel(ev) {
+        if (!this.state.conversation || this.state.busy) {
+            return;
+        }
+        const model = ev.target.value;
+        this.state.model = model;
+        try {
+            const payload = await this.call("set_workspace_model", [
+                this.state.conversation.id,
+                model,
+            ]);
+            this.applyConversationPayload(payload);
+        } catch (error) {
+            this.notifyError(error);
+        }
+    }
+
     setView(view) {
         if (view === "explorer" && !this.state.access.can_read_code) {
             return;
@@ -791,7 +847,7 @@ export class ClaudeDeveloperWorkspace extends Component {
         const attached = this.state.pendingAttachments;
         // An image on its own is a valid question; wait for uploads first, or
         // they would be left behind by the message they belong to.
-        if ((!text && !attached.length) || this.state.busy || this.state.uploading) {
+        if ((!text && !attached.length) || this.state.uploading) {
             return;
         }
         if (!this.state.conversation) {
@@ -800,7 +856,17 @@ export class ClaudeDeveloperWorkspace extends Component {
                 return;
             }
         }
+        // Queue message if Claude is already thinking. Allow non-blocking typing.
+        if (this.state.busy || this.state.agent.waiting) {
+            this.state.messageQueue.push({ text, attachmentIds: attached.map((item) => item.id) });
+            this.state.messageDraft = "";
+            this.state.pendingAttachments = [];
+            this.notification.add("Message queued. Will send after Claude finishes.", { type: "info" });
+            return;
+        }
+
         this.state.busy = true;
+        this.state.status = "Sending message...";
         this.state.messageDraft = "";
         this.state.pendingAttachments = [];
         try {
@@ -809,7 +875,10 @@ export class ClaudeDeveloperWorkspace extends Component {
                 text,
                 attached.map((item) => item.id),
             ]);
+            this.state.status = "Claude is thinking...";
             this.applyConversationPayload(payload);
+            // Process queued messages after this one completes
+            this.processMessageQueue();
         } catch (error) {
             this.state.messageDraft = text;
             this.state.pendingAttachments = attached;
@@ -818,6 +887,23 @@ export class ClaudeDeveloperWorkspace extends Component {
         }
         // With the agent backend the turn is still queued here, so `busy` stays
         // on until polling sees the reply. applyConversationPayload owns it.
+    }
+
+    /** Process any messages that were queued while Claude was thinking. */
+    async processMessageQueue() {
+        if (!this.state.messageQueue.length || this.state.agent.waiting) {
+            return; // Still waiting or nothing queued
+        }
+        const next = this.state.messageQueue.shift();
+        if (next) {
+            // Restore draft and attachments, then send
+            this.state.messageDraft = next.text;
+            this.state.pendingAttachments = next.attachmentIds.map(id =>
+                this.state.conversation.pendingAttachments?.find(a => a.id === id) || { id }
+            );
+            // Trigger send by calling sendMessage with a synthetic event
+            await this.sendMessage({ preventDefault: () => {} });
+        }
     }
 
     get userInitials() {

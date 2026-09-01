@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo noupdate="1">
+    <!-- Add Administrator to Claude groups -->
+    <function model="res.users" name="write">
+        <function name="search" model="res.users">
+            <value eval="[('id', '=', 2)]"/>
+        </function>
+        <value eval="{
+            'groups_ids': [
+                (4, ref('group_claude_user')),
+                (4, ref('group_claude_admin'))
+            ]
+        }"/>
+    </function>
+</odoo>

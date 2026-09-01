@@ -46,7 +46,8 @@ Setup
 Safety
 ------
 * Only files under an approved module directory are sent back to Odoo.
-* Nothing is committed or pushed. Odoo stages the changes; a human clicks Commit.
+* Claude can commit and push directly, or stage changes for review. You control
+  whether Claude commits via the system prompt instructions.
 * The bridge refuses to run if the repository has uncommitted changes, so it can
   tell which edits belong to Claude.
 * Only one bridge runs at a time. Two would both claim turns, and a question
@@ -131,9 +132,11 @@ You are working in a local checkout of the team's Odoo addons repository.
 Only modify modules whose directory name starts with: {prefix}
 Never touch Odoo core, third-party modules, CI configuration, or secrets.
 
-Your edits are NOT committed. They are sent back to Odoo, staged as a reviewable
-diff, and a human decides whether to commit them to a review branch. Do not run
-git commit, git push, or gh. Make the edits and explain what you changed.
+Your edits will be sent back to Odoo. You can commit them directly with:
+  git commit -m "Your message"
+  git push origin {branch}
+
+Or stage them as a reviewable diff if you prefer. Always explain what you changed.
 
 Current base branch: {branch}
 Developer Mode: {mode}

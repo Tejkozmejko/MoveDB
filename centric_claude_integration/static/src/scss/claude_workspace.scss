@@ -1283,6 +1283,29 @@ $cc-brand-active: #c96540;
         color: var(--cc-faint);
     }
 
+    .o_cc_queue_indicator {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        padding: .5rem .75rem;
+        margin-top: .5rem;
+        border-radius: 6px;
+        background: rgba(217, 119, 87, .12);
+        border: 1px solid var(--cc-border);
+        color: #e0a184;
+        font-size: 12px;
+        animation: pulse-gentle 2s infinite;
+
+        i {
+            flex: 0 0 auto;
+        }
+    }
+
+    @keyframes pulse-gentle {
+        0%, 100% { opacity: 1; }
+        50% { opacity: .6; }
+    }
+
     // ------------------------------------------------------------- offline
     .o_cc_offline {
         max-width: 620px;

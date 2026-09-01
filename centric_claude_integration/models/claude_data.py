@@ -435,6 +435,15 @@ class CentricClaudeData(models.AbstractModel):
                 raise AccessError(_(
                     "'%s' is a credential field and can never be set through Claude."
                 ) % key)
+            # Validate selection field values
+            if hasattr(field, 'selection') and field.selection:
+                value = values[key]
+                if value is not None:
+                    valid_values = [v[0] for v in (field.selection if isinstance(field.selection, list) else field.selection(record_model))]
+                    if value not in valid_values:
+                        raise UserError(_(
+                            "Invalid value '%(value)s' for field '%(field)s'. Valid options: %(options)s"
+                        ) % {"value": value, "field": key, "options": ", ".join(valid_values)})
         return values
 
 

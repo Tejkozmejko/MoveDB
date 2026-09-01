@@ -6,9 +6,14 @@
         <field name="tag">centric_claude_integration.developer_workspace</field>
     </record>
 
+    <!-- The Apps list finds static/description/icon.png by itself; the
+         app-switcher tile only ever reads web_icon, which has no fallback.
+         Without this line the tile is the default placeholder however many
+         icons sit in static/description. -->
     <menuitem id="menu_claude_root"
               name="Claude"
               sequence="75"
+              web_icon="centric_claude_integration,static/description/icon.png"
               groups="centric_claude_integration.group_claude_user"/>
 
     <menuitem id="menu_claude_workspace"

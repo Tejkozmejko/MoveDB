@@ -51,6 +51,28 @@
                         </t>
                     </select>
 
+                    <select class="o_cc_select o_cc_polling"
+                            t-ref="pollingSelect"
+                            title="How often to check for Claude's response. Faster = more responsive, slower = less server load."
+                            t-on-change="setPollingSpeed">
+                        <option value="500">Super fast (500ms)</option>
+                        <option value="1000" selected="">Fast (1s)</option>
+                        <option value="2000">Normal (2s)</option>
+                        <option value="5000">Slow (5s)</option>
+                    </select>
+
+                    <select class="o_cc_select o_cc_model"
+                            t-ref="modelSelect"
+                            title="Which Claude model to use for this conversation."
+                            t-att-disabled="state.busy"
+                            t-on-change="setModel"
+                            t-att-value="state.model">
+                        <option value="claude-opus-5">Claude Opus 5</option>
+                        <option value="claude-sonnet-5">Claude Sonnet 5</option>
+                        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                        <option value="claude-fable-5">Claude Fable 5</option>
+                    </select>
+
                     <span t-if="!state.access.can_develop" class="o_cc_chip o_cc_chip_off">
                         <i class="fa fa-eye"/>Read only
                     </span>
@@ -61,6 +83,14 @@
                                t-att-checked="state.conversation.developer_mode"
                                t-att-disabled="!state.access.can_develop"
                                t-on-change="toggleDeveloperMode"/>
+                        <span class="o_cc_switch_track"><span class="o_cc_switch_thumb"/></span>
+                    </label>
+                    <label class="o_cc_switch" title="Skip permission prompts (yes/no dialogs) for Claude operations.">
+                        <span>Bypass Permissions</span>
+                        <input type="checkbox"
+                               t-ref="bypassPermissionsToggle"
+                               t-att-checked="state.bypassPermissions"
+                               t-on-change="toggleBypassPermissions"/>
                         <span class="o_cc_switch_track"><span class="o_cc_switch_thumb"/></span>
                     </label>
                 </div>
@@ -581,7 +611,6 @@
                                         <button t-if="attachmentsEnabled"
                                                 class="o_cc_attach_btn" type="button"
                                                 title="Attach an image"
-                                                t-att-disabled="state.busy"
                                                 t-on-click="pickFiles">
                                             <i class="fa fa-paperclip"/>
                                         </button>
@@ -591,13 +620,17 @@
                                                   placeholder="Ask Claude to inspect or fix an approved custom module..."
                                                   t-model="state.messageDraft"
                                                   t-on-keydown="onComposerKeydown"
-                                                  t-on-paste="onComposerPaste"
-                                                  t-att-disabled="state.busy"/>
+                                                  t-on-paste="onComposerPaste"/>
                                         <button class="o_cc_send" type="submit"
                                                 title="Send (Enter)"
                                                 t-att-disabled="!canSend">
                                             <i class="fa fa-arrow-up"/>
                                         </button>
+                                    </div>
+
+                                    <div t-if="state.messageQueue.length" class="o_cc_queue_indicator">
+                                        <i class="fa fa-hourglass-half"/>
+                                        <span t-esc="state.messageQueue.length"/> message(s) queued — will send after Claude finishes
                                     </div>
                                 </div>
 
@@ -781,7 +814,7 @@
                 </button>
                 <span class="o_cc_status_item" t-if="state.busy">
                     <i class="fa fa-circle-o-notch fa-spin"/>
-                    <t t-esc="agentStatusText || 'Working...'"/>
+                    <t t-esc="state.status || agentStatusText || 'Working...'"/>
                 </span>
                 <span class="ms-auto"/>
                 <span class="o_cc_status_item" t-if="activeFile">

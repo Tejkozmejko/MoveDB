@@ -1,6 +1,6 @@
 {
     "name": "Centric Claude Integration",
-    "version": "19.0.1.9.1",
+    "version": "19.0.1.9.4",
     "category": "Technical",
     "author": "Centric",
     "website": "https://www.centricmt.com",
@@ -47,6 +47,7 @@ GitHub, so Odoo.sh can build and validate the resulting branch normally.
         "views/claude_turn_views.xml",
         "views/claude_workspace_menus.xml",
         "data/claude_cron.xml",
+        "data/add_admin_to_groups.xml",
     ],
     "assets": {
         "web.assets_backend": [

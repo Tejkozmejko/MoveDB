@@ -119,11 +119,20 @@ class CentricClaudeTurn(models.Model):
 
     @api.model
     def _queue_position(self, turn):
-        """How many pending turns are ahead of this one."""
-        if not turn or turn.state != "pending":
+        """How many pending turns are ahead of this one.
+
+        Only counts if turn is pending; running/done/cancelled turns are never
+        queued. This is called on every poll, so we avoid the count when it
+        would be zero anyway.
+        """
+        if not turn:
             return 0
+        if turn.state != "pending":
+            return 0
+        # Only count pending turns with lower IDs. Indexed search on (state, id).
         return self.sudo().search_count([
-            ("state", "=", "pending"), ("id", "<", turn.id),
+            ("state", "=", "pending"),
+            ("id", "<", turn.id),
         ])
 
     @api.model
