@@ -47,7 +47,6 @@ def _create_ingredients(env, uoms, categ):
                     "type": "consu",
                     "is_storable": True,
                     "uom_id": uom.id,
-                    "uom_po_id": uom.id,
                     "categ_id": categ.id,
                     "standard_price": cost,
                     "available_in_pos": False,
