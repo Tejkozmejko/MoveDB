@@ -1,4 +1,8 @@
+import logging
+
 from odoo import _, api, fields, models
+
+_logger = logging.getLogger(__name__)
 
 
 class CentricClaudeTurn(models.Model):
@@ -93,19 +97,32 @@ class CentricClaudeTurn(models.Model):
 
         turn = self.browse(())
         try:
-            self.env.cr.execute(
-                "SELECT id FROM centric_claude_turn "
-                "WHERE id IN %s AND state = 'pending' "
-                "ORDER BY id ASC FOR UPDATE SKIP LOCKED LIMIT 1",
-                (tuple(candidates.ids),),
-            )
-            row = self.env.cr.fetchone()
+            # Inside a savepoint, so a failed statement rolls back to here
+            # rather than poisoning the request. Without it the fallback below
+            # was unreachable: PostgreSQL refuses every later command in an
+            # aborted transaction, so the `turn.write` that follows died with
+            # "current transaction is aborted, commands ignored until end of
+            # transaction block" - and every worker's poll failed with it.
+            with self.env.cr.savepoint():
+                self.env.cr.execute(
+                    "SELECT id FROM centric_claude_turn "
+                    "WHERE id IN %s AND state = 'pending' "
+                    "ORDER BY id ASC FOR UPDATE SKIP LOCKED LIMIT 1",
+                    (tuple(candidates.ids),),
+                )
+                row = self.env.cr.fetchone()
             if row:
                 turn = self.browse(row[0])
         except Exception:  # noqa: BLE001
             # No SQL cursor (or a database without SKIP LOCKED): fall back to
             # the plain read. Still correct for a single bridge, which is the
             # common case; only concurrent bridges need the lock.
+            # Logged, not swallowed: this used to hide the only description of
+            # what actually went wrong.
+            _logger.warning(
+                "Locking claim failed, falling back to an unlocked read.",
+                exc_info=True,
+            )
             turn = candidates[:1]
 
         if not turn:
