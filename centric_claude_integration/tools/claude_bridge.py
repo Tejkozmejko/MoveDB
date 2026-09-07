@@ -567,28 +567,52 @@ def worktree_for(repo, index):
     return path
 
 
+# One clone, many workers, and a fetch takes a repository-wide lock: two at
+# once race, twelve pile up. Once a minute is plenty - a branch need only be as
+# fresh as the question, not as fresh as the second.
+FETCH_INTERVAL_SECONDS = 60
+_fetch_lock = threading.Lock()
+_fetched_at = {}
+
+
+def refresh_origin(repo, label=""):
+    """Bring origin's branches up to date, at most once a minute per clone.
+
+    Nothing else fetched, so a bridge left running for weeks answered every
+    question from whatever the clone happened to hold the day it was started.
+    """
+    with _fetch_lock:
+        if time.monotonic() - _fetched_at.get(repo, 0) < FETCH_INTERVAL_SECONDS:
+            return
+        try:
+            git(repo, "fetch", "--quiet", "--prune", "origin")
+        except BridgeError as exc:
+            say("%s    WARNING: could not fetch from origin (%s); answering "
+                "against what this clone already has." % (label, exc),
+                error=True)
+        # Stamped even on failure: an unreachable origin should cost one
+        # attempt a minute, not one on every turn.
+        _fetched_at[repo] = time.monotonic()
+
+
 def resolve_branch(repo, branch, label=""):
     """The commit a turn should start from.
 
     One bridge answers for the whole team, so the branch that matters is the
     one on the asker's conversation, not whichever branch this machine happens
-    to be sitting on. Falls back to that HEAD when the branch is unknown here,
-    which is at least the behaviour every turn had before.
+    to be sitting on - and the version that matters is what has been pushed,
+    not whatever this clone last pulled. `origin/<branch>` therefore wins over
+    the local branch of the same name: the local one is one developer's copy,
+    while everybody's question is about the shared branch.
     """
     if not branch:
         return git(repo, "rev-parse", "HEAD").strip()
-    for ref in (branch, "origin/" + branch):
+    refresh_origin(repo, label)
+    for ref in ("origin/" + branch, branch):
         try:
             return git(repo, "rev-parse", "--verify", ref + "^{commit}").strip()
         except BridgeError:
             continue
-    # Unknown locally: usually a colleague pushed it since the last fetch. Only
-    # reached in that case, so the common turn pays nothing for this.
-    try:
-        git(repo, "fetch", "--quiet", "origin", branch)
-        return git(repo, "rev-parse", "--verify", "FETCH_HEAD^{commit}").strip()
-    except BridgeError:
-        pass
     say("%s    WARNING: branch %r is unknown here, even after fetching; "
         "answering against this clone's HEAD instead." % (label, branch))
     return git(repo, "rev-parse", "HEAD").strip()
