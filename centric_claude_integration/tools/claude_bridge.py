@@ -1000,6 +1000,35 @@ def explain_denials(denials, turn):
     return chr(10) + chr(10) + chr(10).join(lines)
 
 
+def claude_failure(done):
+    """What to tell the developer when Claude Code exits non-zero.
+
+    Claude Code reports a failed run as JSON on stdout, with the sentence a
+    person needs in `result` - "You've hit your monthly spend limit", say. The
+    whole blob used to be pasted into the Odoo chat: several hundred
+    characters of token counts and cache statistics wrapped around the one line
+    that mattered, which nobody could be expected to find.
+    """
+    try:
+        payload = json.loads(done.stdout or "")
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        message = (payload.get("result") or "").strip()
+        if message:
+            status = payload.get("api_error_status")
+            # 429 is the one worth naming: it is not a fault in the question,
+            # and no amount of rephrasing will get past it.
+            if status == 429:
+                return ("Claude Code is rate limited or out of allowance, so "
+                        "this turn could not run: %s" % message)
+            if status:
+                return "Claude Code failed (HTTP %s): %s" % (status, message)
+            return "Claude Code failed: %s" % message
+    detail = (done.stderr or done.stdout or "").strip()[:2000]
+    return "claude exited %s: %s" % (done.returncode, detail)
+
+
 def _invoke_claude(command, repo, timeout, claude_bin, environment):
     try:
         done = subprocess.run(
@@ -1013,8 +1042,7 @@ def _invoke_claude(command, repo, timeout, claude_bin, environment):
         raise BridgeError("Claude did not finish within %s seconds." % timeout) from exc
 
     if done.returncode != 0:
-        detail = (done.stderr or done.stdout or "").strip()[:2000]
-        raise BridgeError("claude exited %s: %s" % (done.returncode, detail))
+        raise BridgeError(claude_failure(done))
     try:
         payload = json.loads(done.stdout)
     except ValueError as exc:
