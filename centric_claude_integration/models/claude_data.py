@@ -435,16 +435,41 @@ class CentricClaudeData(models.AbstractModel):
                 raise AccessError(_(
                     "'%s' is a credential field and can never be set through Claude."
                 ) % key)
-            # Validate selection field values
-            if hasattr(field, 'selection') and field.selection:
-                value = values[key]
-                if value is not None:
-                    valid_values = [v[0] for v in (field.selection if isinstance(field.selection, list) else field.selection(record_model))]
-                    if value not in valid_values:
-                        raise UserError(_(
-                            "Invalid value '%(value)s' for field '%(field)s'. Valid options: %(options)s"
-                        ) % {"value": value, "field": key, "options": ", ".join(valid_values)})
+            # Catch a bad selection value here, where it can be explained, and
+            # not when the user has already pressed Yes.
+            options = self._selection_options(record_model, field)
+            if options is not None and values[key] is not None:
+                if values[key] not in options:
+                    raise UserError(_(
+                        "Invalid value '%(value)s' for field '%(field)s'. "
+                        "Valid options: %(options)s"
+                    ) % {"value": values[key], "field": key,
+                         "options": ", ".join(options)})
         return values
+
+    @api.model
+    def _selection_options(self, record_model, field):
+        """The permitted values of a selection field, or None if it is not one.
+
+        `field.selection` is a list of pairs, a callable, or the *name* of a
+        method on the model. That last form was being called directly, so every
+        proposal touching such a field died with "'str' object is not callable"
+        before the user was ever shown a confirmation.
+        """
+        selection = getattr(field, "selection", None)
+        if not selection:
+            return None
+        try:
+            if isinstance(selection, str):
+                selection = getattr(record_model, selection)()
+            elif callable(selection):
+                selection = selection(record_model)
+            return [option[0] for option in selection]
+        except Exception:  # noqa: BLE001
+            # A check that helps the user read the confirmation must never be
+            # the reason they cannot get one. Odoo validates the value for real
+            # when the change is applied.
+            return None
 
 
 class CentricClaudeOperation(models.Model):

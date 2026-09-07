@@ -1158,10 +1158,15 @@ def main(argv=None):
     # and the bridge would silently use whatever directory you happen to be in.
     parser.add_argument("--repo", default=os.environ.get("CENTRIC_CLAUDE_REPO"),
                         help="Path to your local clone of the addons repository")
-    parser.add_argument("--poll", type=float, default=DEFAULT_POLL_SECONDS,
-                        help="Seconds between polls when the queue is empty")
-    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS,
-                        help="Seconds to allow a single Claude run")
+    # Defaulted to None like --repo, for the same reason: a real default here
+    # outranks the saved setting, so --poll 10 --save saved nothing and the
+    # next run quietly went back to polling every 3 seconds.
+    parser.add_argument("--poll", type=float, default=None,
+                        help="Seconds between polls when the queue is empty "
+                             "(default: %s)" % DEFAULT_POLL_SECONDS)
+    parser.add_argument("--timeout", type=int, default=None,
+                        help="Seconds to allow a single Claude run "
+                             "(default: %s)" % DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--claude-bin", default=os.environ.get("CLAUDE_BIN", "claude"),
                         help="Path to the Claude Code CLI. Found automatically if "
                              "it is on PATH or installed as a VS Code extension.")
@@ -1208,11 +1213,14 @@ def main(argv=None):
         stored = read_settings(config.config)
     except BridgeError as exc:
         parser.error(str(exc))
-    for key in ("url", "token", "repo", "name", "serve", "workers"):
+    for key in ("url", "token", "repo", "name", "serve", "workers",
+                "poll", "timeout"):
         if not getattr(config, key, None) and stored.get(key):
             setattr(config, key, stored[key])
     # Built-in fallbacks last, so they never shadow a saved setting.
     config.repo = config.repo or "."
+    config.poll = config.poll or DEFAULT_POLL_SECONDS
+    config.timeout = config.timeout or DEFAULT_TIMEOUT_SECONDS
     # One worker unless asked otherwise. Honour whatever is asked for, short of
     # something that can only be a typo.
     requested = int(config.workers or 1)
@@ -1257,9 +1265,14 @@ def main(argv=None):
             "url": config.url, "token": config.token,
             "repo": repo, "name": config.name,
             "serve": config.serve, "workers": config.workers,
+            "poll": config.poll, "timeout": config.timeout,
         }, config.config)
         print("Saved to %s" % path)
-        print("From now on you can just run:  python claude_bridge.py")
+        # The full path, not the bare filename: --save is usually run from
+        # somewhere else entirely, and `python claude_bridge.py` then fails
+        # with a file-not-found on a script that is sitting right there.
+        print("Nothing is running yet. Start the bridge with:")
+        print("    python %s" % os.path.abspath(__file__))
         return 0
 
     if config.install:
@@ -1268,6 +1281,7 @@ def main(argv=None):
                 "url": config.url, "token": config.token,
                 "repo": check_repo(config.repo), "name": config.name,
                 "serve": config.serve, "workers": config.workers,
+                "poll": config.poll, "timeout": config.timeout,
             }, config.config)
             path, quoted = install_autostart(config.config)
         except BridgeError as exc:
