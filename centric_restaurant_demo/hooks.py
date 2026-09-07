@@ -81,6 +81,17 @@ def _create_recipes(env, ingredients):
         if not tmpl.is_storable:
             tmpl.is_storable = True
 
+        # Odoo forbids a kit BoM on a product that has a reordering rule
+        # ("You can not create a kit-type bill of materials for products that
+        # have at least one reordering rule"). Making the dish storable can
+        # leave auto-generated orderpoints behind, so clear them first - a dish
+        # is produced from its recipe, never replenished as a stocked good.
+        orderpoints = env["stock.warehouse.orderpoint"].sudo().with_context(active_test=False).search(
+            [("product_id", "in", tmpl.product_variant_ids.ids)]
+        )
+        if orderpoints:
+            orderpoints.unlink()
+
         cost = 0.0
         bom_lines = []
         for ingredient_name, qty in lines:
