@@ -567,13 +567,44 @@ def worktree_for(repo, index):
     return path
 
 
-def sync_worktree(repo, path):
-    """Point a worker's checkout at whatever the main clone is on, cleanly.
+def resolve_branch(repo, branch, label=""):
+    """The commit a turn should start from.
+
+    One bridge answers for the whole team, so the branch that matters is the
+    one on the asker's conversation, not whichever branch this machine happens
+    to be sitting on. Falls back to that HEAD when the branch is unknown here,
+    which is at least the behaviour every turn had before.
+    """
+    if not branch:
+        return git(repo, "rev-parse", "HEAD").strip()
+    for ref in (branch, "origin/" + branch):
+        try:
+            return git(repo, "rev-parse", "--verify", ref + "^{commit}").strip()
+        except BridgeError:
+            continue
+    # Unknown locally: usually a colleague pushed it since the last fetch. Only
+    # reached in that case, so the common turn pays nothing for this.
+    try:
+        git(repo, "fetch", "--quiet", "origin", branch)
+        return git(repo, "rev-parse", "--verify", "FETCH_HEAD^{commit}").strip()
+    except BridgeError:
+        pass
+    say("%s    WARNING: branch %r is unknown here, even after fetching; "
+        "answering against this clone's HEAD instead." % (label, branch))
+    return git(repo, "rev-parse", "HEAD").strip()
+
+
+def sync_worktree(repo, path, branch=None, label=""):
+    """Point a worker's checkout at the branch this turn belongs to, cleanly.
 
     Also what makes each turn independent: the tree is reset before the turn
     rather than reverted after, so a crashed turn cannot leak into the next.
+
+    Always detached, never `checkout <branch>`: git refuses to check out a
+    branch that another worktree already holds, and six developers on one
+    bridge will land on the same branch sooner or later.
     """
-    head = git(repo, "rev-parse", "HEAD").strip()
+    head = resolve_branch(repo, branch, label)
     git(path, "checkout", "--detach", head)
     git(path, "reset", "--hard", head)
     git(path, "clean", "-fd")
@@ -706,16 +737,38 @@ def fetch_attachments(config, turn, repo):
 
 
 def require_clean_tree(repo):
-    if git(repo, "status", "--porcelain").strip():
-        raise BridgeError(
-            "The repository has uncommitted changes. Commit or stash them first so "
-            "the bridge can tell which edits came from Claude."
-        )
+    """Refuse to work in a checkout that already has edits in it.
+
+    Names them, because `--porcelain` counts untracked files too: a stray zip
+    or a scratch script is enough to stop every turn, and "uncommitted changes"
+    alone sends people looking through a diff that shows nothing.
+    """
+    dirty = [line for line in git(repo, "status", "--porcelain").splitlines()
+             if line.strip()]
+    if not dirty:
+        return
+    listed = chr(10).join("  " + line.strip() for line in dirty[:10])
+    if len(dirty) > 10:
+        listed += chr(10) + "  ...and %d more" % (len(dirty) - 10)
+    raise BridgeError(
+        "%s has %d uncommitted change(s), so the bridge cannot tell which edits "
+        "would be Claude's. Commit, stash or delete these first (?? means "
+        "untracked, and counts):%s%s"
+        % (repo, len(dirty), chr(10), listed)
+    )
 
 
-def changed_files(repo):
-    """Every file Claude added or modified, as repo-relative paths."""
-    tracked = git(repo, "diff", "--name-only").splitlines()
+def changed_files(repo, base=None):
+    """Every file Claude added or modified, as repo-relative paths.
+
+    Diffed against the commit the turn started from, not the index. The system
+    prompt invites Claude to `git commit`, and a plain `git diff` cannot see a
+    change once it has been committed - or even staged - so doing as it was
+    told made the work vanish: Odoo received nothing to review and the developer
+    got an answer describing edits that were nowhere to be found.
+    """
+    against = [base] if base else []
+    tracked = git(repo, "diff", "--name-only", *against).splitlines()
     untracked = git(repo, "ls-files", "--others", "--exclude-standard").splitlines()
     seen, paths = set(), []
     for path in tracked + untracked:
@@ -742,13 +795,13 @@ def find_module(repo, path):
     return None, None
 
 
-def collect_changes(repo, prefix):
+def collect_changes(repo, prefix, base=None):
     """Turn the working-tree diff into the payload Odoo stages.
 
     Files outside an approved module are reported but never sent.
     """
     staged, skipped = [], []
-    for path in changed_files(repo):
+    for path in changed_files(repo, base):
         module, relative = find_module(repo, path)
         if not module:
             skipped.append((path, "not inside an Odoo module (no __manifest__.py above it)"))
@@ -780,9 +833,18 @@ def collect_changes(repo, prefix):
     return staged, skipped
 
 
-def revert(repo):
-    """Return the checkout to a clean state after handing the edits to Odoo."""
-    git(repo, "checkout", "--", ".")
+def revert(repo, base=None):
+    """Return the checkout to how the turn found it, once Odoo has the edits.
+
+    Resets to the starting commit rather than just discarding working-tree
+    edits: Claude may have committed, and `checkout -- .` leaves a commit in
+    place. Those piled up silently in the clone, one per turn, each one moving
+    the ground under the next question.
+    """
+    if base:
+        git(repo, "reset", "--hard", base)
+    else:
+        git(repo, "checkout", "--", ".")
     git(repo, "clean", "-fd")
 
 
@@ -857,7 +919,61 @@ def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None, images=
             environment.update(mcp_env)
         command += ["--allowedTools", ",".join(allowed)]
         command += extra_args
-        return _invoke_claude(command, repo, timeout, claude_bin, environment)
+        text, denials = _invoke_claude(command, repo, timeout, claude_bin,
+                                       environment)
+        return text + explain_denials(denials, turn)
+
+
+# Tools that only Developer Mode unlocks. Anything here being refused has one
+# cause and one cure, which is worth saying rather than leaving to be guessed.
+EDITING_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit", "Bash"})
+
+
+def explain_denials(denials, turn):
+    """Say, in the reply, which tools Claude was refused and how to allow them.
+
+    Claude Code reports every refusal in `permission_denials`, and the bridge
+    used to drop it on the floor. The developer saw an answer that talked
+    around the change it could not make, with nothing to say a switch was off -
+    which reads as Claude being useless rather than as a setting being off.
+    """
+    if not denials:
+        return ""
+    editing, data, other = set(), set(), set()
+    for denial in denials:
+        name = (denial or {}).get("tool_name") or "a tool"
+        target = ((denial or {}).get("tool_input") or {}).get("file_path") or ""
+        if name in EDITING_TOOLS:
+            editing.add("%s%s" % (name, " on " + os.path.basename(target)
+                                  if target else ""))
+        elif name.startswith("mcp__odoo__"):
+            data.add(name[len("mcp__odoo__"):])
+        else:
+            other.add(name)
+
+    lines = []
+    if editing and not turn.get("developer_mode"):
+        lines.append(
+            "Note: Claude tried to change files (%s) but Developer Mode is off "
+            "for this conversation, so it could only read. Turn on Developer "
+            "Mode and ask again." % ", ".join(sorted(editing))
+        )
+    elif editing:
+        lines.append(
+            "Note: Claude was refused these file tools even though Developer "
+            "Mode is on: %s. 'Allow Code Modifications' may be off in Settings "
+            "> Centric Claude." % ", ".join(sorted(editing))
+        )
+    if data:
+        lines.append(
+            "Note: Claude tried to read the database (%s) but this account's "
+            "Claude data level does not allow it. An administrator sets that in "
+            "Settings > Centric Claude." % ", ".join(sorted(data))
+        )
+    if other:
+        lines.append("Note: Claude was refused these tools: %s."
+                     % ", ".join(sorted(other)))
+    return chr(10) + chr(10) + chr(10).join(lines)
 
 
 def _invoke_claude(command, repo, timeout, claude_bin, environment):
@@ -879,7 +995,8 @@ def _invoke_claude(command, repo, timeout, claude_bin, environment):
         payload = json.loads(done.stdout)
     except ValueError as exc:
         raise BridgeError("Could not parse the Claude Code JSON output.") from exc
-    return (payload.get("result") or "").strip()
+    return ((payload.get("result") or "").strip(),
+            payload.get("permission_denials") or [])
 
 
 def _start_logging(path):
@@ -926,7 +1043,15 @@ def handle_turn(config, turn, repo=None, label=""):
         # flight, so Claude's changes stay distinguishable from theirs.
         require_clean_tree(repo)
     else:
-        sync_worktree(config.repo, repo)
+        # The conversation's own branch: review_branch once changes have been
+        # staged onto one, so a follow-up turn builds on the work it can see,
+        # matching how the Odoo side picks the branch for everything else.
+        sync_worktree(config.repo, repo,
+                      turn.get("review_branch") or turn.get("base_branch"),
+                      label)
+    # Where this turn started. Everything Claude does is measured against it,
+    # however it chooses to record the work - edited, staged or committed.
+    base = git(repo, "rev-parse", "HEAD").strip()
 
     # Somebody else's screenshot must not outlive the question it came with, so
     # the download is wrapped in a finally rather than deleted on the way out.
@@ -941,9 +1066,9 @@ def handle_turn(config, turn, repo=None, label=""):
 
     changes, skipped = [], []
     if turn.get("developer_mode"):
-        changes, skipped = collect_changes(repo, prefix)
+        changes, skipped = collect_changes(repo, prefix, base)
         if changes or skipped:
-            revert(repo)
+            revert(repo, base)
     for path, reason in skipped:
         say("%s    skipped %s (%s)" % (label, path, reason))
         text += chr(10) + chr(10) + "Not sent to Odoo - %s: %s" % (path, reason)
@@ -995,6 +1120,32 @@ def worker_loop(config, repo, label, stop):
                     % (label, report_failure), error=True)
         if config.once:
             return
+
+
+# How often to tell Odoo the bridge is alive. Odoo calls it offline after 60
+# seconds and throttles its own writes to one per 20, so 20 is the fastest
+# useful beat and still leaves two missed ones before anyone is told to worry.
+HEARTBEAT_SECONDS = 20
+
+
+def heartbeat_loop(config, stop):
+    """Say the bridge is alive, on its own thread.
+
+    The heartbeat used to ride on the claim poll, which is silent for exactly
+    as long as a worker is busy: `handle_turn` blocks until Claude finishes.
+    With every worker occupied nothing polled, so after a minute the workspace
+    told all six developers that nothing was listening - while it was answering
+    their questions. Alive is a property of the bridge, not of having a free
+    worker, so it is reported by the bridge itself.
+    """
+    while not stop.wait(HEARTBEAT_SECONDS):
+        try:
+            call_odoo(config.url, config.token, "/centric_claude/agent/ping",
+                      {"agent_name": config.name})
+        except BridgeError:
+            # A missed beat is not worth a line of noise, let alone stopping:
+            # the next one is 20 seconds away and Odoo tolerates two.
+            pass
 
 
 def main(argv=None):
@@ -1198,6 +1349,13 @@ def main(argv=None):
         )
         thread.start()
         threads.append(thread)
+
+    # Not in `threads`: the workers decide when the bridge is finished, and a
+    # heartbeat that never returns would keep --once alive forever.
+    threading.Thread(
+        target=heartbeat_loop, args=(config, stop),
+        name="claude-heartbeat", daemon=True,
+    ).start()
 
     try:
         while any(thread.is_alive() for thread in threads):
