@@ -157,12 +157,14 @@ def _set_costing_policy(env, company, categories):
     moves never made. A category that already has layers is therefore left
     alone and named in the warning.
 
-    Every switch is made inside its own savepoint. Automated valuation is an
-    improvement on top of a working demo, not a precondition for one, so a
-    category Odoo refuses for a reason not anticipated above is rolled back and
-    left on manual rather than taking the whole install - and the rest of the
-    hook - down with it. The category is then named in the warning like any
-    other, and the exception is logged for whoever picks the chart up.
+    Every category is handled inside its own savepoint, and the savepoint opens
+    before the journal and account are resolved rather than after: reading a
+    field or filtering on one that a given version does not have raises just as
+    fatally as writing it, and the whole point here is that nothing in this
+    function can fail the install. Automated valuation is an improvement on top
+    of a working demo, not a precondition for one, so a category Odoo refuses -
+    for any reason, anticipated or not - is rolled back, named in the warning
+    like any other, and its exception logged for whoever picks the chart up.
     """
     moved = 0
     for categ in categories.values():
@@ -176,27 +178,38 @@ def _set_costing_policy(env, company, categories):
     # undone by an unrelated valuation failure.
     env.flush_all()
 
-    journal = env["account.journal"].search(
-        [("company_id", "=", company.id), ("code", "=", "STJ")], limit=1
-    ) or env["account.journal"].search(
-        [("company_id", "=", company.id), ("type", "=", "general")], limit=1
-    )
+    try:
+        journal = env["account.journal"].search(
+            [("company_id", "=", company.id), ("code", "=", "STJ")], limit=1
+        ) or env["account.journal"].search(
+            [("company_id", "=", company.id), ("type", "=", "general")], limit=1
+        )
+    except Exception:
+        # Accounting may not be installed at all, and the field names a search
+        # domain uses are version-specific. Neither is worth an install.
+        _logger.exception(
+            "centric_manufacturing_demo: could not resolve a stock journal; "
+            "categories left on manual valuation"
+        )
+        return moved
 
     Layer = env["stock.valuation.layer"]
     for name, categ in categories.items():
-        if categ.property_valuation == "real_time":
-            continue
-        account = categ.property_stock_valuation_account_id or _valuation_account(
-            env, company, name
-        )
-        if not journal or not account:
-            continue
-        # An existing category carried over from an earlier install may already
-        # be holding stock; only a category with no layers can be converted.
-        if Layer.search_count([("product_id.categ_id", "=", categ.id)]):
-            continue
         try:
             with env.cr.savepoint():
+                if categ.property_valuation == "real_time":
+                    continue
+                account = (
+                    categ.property_stock_valuation_account_id
+                    or _valuation_account(env, company, name)
+                )
+                if not journal or not account:
+                    continue
+                # An existing category carried over from an earlier install may
+                # already be holding stock; only a category with no layers can
+                # be converted.
+                if Layer.search_count([("product_id.categ_id", "=", categ.id)]):
+                    continue
                 categ.property_stock_journal = journal.id
                 categ.property_stock_valuation_account_id = account.id
                 categ.property_valuation = "real_time"
@@ -205,10 +218,13 @@ def _set_costing_policy(env, company, categories):
                 # not later, once the savepoint has been released.
                 env.flush_all()
         except Exception:
-            # The savepoint has already put the category back; drop the values
-            # the failed write left in cache so the warning below reads the
-            # real state rather than the one that was rolled back.
-            env.invalidate_all()
+            # The savepoint has already put the category back, but the values
+            # that failed are still dirty in the cache. Drop them without
+            # flushing: the default flush would push the very write that was
+            # just rolled back out again, on the outer transaction and outside
+            # any savepoint, re-raising the error this handler exists to
+            # swallow and taking the install down after all.
+            env.invalidate_all(flush=False)
             _logger.exception(
                 "centric_manufacturing_demo: could not put %s on automated "
                 "valuation; left on manual",
