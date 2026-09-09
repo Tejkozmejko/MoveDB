@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import logging
 
+from .loyalty_data import DRINK_POS_CATEGORIES, PROGRAM_CURRENCY, PROGRAMS
 from .recipe_data import INGREDIENTS, RECIPES, G, ML, UNIT
 from .supplier_data import BACKUP_PRICE_UPLIFT, MIN_QTY_BY_UOM, SOURCING, SUPPLIERS
 
@@ -223,6 +224,69 @@ def _create_price_lists(env, partners, ingredients):
     return created
 
 
+def _program_currency(env):
+    currency = env["res.currency"].search([("name", "=", PROGRAM_CURRENCY)], limit=1)
+    if not currency:
+        _logger.warning(
+            "centric_restaurant_demo: currency %r not found, loyalty programmes "
+            "priced in the company currency instead",
+            PROGRAM_CURRENCY,
+        )
+        return env.company.currency_id
+    return currency
+
+
+def _drink_products(env):
+    """Menu products sold as drinks, by POS category."""
+    categories = env["pos.category"].search([("name", "in", DRINK_POS_CATEGORIES)])
+    if not categories:
+        return env["product.product"]
+    return env["product.product"].search(
+        [("pos_categ_ids", "in", categories.ids), ("available_in_pos", "=", True)]
+    )
+
+
+def _create_loyalty_programs(env):
+    """Create the POS discount and loyalty programmes, matched by name.
+
+    A programme that already exists is left untouched: once it is live, its
+    terms - and the points customers have banked against it - belong to the
+    restaurant, not to this module.
+    """
+    Program = env["loyalty.program"]
+    currency = _program_currency(env)
+    pos_configs = env["pos.config"].search([("company_id", "=", env.company.id)])
+    drinks = _drink_products(env)
+    created = 0
+
+    for spec in PROGRAMS:
+        if Program.with_context(active_test=False).search(
+            [("name", "=", spec["name"])], limit=1
+        ):
+            continue
+
+        reward = dict(spec["reward"])
+        if spec.get("reward_products") == "drinks":
+            if not drinks:
+                _logger.warning(
+                    "centric_restaurant_demo: no drinks found, %r left applying to "
+                    "the whole order",
+                    spec["name"],
+                )
+                reward["discount_applicability"] = "order"
+            else:
+                reward["discount_product_ids"] = [(6, 0, drinks.ids)]
+
+        vals = dict(spec["program"], name=spec["name"], currency_id=currency.id)
+        vals["rule_ids"] = [(0, 0, dict(spec["rule"]))]
+        vals["reward_ids"] = [(0, 0, reward)]
+        if pos_configs and vals.get("pos_ok"):
+            vals["pos_config_ids"] = [(6, 0, pos_configs.ids)]
+        Program.create(vals)
+        created += 1
+    return created
+
+
 def post_init_hook(env):
     uoms = _resolve_uoms(env)
     categ = _ingredient_category(env)
@@ -231,11 +295,13 @@ def post_init_hook(env):
     _set_opening_stock(env, uoms, ingredients)
     partners = _create_suppliers(env)
     price_lines = _create_price_lists(env, partners, ingredients)
+    programs = _create_loyalty_programs(env)
     _logger.info(
         "centric_restaurant_demo: %s ingredients, %s recipes, opening stock applied, "
-        "%s vendors and %s purchase price lines",
+        "%s vendors, %s purchase price lines and %s loyalty programmes",
         len(ingredients),
         len(RECIPES),
         len(partners),
         price_lines,
+        programs,
     )

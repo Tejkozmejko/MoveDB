@@ -1,6 +1,6 @@
 {
     "name": "Centric Restaurant Demo Data",
-    "summary": "Ingredient master, dish recipes (kit BoMs), opening stock and supplier terms for the restaurant POS.",
+    "summary": "Ingredient master, dish recipes (kit BoMs), opening stock, supplier terms and POS discount/loyalty programmes for the restaurant.",
     "description": """
 Fills in the parts of the restaurant rollout that need data rather than
 configuration:
@@ -15,7 +15,10 @@ configuration:
 * an opening stock count for every ingredient;
 * a vendor per trade supplier, and a purchase price list line per ingredient
   with the agreed price, minimum order quantity and delivery lead time - a
-  primary vendor for every ingredient plus a dearer backup for most.
+  primary vendor for every ingredient plus a dearer backup for most;
+* the POS discount and loyalty programmes - a happy hour on drinks, an earn/
+  burn points scheme, and a staff discount code - so they survive a rebuild
+  instead of living only in the configured database.
 
 The quantities and costs here are PLAUSIBLE DEMO FIGURES, not the customer's
 real portion sizes or supplier prices. Replace them before go-live.
@@ -28,7 +31,8 @@ upgrading will not duplicate products, recipes, stock or vendor terms.
     "author": "Centric",
     "license": "LGPL-3",
     # mrp: the kit BoMs. stock: opening quants. point_of_sale: the menu.
-    "depends": ["point_of_sale", "mrp", "stock"],
+    # pos_loyalty: the discount and loyalty programmes, and their POS side.
+    "depends": ["point_of_sale", "mrp", "stock", "pos_loyalty"],
     "data": [],
     "post_init_hook": "post_init_hook",
     "installable": True,
