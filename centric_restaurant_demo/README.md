@@ -36,3 +36,15 @@ this is used for anything financial.
 The hook is idempotent — ingredients are matched by name, BoMs are rewritten
 rather than duplicated, and opening stock is only applied to ingredients
 currently holding zero. Upgrading the module will not reset a live storeroom.
+
+## Upgrades
+
+Odoo runs `post_init_hook` on **install only**, so an existing database would
+never see data added in a later version. `migrations/19.0.1.1.0/post-migrate.py`
+re-runs the same hook on upgrade, which is what lands the vendors, purchase
+price lists and loyalty programmes on a database installed before they existed.
+
+To ship another batch of data: add it to the `*_data.py` module and the hook,
+bump `version` in the manifest, and copy the migration script into a
+`migrations/<new-version>/` folder. Odoo only runs scripts for versions it is
+crossing, so an already-current database does no extra work.

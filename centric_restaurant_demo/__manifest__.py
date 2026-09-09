@@ -24,9 +24,11 @@ The quantities and costs here are PLAUSIBLE DEMO FIGURES, not the customer's
 real portion sizes or supplier prices. Replace them before go-live.
 
 Everything runs from a post-init hook and is idempotent: re-installing or
-upgrading will not duplicate products, recipes, stock or vendor terms.
+upgrading will not duplicate products, recipes, stock or vendor terms. A
+migration script re-runs the same hook on upgrade, so a database that was
+installed before a given batch of data existed still picks it up.
 """,
-    "version": "19.0.1.0.0",
+    "version": "19.0.1.1.0",
     "category": "Sales/Point of Sale",
     "author": "Centric",
     "license": "LGPL-3",

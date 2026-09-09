@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        Rendered by centric.restaurant.daily.summary._cron_send_daily_summary.
+        Plain tables and inline styles only: mail clients ignore stylesheets.
+    -->
+    <template id="daily_summary_body" name="Restaurant Daily Trading Summary">
+        <div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #212529;">
+            <h2 style="margin-bottom: 4px;">
+                <t t-esc="company.name"/> - trading summary
+            </h2>
+            <p style="margin-top: 0; color: #6c757d;">
+                <t t-esc="date"/>
+            </p>
+
+            <table cellpadding="6" cellspacing="0" style="border-collapse: collapse; margin-bottom: 24px;">
+                <tr>
+                    <td style="border-bottom: 1px solid #dee2e6;">Orders</td>
+                    <td style="border-bottom: 1px solid #dee2e6; text-align: right;"><t t-esc="orders"/></td>
+                </tr>
+                <tr>
+                    <td style="border-bottom: 1px solid #dee2e6;">Covers</td>
+                    <td style="border-bottom: 1px solid #dee2e6; text-align: right;"><t t-esc="covers"/></td>
+                </tr>
+                <tr>
+                    <td style="border-bottom: 1px solid #dee2e6;">Net sales</td>
+                    <td style="border-bottom: 1px solid #dee2e6; text-align: right;">
+                        <t t-esc="revenue" t-options='{"widget": "monetary", "display_currency": currency}'/>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="border-bottom: 1px solid #dee2e6;">Food and drink cost</td>
+                    <td style="border-bottom: 1px solid #dee2e6; text-align: right;">
+                        <t t-esc="cost" t-options='{"widget": "monetary", "display_currency": currency}'/>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="border-bottom: 1px solid #dee2e6;"><b>Gross margin</b></td>
+                    <td style="border-bottom: 1px solid #dee2e6; text-align: right;">
+                        <b><t t-esc="margin" t-options='{"widget": "monetary", "display_currency": currency}'/></b>
+                        <span style="color: #6c757d;">
+                            (<t t-esc="'%.1f' % margin_percent"/>%)
+                        </span>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="border-bottom: 1px solid #dee2e6;">Average spend per cover</td>
+                    <td style="border-bottom: 1px solid #dee2e6; text-align: right;">
+                        <t t-esc="average_spend" t-options='{"widget": "monetary", "display_currency": currency}'/>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Wastage entries recorded</td>
+                    <td style="text-align: right;"><t t-esc="scrap_count"/></td>
+                </tr>
+            </table>
+
+            <t t-if="not top_sellers">
+                <p style="color: #6c757d;">No sales were recorded on this day.</p>
+            </t>
+
+            <t t-if="top_sellers">
+                <h3 style="margin-bottom: 4px;">Top sellers by revenue</h3>
+                <table cellpadding="6" cellspacing="0" style="border-collapse: collapse; margin-bottom: 24px;">
+                    <tr style="background: #f8f9fa;">
+                        <th style="text-align: left;">Dish</th>
+                        <th style="text-align: right;">Qty</th>
+                        <th style="text-align: right;">Revenue</th>
+                        <th style="text-align: right;">Margin</th>
+                    </tr>
+                    <tr t-foreach="top_sellers" t-as="row">
+                        <td style="border-top: 1px solid #dee2e6;"><t t-esc="row['product']"/></td>
+                        <td style="border-top: 1px solid #dee2e6; text-align: right;"><t t-esc="'%g' % row['qty']"/></td>
+                        <td style="border-top: 1px solid #dee2e6; text-align: right;">
+                            <t t-esc="row['revenue']" t-options='{"widget": "monetary", "display_currency": currency}'/>
+                        </td>
+                        <td style="border-top: 1px solid #dee2e6; text-align: right;">
+                            <t t-esc="row['margin']" t-options='{"widget": "monetary", "display_currency": currency}'/>
+                        </td>
+                    </tr>
+                </table>
+
+                <h3 style="margin-bottom: 4px;">Weakest margins</h3>
+                <table cellpadding="6" cellspacing="0" style="border-collapse: collapse;">
+                    <tr style="background: #f8f9fa;">
+                        <th style="text-align: left;">Dish</th>
+                        <th style="text-align: right;">Qty</th>
+                        <th style="text-align: right;">Revenue</th>
+                        <th style="text-align: right;">Margin</th>
+                    </tr>
+                    <tr t-foreach="worst_margins" t-as="row">
+                        <td style="border-top: 1px solid #dee2e6;"><t t-esc="row['product']"/></td>
+                        <td style="border-top: 1px solid #dee2e6; text-align: right;"><t t-esc="'%g' % row['qty']"/></td>
+                        <td style="border-top: 1px solid #dee2e6; text-align: right;">
+                            <t t-esc="row['revenue']" t-options='{"widget": "monetary", "display_currency": currency}'/>
+                        </td>
+                        <td style="border-top: 1px solid #dee2e6; text-align: right;">
+                            <t t-esc="row['margin']" t-options='{"widget": "monetary", "display_currency": currency}'/>
+                        </td>
+                    </tr>
+                </table>
+            </t>
+
+            <p style="color: #6c757d; font-size: 12px; margin-top: 24px;">
+                Margin is net revenue less the cost stored on each POS line, which for
+                the menu is the recipe roll-up. Sent by Centric Restaurant Reporting.
+            </p>
+        </div>
+    </template>
+
+</odoo>

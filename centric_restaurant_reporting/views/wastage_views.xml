@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        Wastage reads stock.scrap directly rather than through a SQL view.
+        The value of a scrap depends on the product's cost, which Odoo stores
+        per company and does not expose as a plain column, so a view could not
+        cost it reliably. Quantity by product, category and reason is what the
+        kitchen actually reviews anyway.
+    -->
+
+    <record id="view_wastage_pivot" model="ir.ui.view">
+        <field name="name">stock.scrap.wastage.pivot</field>
+        <field name="model">stock.scrap</field>
+        <field name="arch" type="xml">
+            <pivot string="Wastage" sample="1">
+                <field name="product_id" type="row"/>
+                <field name="scrap_qty" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="view_wastage_graph" model="ir.ui.view">
+        <field name="name">stock.scrap.wastage.graph</field>
+        <field name="model">stock.scrap</field>
+        <field name="arch" type="xml">
+            <graph string="Wastage" type="bar" sample="1">
+                <field name="product_id"/>
+                <field name="scrap_qty" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="action_wastage_report" model="ir.actions.act_window">
+        <field name="name">Wastage</field>
+        <field name="res_model">stock.scrap</field>
+        <field name="view_mode">pivot,graph,list,form</field>
+        <field name="domain">[('state', '=', 'done')]</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Nothing has been scrapped yet</p>
+            <p>
+                Record spoilage and breakage with Inventory &gt; Operations &gt; Scrap
+                and it shows up here, by ingredient and by reason.
+            </p>
+        </field>
+    </record>
+
+</odoo>

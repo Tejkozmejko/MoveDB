@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!--
+            Shared favourites (user_id unset) so every manager opens the same
+            three periods. noupdate: once someone tweaks a saved filter it is
+            theirs, and an upgrade should not overwrite it.
+        -->
+
+        <record id="filter_menu_report_today" model="ir.filters">
+            <field name="name">Today</field>
+            <field name="model_id">centric.restaurant.menu.report</field>
+            <field name="user_id" eval="False"/>
+            <field name="domain">[('date', '&gt;=', context_today().strftime('%Y-%m-%d'))]</field>
+            <field name="context">{'group_by': ['product_id'], 'pivot_measures': ['qty', 'revenue', 'margin']}</field>
+        </record>
+
+        <record id="filter_menu_report_this_week" model="ir.filters">
+            <field name="name">This Week</field>
+            <field name="model_id">centric.restaurant.menu.report</field>
+            <field name="user_id" eval="False"/>
+            <field name="domain">[('date', '&gt;=', (context_today() - relativedelta(days=7)).strftime('%Y-%m-%d'))]</field>
+            <field name="context">{'group_by': ['product_id'], 'pivot_measures': ['qty', 'revenue', 'margin']}</field>
+        </record>
+
+        <record id="filter_menu_report_last_month" model="ir.filters">
+            <field name="name">Last Month</field>
+            <field name="model_id">centric.restaurant.menu.report</field>
+            <field name="user_id" eval="False"/>
+            <field name="domain">[('date', '&gt;=', (context_today() - relativedelta(months=1)).strftime('%Y-%m-01')), ('date', '&lt;', context_today().strftime('%Y-%m-01'))]</field>
+            <field name="context">{'group_by': ['product_id'], 'pivot_measures': ['qty', 'revenue', 'margin']}</field>
+        </record>
+
+        <!--
+            Menu engineering: category on the rows, volume against margin as the
+            measures, so stars (sell a lot, earn a lot) and dogs (neither) fall
+            out of the same grid.
+        -->
+        <record id="filter_menu_report_engineering" model="ir.filters">
+            <field name="name">Menu Engineering (volume vs margin)</field>
+            <field name="model_id">centric.restaurant.menu.report</field>
+            <field name="user_id" eval="False"/>
+            <field name="domain">[('date', '&gt;=', (context_today() - relativedelta(months=3)).strftime('%Y-%m-%d'))]</field>
+            <field name="context">{'group_by': ['categ_id', 'product_id'], 'pivot_measures': ['qty', 'revenue', 'cost', 'margin']}</field>
+        </record>
+
+    </data>
+</odoo>

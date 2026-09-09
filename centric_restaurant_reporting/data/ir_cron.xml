@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!--
+            Shipped INACTIVE on purpose. Installing a module should not start
+            sending mail to real managers; switch this on in
+            Settings > Technical > Scheduled Actions once the recipient list
+            has been agreed.
+        -->
+        <record id="ir_cron_daily_trading_summary" model="ir.cron">
+            <field name="name">Restaurant: daily trading summary email</field>
+            <field name="model_id" ref="model_centric_restaurant_daily_summary"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_send_daily_summary()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="nextcall" eval="(DateTime.now() + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)"/>
+            <field name="active" eval="False"/>
+        </record>
+
+    </data>
+</odoo>
