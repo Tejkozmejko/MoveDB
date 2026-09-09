@@ -20,6 +20,7 @@ from .supplier_data import (
     SOURCING,
     SUPPLIERS,
 )
+from .transactions import seed_transactions
 from .workcenter_data import WORKCENTERS
 
 _logger = logging.getLogger(__name__)
@@ -237,16 +238,43 @@ def _create_boms(env, uoms, categories, materials, workcenters, company):
     return products
 
 
-def _set_opening_stock(env, materials):
+def _warehouse(env, company):
+    """Return the plant's warehouse, creating one if the company has none.
+
+    A company that had Inventory installed after it was created never got the
+    warehouse Odoo normally makes for it, which is the state the plant company
+    was found in: no warehouse means no stock location, so opening counts,
+    receipts, manufacturing orders and deliveries all have nowhere to go and
+    silently do nothing. Everything downstream of this in the seed depends on
+    it existing.
+    """
+    Warehouse = env["stock.warehouse"]
+    warehouse = Warehouse.search([("company_id", "=", company.id)], limit=1)
+    if not warehouse:
+        warehouse = Warehouse.create(
+            {
+                "name": "%s Plant" % company.name,
+                # Short, and prefixed on every picking reference the plant
+                # produces, so it wants to read as the site rather than the
+                # company: TP/IN/00001.
+                "code": "TP",
+                "company_id": company.id,
+            }
+        )
+        _logger.info(
+            "centric_manufacturing_demo: created warehouse %s for %s",
+            warehouse.code,
+            company.display_name,
+        )
+    return warehouse
+
+
+def _set_opening_stock(env, warehouse, materials):
     """Apply a one-off opening count for every bought-in material.
 
     Only materials that currently hold no stock are counted in, so upgrading
     the module does not silently reset a live store.
     """
-    warehouse = env["stock.warehouse"].search([("company_id", "=", env.company.id)], limit=1)
-    if not warehouse:
-        _logger.warning("centric_manufacturing_demo: no warehouse, opening stock skipped")
-        return 0
     location = warehouse.lot_stock_id
     Quant = env["stock.quant"].with_context(inventory_mode=True)
 
@@ -255,7 +283,10 @@ def _set_opening_stock(env, materials):
     opening[SCRAP_MATERIAL] = SCRAP_OPENING_QTY
     for name, qty in opening.items():
         product = materials[name]
-        if product.qty_available:
+        # Scoped to the plant's own stock location: whether a material is
+        # already counted in is a question about this warehouse, not about
+        # every company on the database.
+        if product.with_context(location=location.id).qty_available:
             continue
         Quant.create(
             {
@@ -357,7 +388,8 @@ def post_init_hook(env):
     materials = _create_raw_materials(env, uoms, categories)
     workcenters = _create_workcenters(env, company)
     products = _create_boms(env, uoms, categories, materials, workcenters, company)
-    counted = _set_opening_stock(env, materials)
+    warehouse = _warehouse(env, company)
+    counted = _set_opening_stock(env, warehouse, materials)
     partners = _create_suppliers(env)
     price_lines = _create_price_lists(env, partners, materials)
     _logger.info(
@@ -371,3 +403,8 @@ def post_init_hook(env):
         len(partners),
         price_lines,
     )
+
+    # The trading history comes last and only once the master data is in
+    # place: it buys the materials above, consumes them through the BoMs above
+    # and sells the result, so it has nothing to work with until they exist.
+    seed_transactions(env, company, partners, materials, products)
