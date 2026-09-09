@@ -35,6 +35,18 @@ WORKCENTERS = {
         "time_stop": 10.0,
         "oee_target": 85.0,
     },
+    # The bag line is where the plant stops weighing and starts counting: film
+    # goes in by the reel, bags come off in thousands. Its rate is quoted per
+    # hour like the rest, but the BoMs that use it are sized in bags, so the
+    # cost it contributes is divided across a run of BAG_RUN_QTY.
+    "TP-BAGLINE": {
+        "name": "Bag Making & Sealing Line",
+        "costs_hour": 26.00,
+        "time_efficiency": 87.0,
+        "time_start": 30.0,
+        "time_stop": 20.0,
+        "oee_target": 82.0,
+    },
     "TP-REGRIND": {
         "name": "Regrind / Granulator",
         "costs_hour": 18.00,

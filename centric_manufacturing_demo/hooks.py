@@ -1,8 +1,14 @@
 # -*- coding: utf-8 -*-
 import logging
 
+from .landed_cost_data import LANDED_COSTS
 from .material_data import (
-    FINISHED_CATEG,
+    BAG_RUN_QTY,
+    CATEG_ORDER,
+    CATEG_PARENT,
+    FILM_MARGIN,
+    FINISHED_BAG_CATEG,
+    FINISHED_BAGS,
     KG,
     MANUFACTURED,
     RAW_CATEG,
@@ -11,8 +17,9 @@ from .material_data import (
     SCRAP_MATERIAL,
     SCRAP_OPENING_QTY,
     UNIT,
-    WIP_CATEG,
 )
+from .pricing import bag_cost, bag_price, film_kg_per_bag, with_margin
+from .quality_data import QUALITY_POINTS
 from .supplier_data import (
     BACKUP_PRICE_UPLIFT,
     MIN_QTY_BY_UOM,
@@ -43,13 +50,26 @@ def _resolve_uoms(env):
 
 
 def _categories(env):
-    """Return {category name: product.category}, creating any that are missing."""
+    """Return {category name: product.category}, creating any that are missing.
+
+    The categories are nested rather than flat - see ``CATEG_PARENT``. An
+    existing category found by name has its parent set if it has not got one,
+    which is what pulls the three flat categories a previous version of this
+    module created into the tree without touching the products underneath them.
+    A category somebody has already filed somewhere deliberately is left where
+    it is.
+    """
     Categ = env["product.category"]
     categories = {}
-    for name in (RAW_CATEG, WIP_CATEG, FINISHED_CATEG):
+    for name in CATEG_ORDER:
         categ = Categ.search([("name", "=", name)], limit=1)
+        parent = categories.get(CATEG_PARENT.get(name))
         if not categ:
-            categ = Categ.create({"name": name})
+            categ = Categ.create(
+                dict({"name": name}, **({"parent_id": parent.id} if parent else {}))
+            )
+        elif parent and not categ.parent_id:
+            categ.parent_id = parent.id
         categories[name] = categ
     return categories
 
@@ -210,6 +230,30 @@ def _create_boms(env, uoms, categories, materials, workcenters, company):
                 )
             )
 
+        # By-products: the scrap the line throws off, booked back into stock so
+        # the granulator has something real to eat. Their cost share leaves the
+        # good film, so it comes off the rolled-up cost before it is divided
+        # across the run - otherwise the film carries the cost of its own waste
+        # twice, once in the yield and once in the price.
+        byproducts = []
+        scrap_share = 0.0
+        for byproduct_name, qty, cost_share in spec.get("byproducts", ()):
+            byproduct = available[byproduct_name]
+            scrap_share += cost_share
+            byproducts.append(
+                (
+                    0,
+                    0,
+                    {
+                        "product_id": byproduct.id,
+                        "product_qty": qty,
+                        "product_uom_id": byproduct.uom_id.id,
+                        "cost_share": cost_share,
+                    },
+                )
+            )
+        cost *= 1.0 - scrap_share / 100.0
+
         vals = {
             "product_tmpl_id": product.product_tmpl_id.id,
             "product_qty": run_qty,
@@ -220,6 +264,7 @@ def _create_boms(env, uoms, categories, materials, workcenters, company):
             "company_id": company.id,
             "bom_line_ids": [(5, 0, 0)] + bom_lines,
             "operation_ids": [(5, 0, 0)] + operations,
+            "byproduct_ids": [(5, 0, 0)] + byproducts,
         }
         existing = Bom.search(
             [
@@ -234,8 +279,159 @@ def _create_boms(env, uoms, categories, materials, workcenters, company):
             Bom.create(vals)
 
         # Cost per base unit, so it is comparable with the bought-in materials.
-        product.product_tmpl_id.standard_price = round(cost / run_qty, 4)
+        unit_cost = cost / run_qty
+        product.product_tmpl_id.standard_price = round(unit_cost, 4)
+        if spec["sale_ok"]:
+            # Reel sold as reel, priced per kilogramme off the rolled-up cost.
+            product.product_tmpl_id.list_price = round(
+                with_margin(unit_cost, FILM_MARGIN), 4
+            )
     return products
+
+
+def _create_bags(env, uoms, categories, materials, workcenters, products, company):
+    """P3/P3.2/P6.4 - the finished bag range, where kilogrammes become units.
+
+    Each bag gets three things the film products above do not need:
+
+    * a **BoM sized in bags** that consumes film in kilogrammes. This is the
+      whole kilogramme/unit bridge: Odoo cannot convert between the two UoM
+      categories, so the rate lives in the BoM, derived from the bag's own
+      weight and its conversion waste;
+    * a **weight** in kilogrammes per bag, so the same rate is available to
+      anyone reading the product rather than the BoM - carriage on a pallet of
+      bags, or answering how many bags come out of a given reel;
+    * a **sale price**, computed by ``pricing.py`` from the rolled-up film cost
+      plus the bag line's time and the range's margin, rather than typed in.
+
+    Returns {name: product.product}.
+    """
+    Bom = env["mrp.bom"]
+    bag_line = workcenters["TP-BAGLINE"]
+    bags = {}
+    available = dict(materials, **products)
+
+    for name, spec in FINISHED_BAGS.items():
+        film = available[spec["film"]]
+        film_per_bag = film_kg_per_bag(spec["grams_per_bag"], spec["waste_pct"])
+        run_film_kg = round(film_per_bag * BAG_RUN_QTY, 3)
+
+        extras_cost = sum(
+            available[extra_name].standard_price * qty
+            for extra_name, qty in spec["extras"]
+        )
+        cost = bag_cost(spec, film.standard_price, extras_cost, bag_line.costs_hour)
+
+        bag = _product(
+            env,
+            name,
+            {
+                "type": "consu",
+                "is_storable": True,
+                # Counted, not weighed. The customer orders bags.
+                "uom_id": uoms[UNIT].id,
+                "categ_id": categories[FINISHED_BAG_CATEG].id,
+                "default_code": spec["code"],
+                "purchase_ok": False,
+                "sale_ok": True,
+                # The certification claim travels with the product onto the
+                # quotation and the delivery note, which is where a customer
+                # reads it and where it has to be accurate.
+                "description_sale": spec["certification"],
+            },
+        )
+        bags[name] = bag
+
+        template = bag.product_tmpl_id
+        template.standard_price = round(cost, 4)
+        template.list_price = round(bag_price(cost, spec["margin"]), 4)
+        # Kilogrammes per finished bag - the conversion, on the product itself.
+        template.weight = round(spec["grams_per_bag"] / 1000.0, 5)
+
+        bom_lines = [
+            (
+                0,
+                0,
+                {
+                    "product_id": film.id,
+                    "product_qty": run_film_kg,
+                    "product_uom_id": film.uom_id.id,
+                },
+            )
+        ]
+        for extra_name, qty in spec["extras"]:
+            extra = available[extra_name]
+            bom_lines.append(
+                (
+                    0,
+                    0,
+                    {
+                        "product_id": extra.id,
+                        "product_qty": qty,
+                        "product_uom_id": extra.uom_id.id,
+                    },
+                )
+            )
+
+        # The offcut the converting waste represents, back to the granulator.
+        scrap_kg = round(
+            (film_per_bag - spec["grams_per_bag"] / 1000.0) * BAG_RUN_QTY, 3
+        )
+        byproducts = [
+            (
+                0,
+                0,
+                {
+                    "product_id": materials[SCRAP_MATERIAL].id,
+                    "product_qty": scrap_kg,
+                    "product_uom_id": materials[SCRAP_MATERIAL].uom_id.id,
+                    "cost_share": 1.0,
+                },
+            )
+        ]
+
+        vals = {
+            "product_tmpl_id": template.id,
+            "product_qty": BAG_RUN_QTY,
+            "product_uom_id": bag.uom_id.id,
+            "type": "normal",
+            "company_id": company.id,
+            "bom_line_ids": [(5, 0, 0)] + bom_lines,
+            "operation_ids": [
+                (5, 0, 0),
+                (
+                    0,
+                    0,
+                    {
+                        "name": "Convert, seal and cut to bags",
+                        "workcenter_id": bag_line.id,
+                        "time_cycle_manual": spec["minutes"],
+                    },
+                ),
+            ],
+            "byproduct_ids": [(5, 0, 0)] + byproducts,
+        }
+        existing = Bom.search(
+            [
+                ("product_tmpl_id", "=", template.id),
+                ("company_id", "in", (False, company.id)),
+            ],
+            limit=1,
+        )
+        if existing:
+            existing.write(vals)
+        else:
+            Bom.create(vals)
+
+        _logger.info(
+            "centric_manufacturing_demo: bag %s - %.4g kg film per bag, "
+            "cost %.4f, price %.4f",
+            spec["code"],
+            film_per_bag,
+            cost,
+            template.list_price,
+        )
+    return bags
 
 
 def _warehouse(env, company):
@@ -370,6 +566,128 @@ def _create_price_lists(env, partners, materials):
     return created
 
 
+def _create_landed_cost_products(env):
+    """P5.4 - the landed cost service products, if Landed Costs is installed.
+
+    ``landed_cost_ok`` only exists once ``stock_landed_costs`` is installed,
+    and that module is not a dependency here - see ``landed_cost_data``. When
+    it is absent this is a no-op and the install carries on; install the app
+    and upgrade this module and the products appear.
+    """
+    Template = env["product.template"]
+    if "landed_cost_ok" not in Template._fields:
+        _logger.info(
+            "centric_manufacturing_demo: stock_landed_costs is not installed, "
+            "landed cost products skipped"
+        )
+        return 0
+
+    created = 0
+    for name, (split_method, cost, description) in LANDED_COSTS.items():
+        if Template.search([("name", "=", name)], limit=1):
+            continue
+        Template.create(
+            {
+                "name": name,
+                "type": "service",
+                "landed_cost_ok": True,
+                "split_method_landed_cost": split_method,
+                "standard_price": cost,
+                "purchase_ok": True,
+                "sale_ok": False,
+                "description": description,
+            }
+        )
+        created += 1
+    return created
+
+
+def _create_quality_points(env, warehouse, materials, products, bags, company):
+    """P7.1 - quality checkpoints, if Quality Control is installed.
+
+    Same conditional treatment as the landed costs, and for the same reason:
+    Quality is a separate app. The points attached to a manufacturing operation
+    additionally need ``quality_mrp`` for ``quality.point`` to carry an
+    ``operation_id`` at all; without it those points are still created, just
+    against the product rather than pinned to the operation, which is the
+    weaker but still useful half of the check.
+    """
+    if "quality.point" not in env:
+        _logger.info(
+            "centric_manufacturing_demo: quality_control is not installed, "
+            "quality checkpoints skipped"
+        )
+        return 0
+
+    Point = env["quality.point"]
+    fields = Point._fields
+    available = dict(materials, **dict(products, **bags))
+
+    test_types = {}
+    for technical_name in ("passfail", "measure", "instructions"):
+        test_type = env.ref(
+            "quality_control.test_type_%s" % technical_name, raise_if_not_found=False
+        )
+        if test_type:
+            test_types[technical_name] = test_type
+
+    manufacturing_type = env["stock.picking.type"].search(
+        [("code", "=", "mrp_operation"), ("warehouse_id", "=", warehouse.id)], limit=1
+    )
+    incoming_type = warehouse.in_type_id
+
+    created = 0
+    for title, spec in QUALITY_POINTS.items():
+        if Point.search([("title", "=", title)], limit=1):
+            continue
+
+        products_on_point = [
+            available[name].product_tmpl_id.id
+            for name in spec["products"]
+            if name in available
+        ]
+        picking_type = incoming_type if spec["picking_type"] == "incoming" else manufacturing_type
+        if not picking_type:
+            _logger.warning(
+                "centric_manufacturing_demo: no picking type for quality point "
+                "%r, skipped",
+                title,
+            )
+            continue
+
+        vals = {
+            "title": title,
+            "picking_type_ids": [(6, 0, [picking_type.id])],
+            "product_ids": [(6, 0, products_on_point)],
+            "note": spec["note"],
+            "company_id": company.id,
+        }
+        test_type = test_types.get(spec["test_type"])
+        if test_type:
+            vals["test_type_id"] = test_type.id
+        if spec["test_type"] == "measure":
+            vals.update(
+                norm=spec["norm"],
+                tolerance_min=spec["tolerance_min"],
+                tolerance_max=spec["tolerance_max"],
+                norm_unit=spec["norm_unit"],
+            )
+
+        # quality_mrp is what lets a point name the operation it is checked at.
+        # Without it the point still applies, just to the order as a whole.
+        if spec["operation"] and "operation_id" in fields:
+            operation = env["mrp.routing.workcenter"].search(
+                [("name", "=", spec["operation"]), ("company_id", "=", company.id)],
+                limit=1,
+            )
+            if operation:
+                vals["operation_id"] = operation.id
+
+        Point.create({key: value for key, value in vals.items() if key in fields})
+        created += 1
+    return created
+
+
 def post_init_hook(env):
     # Everything is seeded in the plant's company, whichever company the user
     # running the install happens to be in. Rebinding the environment also puts
@@ -388,20 +706,33 @@ def post_init_hook(env):
     materials = _create_raw_materials(env, uoms, categories)
     workcenters = _create_workcenters(env, company)
     products = _create_boms(env, uoms, categories, materials, workcenters, company)
+    # The bags come after the film: their BoMs consume it, and their prices are
+    # computed from the cost it has just rolled up.
+    bags = _create_bags(
+        env, uoms, categories, materials, workcenters, products, company
+    )
     warehouse = _warehouse(env, company)
     counted = _set_opening_stock(env, warehouse, materials)
     partners = _create_suppliers(env)
     price_lines = _create_price_lists(env, partners, materials)
+    landed = _create_landed_cost_products(env)
+    checkpoints = _create_quality_points(
+        env, warehouse, materials, products, bags, company
+    )
     _logger.info(
         "centric_manufacturing_demo: seeded %s - %s materials, %s work centres, "
-        "%s BoMs, %s opening counts, %s vendors and %s purchase price lines",
+        "%s BoMs, %s bags, %s opening counts, %s vendors, %s purchase price lines, "
+        "%s landed cost products and %s quality checkpoints",
         company.display_name,
         len(materials),
         len(workcenters),
         len(products),
+        len(bags),
         counted,
         len(partners),
         price_lines,
+        landed,
+        checkpoints,
     )
 
     # The trading history comes last and only once the master data is in

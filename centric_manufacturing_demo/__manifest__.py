@@ -18,6 +18,26 @@ like the live plant instead of an empty one:
   reels are printed and slit into finished film. These are ``normal`` BoMs,
   not kits, so producing them raises manufacturing orders and work orders and
   loads the work centres;
+* a **finished bag range** - a printed carrier bag, a heavy duty black refuse
+  sack made on the plant's own regrind, and an EN 13432 certified compostable
+  carrier - counted in units rather than weighed, each carrying the
+  certification claim that goes onto the quotation and the delivery note. The
+  categories they sit in are now a tree under one ``Packaging`` root rather
+  than three unrelated headings;
+* the **kilogramme to unit conversion**, which the plant needs because it buys,
+  extrudes and costs film by weight but sells bags by the thousand. Odoo will
+  not convert between the two - they are different UoM categories - so the rate
+  is held in two places derived from one figure: the bag's BoM, which produces
+  1,000 bags and consumes the matching weight of film including its conversion
+  offcut, and the product's own ``weight`` in kilogrammes per bag;
+* a **bag pricing calculation** in ``pricing.py``, replacing the spreadsheet:
+  film at its rolled-up cost, plus offcut, plus bag line time, plus cartons,
+  divided by one minus the range's margin. Margin as a divisor, not a mark-up
+  multiplier, which is the mistake that quietly gives a range away;
+* the **regrind loop closed** with by-products - every extrusion, print and bag
+  line BoM books its trim and set-up waste back into stock as recoverable
+  scrap, which is what the granulator BoM then eats. Before this the loop only
+  existed on paper and the scrap had to be counted in by hand;
 * a **rolled-up cost** on every made product, materials plus work centre time,
   computed level by level so the printed film carries the extrusion and
   regrind cost underneath it;
@@ -36,6 +56,21 @@ like the live plant instead of an empty one:
   orders from draft quotation through to delivered, invoiced and paid. Posted
   vendor bills and customer invoices come with it, so Accounting has a payable,
   a receivable and a bank position rather than nothing.
+
+Two further pieces are seeded only when the app they need is installed, because
+both are separate apps and a data module has no business installing an app on
+every database that takes this seed. Install them from Apps and upgrade this
+module, and they appear:
+
+* **landed costs** on inbound resin (needs ``stock_landed_costs``) - sea
+  freight and port handling allocated by weight, duty and insurance by value,
+  the broker's fee split equally. Only the service products are seeded, not
+  historical entries: revaluing receipts the seeded bills were costed against
+  would stop the demo's accounting tying out;
+* **quality checkpoints** (needs ``quality_control``, and ``quality_mrp`` to
+  pin a check to an operation) - incoming resin against its batch certificate,
+  film gauge across the web to a tolerance band, print colour against the
+  signed proof, and seal strength off the bag line.
 
 The quantities, formulations, cycle times, prices and orders here are
 PLAUSIBLE DEMO FIGURES, not the customer's real recipes, contracted terms or
@@ -57,7 +92,7 @@ an install down with it, so check the install log for
 Replaces ``centric_restaurant_demo``, which was removed when the restaurant
 scope was dropped.
 """,
-    "version": "19.0.2.0.0",
+    "version": "19.0.3.0.0",
     "category": "Manufacturing",
     "author": "Centric",
     "license": "LGPL-3",
