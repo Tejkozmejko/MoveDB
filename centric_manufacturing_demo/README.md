@@ -16,7 +16,9 @@ dropped.
 | Work centres | Extrusion line, 6-colour flexo press, slitter/rewinder, granulator — rate, efficiency, setup/cleanup, OEE target |
 | BoMs | `normal` (not kit) BoMs with routings, three levels deep |
 | Costing | Rolled-up standard price per made product: components + work centre time |
+| Costing method | Packaging categories put on FIFO before the first product exists. Valuation left as the database has it — automated valuation with no stock accounts breaks every stock move, and those accounts come with the chart of accounts |
 | Stock | One-off opening count per bought-in material |
+| Replenishment | A reordering rule per bought-in material, sized from its monthly run-rate and the lead time and minimum order quantity on its primary vendor's price list line |
 | Purchasing | A vendor per trade supplier, plus a price list line per material with price, minimum order quantity and lead time |
 | Warehouse | Created if the company has none — a company that had Inventory installed after it was created never got one, and without a stock location nothing below can move |
 | Customers | Five bakery, produce and grocery-retail buyers, with payment terms |
@@ -82,6 +84,12 @@ centric_manufacturing_demo: purchase TP-DEMO-PO-01 skipped - ...
 ```
 
 The summary line reports how many were skipped.
+
+The reordering rules are live rules, not decoration: once the scheduler runs,
+anything below its reorder point raises a replenishment. Every material is
+seeded above its own reorder point, so nothing fires on day one — but consume
+stock in the demo and the buyer will find draft purchase orders waiting, which
+is the behaviour being demonstrated.
 
 The trading quantities balance against each other: receipts and the opening
 count cover what the manufacturing orders consume, and the done manufacturing

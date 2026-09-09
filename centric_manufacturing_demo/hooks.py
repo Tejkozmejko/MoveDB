@@ -20,6 +20,7 @@ from .material_data import (
 )
 from .pricing import bag_cost, bag_price, film_kg_per_bag, with_margin
 from .quality_data import QUALITY_POINTS
+from .replenishment_data import MONTHLY_USAGE, reorder_levels
 from .supplier_data import (
     BACKUP_PRICE_UPLIFT,
     MIN_QTY_BY_UOM,
@@ -72,6 +73,42 @@ def _categories(env):
             categ.parent_id = parent.id
         categories[name] = categ
     return categories
+
+
+def _set_costing_policy(env, categories):
+    """P3.9 - put the packaging categories on FIFO, return how many moved.
+
+    Called before any product is created or any stock counted in, so the
+    materials below are costed under the policy from their very first receipt
+    rather than being converted after the fact.
+
+    Only a category still sitting on Odoo's ``standard`` default is touched. A
+    category somebody has deliberately put on average or FIFO already is left
+    alone - costing method is an accounting decision, and a data module gets to
+    make it once, on a category it has just created, not on every upgrade.
+
+    Valuation itself is not changed. Automated valuation with no stock accounts
+    on the category makes every later stock move fail, and those accounts come
+    from the chart of accounts P2.2 loads. The warning below is the handover.
+    """
+    moved = 0
+    for categ in categories.values():
+        if categ.property_cost_method == "standard":
+            categ.property_cost_method = "fifo"
+            moved += 1
+    manual = [
+        categ.display_name
+        for categ in categories.values()
+        if categ.property_valuation != "real_time"
+    ]
+    if manual:
+        _logger.warning(
+            "centric_manufacturing_demo: %s still on manual (periodic) stock "
+            "valuation - set the stock input, output and valuation accounts on "
+            "them and switch to automated once the chart of accounts is loaded",
+            ", ".join(manual),
+        )
+    return moved
 
 
 def _product(env, name, vals):
@@ -566,6 +603,65 @@ def _create_price_lists(env, partners, materials):
     return created
 
 
+def _create_orderpoints(env, warehouse, materials):
+    """P5.3 - a reordering rule per bought-in material, return how many made.
+
+    The rule is built from the material's run-rate and the lead time on its
+    primary vendor's price list line, so the two numbers that drive it are both
+    visible in Odoo rather than hard-coded here. A material with no vendor line
+    is skipped: a reorder point with nobody to buy from raises a replenishment
+    Odoo cannot source, which just fills the buyer's screen with errors.
+
+    An existing rule for the same product and location is left alone.
+    """
+    Orderpoint = env["stock.warehouse.orderpoint"]
+    location = warehouse.lot_stock_id
+    created = 0
+
+    for name, monthly in MONTHLY_USAGE.items():
+        product = materials.get(name)
+        if not product:
+            _logger.warning(
+                "centric_manufacturing_demo: material %r not found, reordering "
+                "rule skipped",
+                name,
+            )
+            continue
+        if Orderpoint.with_context(active_test=False).search(
+            [("product_id", "=", product.id), ("location_id", "=", location.id)],
+            limit=1,
+        ):
+            continue
+
+        # Cheapest first is Odoo's own ordering on the price list, but the
+        # buyer's preference is the sequence, so take the first line as primary.
+        seller = product.seller_ids.sorted(lambda s: (s.sequence, s.id))[:1]
+        if not seller:
+            _logger.warning(
+                "centric_manufacturing_demo: %r has no vendor price list line, "
+                "reordering rule skipped",
+                name,
+            )
+            continue
+
+        min_qty, max_qty, multiple = reorder_levels(
+            monthly, float(seller.delay), seller.min_qty
+        )
+        Orderpoint.create(
+            {
+                "product_id": product.id,
+                "location_id": location.id,
+                "warehouse_id": warehouse.id,
+                "company_id": warehouse.company_id.id,
+                "product_min_qty": min_qty,
+                "product_max_qty": max_qty,
+                "qty_multiple": multiple,
+            }
+        )
+        created += 1
+    return created
+
+
 def _create_landed_cost_products(env):
     """P5.4 - the landed cost service products, if Landed Costs is installed.
 
@@ -703,6 +799,10 @@ def post_init_hook(env):
 
     uoms = _resolve_uoms(env)
     categories = _categories(env)
+    # Before any product exists or any stock is counted in: the costing method
+    # has to be the one in force when the first layer lands, not one applied to
+    # it afterwards.
+    costed = _set_costing_policy(env, categories)
     materials = _create_raw_materials(env, uoms, categories)
     workcenters = _create_workcenters(env, company)
     products = _create_boms(env, uoms, categories, materials, workcenters, company)
@@ -715,15 +815,20 @@ def post_init_hook(env):
     counted = _set_opening_stock(env, warehouse, materials)
     partners = _create_suppliers(env)
     price_lines = _create_price_lists(env, partners, materials)
+    # After the price lists: the reorder point reads its lead time and minimum
+    # order quantity off the vendor line the call above has just made.
+    orderpoints = _create_orderpoints(env, warehouse, materials)
     landed = _create_landed_cost_products(env)
     checkpoints = _create_quality_points(
         env, warehouse, materials, products, bags, company
     )
     _logger.info(
-        "centric_manufacturing_demo: seeded %s - %s materials, %s work centres, "
-        "%s BoMs, %s bags, %s opening counts, %s vendors, %s purchase price lines, "
+        "centric_manufacturing_demo: seeded %s - %s categories put on FIFO, "
+        "%s materials, %s work centres, %s BoMs, %s bags, %s opening counts, "
+        "%s vendors, %s purchase price lines, %s reordering rules, "
         "%s landed cost products and %s quality checkpoints",
         company.display_name,
+        costed,
         len(materials),
         len(workcenters),
         len(products),
@@ -731,6 +836,7 @@ def post_init_hook(env):
         counted,
         len(partners),
         price_lines,
+        orderpoints,
         landed,
         checkpoints,
     )

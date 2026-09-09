@@ -41,7 +41,21 @@ like the live plant instead of an empty one:
 * a **rolled-up cost** on every made product, materials plus work centre time,
   computed level by level so the printed film carries the extrusion and
   regrind cost underneath it;
+* **FIFO costing** on the packaging categories, set before the first product
+  exists so material is costed under it from its first receipt rather than
+  converted afterwards. The plant buys polymer on a moving market, and standard
+  costing would bury that in a price variance nobody reads. Valuation is left
+  where the database has it: automated valuation with no stock accounts on the
+  category makes every later stock move fail, and those accounts arrive with
+  the chart of accounts. The install log says which categories are still
+  periodic;
 * an **opening stock count** for every bought-in material;
+* a **reordering rule per bought-in material**, sized off its monthly run-rate
+  and the lead time and minimum order quantity on its primary vendor's price
+  list line - so correcting a lead time in Purchasing and re-seeding moves the
+  reorder point with it. The reorder point covers the wait plus a safety buffer
+  proportional to it; the maximum adds a month of cover, both rounded up so the
+  rule never proposes an order below the vendor's minimum;
 * a **vendor per trade supplier** and a purchase price list line per material,
   with the agreed price, minimum order quantity and delivery lead time - a
   primary vendor for everything and a dearer backup for the resins;
@@ -92,7 +106,7 @@ an install down with it, so check the install log for
 Replaces ``centric_restaurant_demo``, which was removed when the restaurant
 scope was dropped.
 """,
-    "version": "19.0.3.0.0",
+    "version": "19.0.4.0.0",
     "category": "Manufacturing",
     "author": "Centric",
     "license": "LGPL-3",
