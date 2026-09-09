@@ -10,6 +10,10 @@ _logger = logging.getLogger(__name__)
 # writes across workers. Any constant works as long as nothing else uses it.
 _HEARTBEAT_LOCK_KEY = 0x0C1A0DE1
 
+# The same idea for the stale-turn sweep, which every worker also runs on
+# every poll. One sweeper is enough; the rest gain nothing by queueing.
+_RECLAIM_LOCK_KEY = 0x0C1A0DE2
+
 
 class CentricClaudeTurn(models.Model):
     """One queued request for the local Claude Code agent.
@@ -277,17 +281,46 @@ class CentricClaudeTurn(models.Model):
 
     @api.model
     def _reclaim_stale(self):
-        """Return abandoned turns to the queue so a restarted bridge picks them up."""
-        cutoff = fields.Datetime.subtract(
-            fields.Datetime.now(), minutes=self.CLAIM_TIMEOUT_MINUTES
-        )
-        stale = self.sudo().search([
-            ("state", "=", "running"),
-            ("claimed_at", "<", cutoff),
-        ])
-        if stale:
-            stale.write({"state": "pending", "agent_name": False, "claimed_at": False})
-        return stale
+        """Return abandoned turns to the queue so a restarted bridge picks them up.
+
+        In its own transaction behind an advisory lock, for the same reason the
+        heartbeat is. Every worker runs this on every poll, so the moment one
+        stale turn exists all of them find it and all of them write the same
+        rows. Worse, the write is deferred in the ORM cache, so it did not fail
+        here - it failed at the next flush, which is `_claim_next` entering its
+        savepoint, and reported a traceback pointing at a line that had nothing
+        to do with the cause.
+
+        A sweep skipped because another worker holds the lock is not a loss:
+        that worker is doing the same work, and the next poll is seconds away.
+        """
+        try:
+            with self.env.registry.cursor() as cr:
+                cr.execute(
+                    "SELECT pg_try_advisory_xact_lock(%s)", (_RECLAIM_LOCK_KEY,)
+                )
+                if not cr.fetchone()[0]:
+                    return
+                env = api.Environment(cr, SUPERUSER_ID, {})
+                cutoff = fields.Datetime.subtract(
+                    fields.Datetime.now(), minutes=self.CLAIM_TIMEOUT_MINUTES
+                )
+                stale = env["centric.claude.turn"].sudo().search([
+                    ("state", "=", "running"),
+                    ("claimed_at", "<", cutoff),
+                ])
+                if stale:
+                    stale.write({
+                        "state": "pending", "agent_name": False,
+                        "claimed_at": False,
+                    })
+                    _logger.info(
+                        "Returned %s abandoned turn(s) to the queue.", len(stale)
+                    )
+        except psycopg2.Error:
+            # Same trade as the heartbeat: a missed sweep delays one abandoned
+            # turn, a failed poll costs a developer the turn they are waiting on.
+            _logger.debug("Claude stale-turn sweep skipped", exc_info=True)
 
     def _payload_for_agent(self):
         """Everything the bridge needs to run this turn, and nothing more.
