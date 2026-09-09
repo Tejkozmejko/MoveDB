@@ -60,6 +60,9 @@ MONTHLY_USAGE = {
     "Blue Masterbatch": 150.0,
     "Slip / Antiblock Additive": 300.0,
     "Oxo-Biodegradable Additive": 120.0,
+    # Only the stretch grade takes tackifier, at 4% of a grade the plant does
+    # not run every week.
+    "Polyisobutylene Tackifier": 80.0,
     # Ink. White carries the most because it is the base coat on every
     # reversed-out job.
     "Flexo Ink - Cyan": 60.0,

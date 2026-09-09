@@ -1,6 +1,24 @@
 # -*- coding: utf-8 -*-
 import logging
 
+from .custom_print_data import (
+    ARTWORK_ATTRIBUTE,
+    ARTWORKS,
+    BAG_LINE_MINUTES,
+    CARTONS_PER_RUN,
+    CORES_PER_RUN,
+    CUSTOM_GRAMS_PER_BAG,
+    CUSTOM_MARGIN,
+    CUSTOM_PRINT_CODE,
+    CUSTOM_PRINT_FILM,
+    CUSTOM_PRINT_PRODUCT,
+    CUSTOM_RUN_QTY,
+    CUSTOM_WASTE_PCT,
+    SLIT_MINUTES,
+    artwork_description,
+    artwork_inks,
+    press_minutes,
+)
 from .landed_cost_data import LANDED_COSTS
 from .material_data import (
     BAG_RUN_QTY,
@@ -9,6 +27,8 @@ from .material_data import (
     FILM_MARGIN,
     FINISHED_BAG_CATEG,
     FINISHED_BAGS,
+    INDUSTRIAL_CATEG,
+    INDUSTRIAL_PACKAGING,
     KG,
     MANUFACTURED,
     RAW_CATEG,
@@ -28,6 +48,7 @@ from .supplier_data import (
     SOURCING,
     SUPPLIERS,
 )
+from .traceability_data import UNTRACKED_MATERIALS, create_lot
 from .transactions import seed_transactions
 from .workcenter_data import WORKCENTERS
 
@@ -326,10 +347,29 @@ def _create_boms(env, uoms, categories, materials, workcenters, company):
     return products
 
 
-def _create_bags(env, uoms, categories, materials, workcenters, products, company):
-    """P3/P3.2/P6.4 - the finished bag range, where kilogrammes become units.
+def _create_converted(
+    env,
+    uoms,
+    categories,
+    materials,
+    workcenters,
+    products,
+    company,
+    specs,
+    categ_name,
+    default_workcenter="TP-BAGLINE",
+    default_operation="Convert, seal and cut to bags",
+):
+    """P3/P3.2/P3.7/P6.4 - the converted ranges, where kilogrammes become units.
 
-    Each bag gets three things the film products above do not need:
+    Used twice: once for the finished bag range and once for the industrial
+    packaging in ``INDUSTRIAL_PACKAGING``. They are the same problem - film in
+    by weight, counted units out, offcut back to the granulator - so they get
+    the same code rather than a copy of it with the numbers changed. What each
+    range brings of its own is its category, its work centre and its run size.
+
+    Each converted product gets three things the film products above do not
+    need:
 
     * a **BoM sized in bags** that consumes film in kilogrammes. This is the
       whole kilogramme/unit bridge: Odoo cannot convert between the two UoM
@@ -344,20 +384,21 @@ def _create_bags(env, uoms, categories, materials, workcenters, products, compan
     Returns {name: product.product}.
     """
     Bom = env["mrp.bom"]
-    bag_line = workcenters["TP-BAGLINE"]
     bags = {}
     available = dict(materials, **products)
 
-    for name, spec in FINISHED_BAGS.items():
+    for name, spec in specs.items():
         film = available[spec["film"]]
+        line = workcenters[spec.get("workcenter", default_workcenter)]
+        run_qty = spec.get("run_qty", BAG_RUN_QTY)
         film_per_bag = film_kg_per_bag(spec["grams_per_bag"], spec["waste_pct"])
-        run_film_kg = round(film_per_bag * BAG_RUN_QTY, 3)
+        run_film_kg = round(film_per_bag * run_qty, 3)
 
         extras_cost = sum(
             available[extra_name].standard_price * qty
             for extra_name, qty in spec["extras"]
         )
-        cost = bag_cost(spec, film.standard_price, extras_cost, bag_line.costs_hour)
+        cost = bag_cost(spec, film.standard_price, extras_cost, line.costs_hour, run_qty)
 
         bag = _product(
             env,
@@ -367,7 +408,7 @@ def _create_bags(env, uoms, categories, materials, workcenters, products, compan
                 "is_storable": True,
                 # Counted, not weighed. The customer orders bags.
                 "uom_id": uoms[UNIT].id,
-                "categ_id": categories[FINISHED_BAG_CATEG].id,
+                "categ_id": categories[categ_name].id,
                 "default_code": spec["code"],
                 "purchase_ok": False,
                 "sale_ok": True,
@@ -411,9 +452,7 @@ def _create_bags(env, uoms, categories, materials, workcenters, products, compan
             )
 
         # The offcut the converting waste represents, back to the granulator.
-        scrap_kg = round(
-            (film_per_bag - spec["grams_per_bag"] / 1000.0) * BAG_RUN_QTY, 3
-        )
+        scrap_kg = round((film_per_bag - spec["grams_per_bag"] / 1000.0) * run_qty, 3)
         byproducts = [
             (
                 0,
@@ -429,7 +468,7 @@ def _create_bags(env, uoms, categories, materials, workcenters, products, compan
 
         vals = {
             "product_tmpl_id": template.id,
-            "product_qty": BAG_RUN_QTY,
+            "product_qty": run_qty,
             "product_uom_id": bag.uom_id.id,
             "type": "normal",
             "company_id": company.id,
@@ -440,8 +479,8 @@ def _create_bags(env, uoms, categories, materials, workcenters, products, compan
                     0,
                     0,
                     {
-                        "name": "Convert, seal and cut to bags",
-                        "workcenter_id": bag_line.id,
+                        "name": spec.get("operation", default_operation),
+                        "workcenter_id": line.id,
                         "time_cycle_manual": spec["minutes"],
                     },
                 ),
@@ -461,14 +500,361 @@ def _create_bags(env, uoms, categories, materials, workcenters, products, compan
             Bom.create(vals)
 
         _logger.info(
-            "centric_manufacturing_demo: bag %s - %.4g kg film per bag, "
+            "centric_manufacturing_demo: %s - %.4g kg film per unit, run of %g, "
             "cost %.4f, price %.4f",
             spec["code"],
             film_per_bag,
+            run_qty,
             cost,
             template.list_price,
         )
     return bags
+
+
+def _create_custom_print_products(env, uoms, categories, materials, workcenters,
+                                  products, company):
+    """P3.8 - the custom printed bag: one variant per customer artwork, made to
+    order.
+
+    Three pieces, and the order matters:
+
+    1. an **attribute** whose values are the live artworks, so Odoo generates a
+       variant per artwork and a sales order line names the artwork rather than
+       carrying it as a comment nobody can report on;
+    2. the **make to order and manufacture routes** on the template, so
+       confirming an order raises a works order for the quantity ordered
+       instead of trying to reserve printed bags that by definition are not in
+       stock;
+    3. a **bill of materials per variant**, because a three colour job is not
+       the same recipe as a one colour job - it consumes another ink and costs
+       another deck of press time.
+
+    See ``custom_print_data`` on why the plate sets are not components.
+
+    Returns {variant display name: product.product}.
+    """
+    Bom = env["mrp.bom"]
+    available = dict(materials, **products)
+    film = available[CUSTOM_PRINT_FILM]
+    press = workcenters["TP-FLEXO6"]
+    slitter = workcenters["TP-SLIT"]
+    bag_line = workcenters["TP-BAGLINE"]
+
+    # ---- 1. the artwork attribute and its values --------------------------
+    Attribute = env["product.attribute"]
+    Value = env["product.attribute.value"]
+    attribute = Attribute.search([("name", "=", ARTWORK_ATTRIBUTE)], limit=1)
+    if not attribute:
+        attribute = Attribute.create(
+            {
+                "name": ARTWORK_ATTRIBUTE,
+                # A variant each: the artwork changes the recipe, so it has to
+                # be a real product that can be costed, forecast and reported
+                # on, not a decoration on the order line.
+                "create_variant": "always",
+                "display_type": "radio",
+            }
+        )
+    values = {}
+    for artwork_name in ARTWORKS:
+        value = Value.search(
+            [("name", "=", artwork_name), ("attribute_id", "=", attribute.id)], limit=1
+        )
+        if not value:
+            value = Value.create(
+                {"name": artwork_name, "attribute_id": attribute.id}
+            )
+        values[artwork_name] = value
+
+    # ---- 2. the template, with the routes that make it made to order ------
+    routes = env["stock.route"].browse()
+    for xmlid in ("stock.route_warehouse0_mto", "mrp.route_warehouse0_manufacture"):
+        route = env.ref(xmlid, raise_if_not_found=False)
+        if not route:
+            continue
+        if not route.active:
+            # Odoo ships Replenish on Order archived, on the grounds that most
+            # databases never want it. This one does: it is the whole point of
+            # a custom printed bag.
+            route.active = True
+        routes |= route
+    if len(routes) < 2:
+        _logger.warning(
+            "centric_manufacturing_demo: make-to-order or manufacture route not "
+            "found - the custom print range will be created but will not "
+            "replenish on order"
+        )
+
+    template = env["product.template"].search(
+        [("name", "=", CUSTOM_PRINT_PRODUCT)], limit=1
+    )
+    if not template:
+        template = env["product.template"].create(
+            {
+                "name": CUSTOM_PRINT_PRODUCT,
+                "type": "consu",
+                "is_storable": True,
+                "uom_id": uoms[UNIT].id,
+                "categ_id": categories[FINISHED_BAG_CATEG].id,
+                "default_code": CUSTOM_PRINT_CODE,
+                "purchase_ok": False,
+                "sale_ok": True,
+                "weight": round(CUSTOM_GRAMS_PER_BAG / 1000.0, 5),
+                "route_ids": [(6, 0, routes.ids)],
+                "attribute_line_ids": [
+                    (
+                        0,
+                        0,
+                        {
+                            "attribute_id": attribute.id,
+                            "value_ids": [(6, 0, [v.id for v in values.values()])],
+                        },
+                    )
+                ],
+            }
+        )
+    else:
+        # An upgrade that adds an artwork: extend the existing attribute line
+        # rather than replacing it, so variants already sold keep their ids and
+        # their history.
+        line = template.attribute_line_ids.filtered(
+            lambda l: l.attribute_id == attribute
+        )[:1]
+        if line:
+            missing = [
+                value.id for value in values.values() if value not in line.value_ids
+            ]
+            if missing:
+                line.value_ids = [(4, value_id) for value_id in missing]
+
+    # ---- 3. a bill of materials per artwork -------------------------------
+    film_per_bag = film_kg_per_bag(CUSTOM_GRAMS_PER_BAG, CUSTOM_WASTE_PCT)
+    run_film_kg = round(film_per_bag * CUSTOM_RUN_QTY, 3)
+    scrap_kg = round(
+        (film_per_bag - CUSTOM_GRAMS_PER_BAG / 1000.0) * CUSTOM_RUN_QTY, 3
+    )
+    carton = available["Export Carton 600x400x400"]
+    core = available['Paper Core 76mm (3")']
+    scrap = materials[SCRAP_MATERIAL]
+
+    variants = {}
+    costs = {}
+    for artwork_name, spec in ARTWORKS.items():
+        value = values[artwork_name]
+        variant = template.product_variant_ids.filtered(
+            lambda v: value in v.product_template_variant_value_ids.product_attribute_value_id
+        )[:1]
+        if not variant:
+            _logger.warning(
+                "centric_manufacturing_demo: no variant generated for artwork "
+                "%r, bill of materials skipped",
+                artwork_name,
+            )
+            continue
+        variants[artwork_name] = variant
+
+        colours = spec["colours"]
+        bom_lines = [
+            (0, 0, {
+                "product_id": film.id,
+                "product_qty": run_film_kg,
+                "product_uom_id": film.uom_id.id,
+            }),
+            (0, 0, {
+                "product_id": core.id,
+                "product_qty": CORES_PER_RUN,
+                "product_uom_id": core.uom_id.id,
+            }),
+            (0, 0, {
+                "product_id": carton.id,
+                "product_qty": CARTONS_PER_RUN,
+                "product_uom_id": carton.uom_id.id,
+            }),
+        ]
+        cost = film.standard_price * film_per_bag
+        cost += (
+            core.standard_price * CORES_PER_RUN
+            + carton.standard_price * CARTONS_PER_RUN
+        ) / CUSTOM_RUN_QTY
+        for ink_name, qty in artwork_inks(colours):
+            ink = available[ink_name]
+            cost += ink.standard_price * qty / CUSTOM_RUN_QTY
+            bom_lines.append(
+                (0, 0, {
+                    "product_id": ink.id,
+                    "product_qty": qty,
+                    "product_uom_id": ink.uom_id.id,
+                })
+            )
+
+        operations = []
+        minutes = press_minutes(colours)
+        if minutes:
+            cost += press.costs_hour * minutes / 60.0 / CUSTOM_RUN_QTY
+            operations.append(
+                (0, 0, {
+                    "name": "Mount plates %s and print %s colour"
+                            % (spec["plate_ref"], colours),
+                    "workcenter_id": press.id,
+                    "time_cycle_manual": minutes,
+                })
+            )
+            cost += slitter.costs_hour * SLIT_MINUTES / 60.0 / CUSTOM_RUN_QTY
+            operations.append(
+                (0, 0, {
+                    "name": "Slit to bag web width",
+                    "workcenter_id": slitter.id,
+                    "time_cycle_manual": SLIT_MINUTES,
+                })
+            )
+        cost += bag_line.costs_hour * BAG_LINE_MINUTES / 60.0 / CUSTOM_RUN_QTY
+        operations.append(
+            (0, 0, {
+                "name": "Convert, seal and cut to bags",
+                "workcenter_id": bag_line.id,
+                "time_cycle_manual": BAG_LINE_MINUTES,
+            })
+        )
+
+        vals = {
+            "product_tmpl_id": template.id,
+            # Pinned to the variant: this recipe is this artwork's, and a BoM
+            # left at template level would print the bakery's job on the
+            # co-operative's order.
+            "product_id": variant.id,
+            "product_qty": CUSTOM_RUN_QTY,
+            "product_uom_id": variant.uom_id.id,
+            "type": "normal",
+            "company_id": company.id,
+            "bom_line_ids": [(5, 0, 0)] + bom_lines,
+            "operation_ids": [(5, 0, 0)] + operations,
+            "byproduct_ids": [
+                (5, 0, 0),
+                (0, 0, {
+                    "product_id": scrap.id,
+                    "product_qty": scrap_kg,
+                    "product_uom_id": scrap.uom_id.id,
+                    "cost_share": 1.0,
+                }),
+            ],
+        }
+        existing = Bom.search(
+            [
+                ("product_id", "=", variant.id),
+                ("company_id", "in", (False, company.id)),
+            ],
+            limit=1,
+        )
+        if existing:
+            existing.write(vals)
+        else:
+            Bom.create(vals)
+
+        variant.write(
+            {
+                "default_code": "%s-%s" % (CUSTOM_PRINT_CODE, colours or "PLAIN"),
+                "description_sale": artwork_description(artwork_name, spec),
+                # Cost is genuinely per variant - it is a field on the variant,
+                # not on the template - so each artwork carries its own.
+                "standard_price": round(cost, 4),
+            }
+        )
+        costs[artwork_name] = cost
+
+    # ---- 4. price per artwork ---------------------------------------------
+    # The sale price is a template field, so a variant cannot simply be given
+    # its own. Odoo's mechanism for this is ``price_extra`` on the attribute
+    # value: the template carries the cheapest artwork's price and each value
+    # adds what it costs over that one. Which is also how the plant talks about
+    # it - a price for the bag, plus so much a colour.
+    if costs:
+        base_cost = min(costs.values())
+        base_price = bag_price(base_cost, CUSTOM_MARGIN)
+        template.list_price = round(base_price, 4)
+        for artwork_name, cost in costs.items():
+            variant = variants[artwork_name]
+            ptav = variant.product_template_variant_value_ids.filtered(
+                lambda v: v.attribute_id == attribute
+            )[:1]
+            price = bag_price(cost, CUSTOM_MARGIN)
+            if ptav:
+                ptav.price_extra = round(price - base_price, 4)
+            _logger.info(
+                "centric_manufacturing_demo: artwork %s - %s colour, cost %.4f, "
+                "price %.4f",
+                artwork_name,
+                ARTWORKS[artwork_name]["colours"],
+                cost,
+                price,
+            )
+    return variants
+
+
+def _enable_traceability(env, warehouse, tracked):
+    """P4.8 - turn on lot tracking and put the tracked products on it.
+
+    Three things have to be true before a resin batch can be traced to a
+    delivered pallet, and all three are done here:
+
+    1. **The feature is on.** Lots and serial numbers are behind a settings
+       group; without it the fields exist but no user can see or fill them.
+    2. **The products are tracked.** Only the ones that can carry a defect
+       forward - see ``traceability_data`` on why cores, cartons and recovered
+       scrap are not.
+    3. **The transfers ask for a lot.** A receipt has to be allowed to *create*
+       one, because the number comes off the supplier's delivery note and Odoo
+       has never seen it before; everything internal picks from lots that
+       already exist.
+
+    A product that already has stock and no lots may refuse to change tracking,
+    which is Odoo protecting a valuation it cannot retrospectively split. That
+    is a per-product savepoint and a warning, not a failed install: the rest of
+    the chain is still worth having, and the log names what needs doing by
+    hand.
+    """
+    lot_group = env.ref("stock.group_production_lot", raise_if_not_found=False)
+    if not lot_group:
+        _logger.warning(
+            "centric_manufacturing_demo: lot/serial group not found, "
+            "traceability skipped"
+        )
+        return 0
+    internal_user = env.ref("base.group_user", raise_if_not_found=False)
+    if internal_user and lot_group not in internal_user.implied_ids:
+        internal_user.write({"implied_ids": [(4, lot_group.id)]})
+
+    turned_on = 0
+    for product in tracked:
+        template = product.product_tmpl_id
+        if template.tracking != "none":
+            continue
+        try:
+            with env.cr.savepoint():
+                template.tracking = "lot"
+            turned_on += 1
+        except Exception as error:  # noqa: BLE001 - one product, not the install
+            _logger.warning(
+                "centric_manufacturing_demo: could not put %s on lot tracking "
+                "- %s",
+                template.display_name,
+                error,
+            )
+
+    # Receipts mint lot numbers off the supplier's delivery note; everything
+    # else consumes numbers that already exist.
+    if warehouse.in_type_id:
+        warehouse.in_type_id.write({"use_create_lots": True, "use_existing_lots": True})
+    for picking_type in (
+        warehouse.out_type_id | warehouse.int_type_id | warehouse.pick_type_id
+    ):
+        picking_type.use_existing_lots = True
+    manufacturing_type = env["stock.picking.type"].search(
+        [("code", "=", "mrp_operation"), ("warehouse_id", "=", warehouse.id)]
+    )
+    # A works order both creates a lot - the run it just made - and consumes
+    # the reel and resin lots it was fed.
+    manufacturing_type.write({"use_create_lots": True, "use_existing_lots": True})
+    return turned_on
 
 
 def _warehouse(env, company):
@@ -502,11 +888,18 @@ def _warehouse(env, company):
     return warehouse
 
 
-def _set_opening_stock(env, warehouse, materials):
+def _set_opening_stock(env, warehouse, materials, company):
     """Apply a one-off opening count for every bought-in material.
 
     Only materials that currently hold no stock are counted in, so upgrading
     the module does not silently reset a live store.
+
+    A tracked material is counted in **under a lot** (P4.8). Opening stock with
+    no lot on it is a hole at the very start of the traceability chain: the
+    first reel the plant extrudes would trace back to nothing at all, which is
+    the one answer a recall cannot accept. One lot per material, standing for
+    "what was on the floor at cutover" - which is what it honestly is, and the
+    plant should split it against the real delivery notes before go-live.
     """
     location = warehouse.lot_stock_id
     Quant = env["stock.quant"].with_context(inventory_mode=True)
@@ -521,13 +914,14 @@ def _set_opening_stock(env, warehouse, materials):
         # every company on the database.
         if product.with_context(location=location.id).qty_available:
             continue
-        Quant.create(
-            {
-                "product_id": product.id,
-                "location_id": location.id,
-                "inventory_quantity": qty,
-            }
-        ).action_apply_inventory()
+        vals = {
+            "product_id": product.id,
+            "location_id": location.id,
+            "inventory_quantity": qty,
+        }
+        if product.tracking != "none":
+            vals["lot_id"] = create_lot(env, product, company).id
+        Quant.create(vals).action_apply_inventory()
         counted += 1
     return counted
 
@@ -807,12 +1201,49 @@ def post_init_hook(env):
     workcenters = _create_workcenters(env, company)
     products = _create_boms(env, uoms, categories, materials, workcenters, company)
     # The bags come after the film: their BoMs consume it, and their prices are
-    # computed from the cost it has just rolled up.
-    bags = _create_bags(
+    # computed from the cost it has just rolled up. The industrial range is the
+    # same machinery over a different table - see _create_converted.
+    bags = _create_converted(
+        env,
+        uoms,
+        categories,
+        materials,
+        workcenters,
+        products,
+        company,
+        FINISHED_BAGS,
+        FINISHED_BAG_CATEG,
+    )
+    industrial = _create_converted(
+        env,
+        uoms,
+        categories,
+        materials,
+        workcenters,
+        products,
+        company,
+        INDUSTRIAL_PACKAGING,
+        INDUSTRIAL_CATEG,
+    )
+    artworks = _create_custom_print_products(
         env, uoms, categories, materials, workcenters, products, company
     )
     warehouse = _warehouse(env, company)
-    counted = _set_opening_stock(env, warehouse, materials)
+    # Before the opening count and before anything trades: a product put on lot
+    # tracking after it already holds stock leaves that stock unlabelled, which
+    # is a hole at the start of the chain rather than the end of it.
+    tracked = [
+        product
+        for product in list(materials.values())
+        + list(products.values())
+        + list(bags.values())
+        + list(industrial.values())
+        + list(artworks.values())
+        if product.product_tmpl_id.name not in UNTRACKED_MATERIALS
+        and product.product_tmpl_id.name != SCRAP_MATERIAL
+    ]
+    on_lots = _enable_traceability(env, warehouse, tracked)
+    counted = _set_opening_stock(env, warehouse, materials, company)
     partners = _create_suppliers(env)
     price_lines = _create_price_lists(env, partners, materials)
     # After the price lists: the reorder point reads its lead time and minimum
@@ -820,19 +1251,23 @@ def post_init_hook(env):
     orderpoints = _create_orderpoints(env, warehouse, materials)
     landed = _create_landed_cost_products(env)
     checkpoints = _create_quality_points(
-        env, warehouse, materials, products, bags, company
+        env, warehouse, materials, products, dict(bags, **industrial), company
     )
     _logger.info(
         "centric_manufacturing_demo: seeded %s - %s categories put on FIFO, "
-        "%s materials, %s work centres, %s BoMs, %s bags, %s opening counts, "
-        "%s vendors, %s purchase price lines, %s reordering rules, "
-        "%s landed cost products and %s quality checkpoints",
+        "%s materials, %s work centres, %s BoMs, %s bags, %s industrial items, "
+        "%s custom print artworks, %s products put on lot tracking, "
+        "%s opening counts, %s vendors, %s purchase price lines, "
+        "%s reordering rules, %s landed cost products and %s quality checkpoints",
         company.display_name,
         costed,
         len(materials),
         len(workcenters),
         len(products),
         len(bags),
+        len(industrial),
+        len(artworks),
+        on_lots,
         counted,
         len(partners),
         price_lines,

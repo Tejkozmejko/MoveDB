@@ -47,15 +47,21 @@ def film_kg_per_bag(grams_per_bag, waste_pct):
     return grams_per_bag / 1000.0 * (1.0 + waste_pct / 100.0)
 
 
-def bag_cost(spec, film_cost_per_kg, extras_cost_per_run, workcenter_rate):
-    """Return the fully absorbed cost of one bag.
+def bag_cost(spec, film_cost_per_kg, extras_cost_per_run, workcenter_rate, run_qty=None):
+    """Return the fully absorbed cost of one bag, or one converted unit.
 
-    ``extras_cost_per_run`` is the cartons and consumables for a whole run of
-    ``BAG_RUN_QTY``; everything else is per bag.
+    ``extras_cost_per_run`` is the cartons and consumables for a whole run;
+    everything else is per unit. ``run_qty`` is how many units that run makes -
+    it defaults to ``BAG_RUN_QTY`` for the bag range, and the industrial items
+    pass their own, because a run of pallet wrap is 200 rolls and a run of
+    shrink hoods is 500. Getting this wrong divides the machine time and the
+    cartons across the wrong number of units, which is the same error as
+    quoting a run rate for a sample order.
     """
+    run_qty = run_qty or BAG_RUN_QTY
     material = film_kg_per_bag(spec["grams_per_bag"], spec["waste_pct"]) * film_cost_per_kg
-    conversion = workcenter_rate * spec["minutes"] / 60.0 / BAG_RUN_QTY
-    extras = extras_cost_per_run / BAG_RUN_QTY
+    conversion = workcenter_rate * spec["minutes"] / 60.0 / run_qty
+    extras = extras_cost_per_run / run_qty
     return material + conversion + extras
 
 

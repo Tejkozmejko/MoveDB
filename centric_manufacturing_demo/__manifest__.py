@@ -38,6 +38,34 @@ like the live plant instead of an empty one:
   line BoM books its trim and set-up waste back into stock as recoverable
   scrap, which is what the granulator BoM then eats. Before this the loop only
   existed on paper and the scrap had to be counted in by hand;
+* an **industrial packaging range** - pallet stretch wrap, a pallet shrink hood,
+  a gusseted box liner and layflat tubing - on two grades the plant did not
+  previously extrude: a heavy 100 micron clear and a 23 micron LLDPE stretch
+  film with a tackifier for cling. Sold to a warehouse manager rather than a
+  brand owner, so it sits in its own category under finished goods. It reuses
+  the bag range's kilogramme-to-unit machinery rather than a copy of it, with
+  each item carrying its own run size, because a run of pallet wrap is 200
+  rolls and a run of bags is a thousand;
+* **custom printed bags, made to order, one variant per customer artwork**. A
+  printed carrier is not a stock item - the plant holds clear film and a set of
+  plates per customer - so the artwork is a product attribute, which means the
+  sales order line names it, each artwork has its own bill of materials with
+  its own ink and press time, and cost and margin are answerable per artwork.
+  The template carries the Make To Order and Manufacture routes, so confirming
+  an order raises a works order rather than reserving finished bags that by
+  definition do not exist. Plate sets are deliberately not components: a plate
+  is tooling, cut once and mounted for every repeat, so what the run costs is
+  the make-ready, which is in the operation time;
+* **lot traceability from resin batch to delivered pallet**. Every material and
+  made product that can carry a defect forward is tracked by lot - resin,
+  masterbatch, additive, ink, reels, film and finished bags - and receipts mint
+  a lot off the delivery note while works orders stamp the run they produced.
+  A recalled resin batch is now answerable in Odoo in both directions: which
+  reels it went into and which customers took them, and from a returned pallet
+  back to the batch and the shift. Cores, cartons and recovered scrap are
+  untracked on purpose - see ``traceability_data`` - and the regrind loop is
+  the honest limit of the chain, which is why the certified biodegradable grade
+  takes no regrind at all;
 * a **rolled-up cost** on every made product, materials plus work centre time,
   computed level by level so the printed film carries the extrusion and
   regrind cost underneath it;
@@ -106,7 +134,7 @@ an install down with it, so check the install log for
 Replaces ``centric_restaurant_demo``, which was removed when the restaurant
 scope was dropped.
 """,
-    "version": "19.0.4.0.0",
+    "version": "19.0.5.0.0",
     "category": "Manufacturing",
     "author": "Centric",
     "license": "LGPL-3",

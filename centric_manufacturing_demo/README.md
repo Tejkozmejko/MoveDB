@@ -17,7 +17,10 @@ dropped.
 | BoMs | `normal` (not kit) BoMs with routings, three levels deep |
 | Costing | Rolled-up standard price per made product: components + work centre time |
 | Costing method | Packaging categories put on FIFO before the first product exists. Valuation left as the database has it — automated valuation with no stock accounts breaks every stock move, and those accounts come with the chart of accounts |
-| Stock | One-off opening count per bought-in material |
+| Industrial range | Pallet stretch wrap, a pallet shrink hood, a gusseted box liner and layflat tubing, on two new grades — 100 µm heavy clear and 23 µm LLDPE stretch with a tackifier. Own category, own run sizes: a run of pallet wrap is 200 rolls, not a thousand |
+| Custom print | One product, one variant per customer artwork, made to order. Own BoM, ink and press time per artwork; plate sets are tooling, not components |
+| Traceability | Lot tracking on every material and made product that can carry a defect forward. Receipts mint a lot off the delivery note, works orders stamp the run. Cores, cartons and recovered scrap deliberately untracked |
+| Stock | One-off opening count per bought-in material, under a lot where the material is tracked |
 | Replenishment | A reordering rule per bought-in material, sized from its monthly run-rate and the lead time and minimum order quantity on its primary vendor's price list line |
 | Purchasing | A vendor per trade supplier, plus a price list line per material with price, minimum order quantity and lead time |
 | Warehouse | Created if the company has none — a company that had Inventory installed after it was created never got one, and without a stock location nothing below can move |
@@ -41,7 +44,21 @@ Paper core 152mm ─────┘
 Flexo inks, extender ─┤
 Paper core 76mm ──────┘
   └─ TP-FLEXO6 ──> TP-SLIT ──> Printed Bread Bag Film / Printed Shrink Wrap
+                      │
+                      └─ TP-BAGLINE ──> Carrier / Refuse / Biodegradable bags
+                                        Custom printed bags (per artwork, MTO)
+
+100 µm clear ──> TP-SLIT ─────> Layflat Tubing
+             └─> TP-BAGLINE ──> Shrink Hood, Box Liner
+23 µm stretch ─> TP-SLIT ─────> Pallet Stretch Wrap
 ```
+
+Everything above the bag line is weighed in kilogrammes; everything below it is
+counted in units. Odoo will not convert between the two — different UoM
+categories, and rightly so, since the rate belongs to the bag — so the
+conversion lives in the BoM (a run of *n* units consuming the matching film
+weight, offcut included) and on the product's `weight` in kg per unit, both
+derived from one `grams_per_bag` figure so they cannot drift apart.
 
 Because the BoMs are `normal` rather than `phantom`, producing a finished film
 raises a manufacturing order with work orders against each work centre, giving
@@ -90,6 +107,32 @@ anything below its reorder point raises a replenishment. Every material is
 seeded above its own reorder point, so nothing fires on day one — but consume
 stock in the demo and the buyer will find draft purchase orders waiting, which
 is the behaviour being demonstrated.
+
+Lot tracking is switched on for the whole database, not just for these
+products: it is a settings group, and turning it on puts a Lot/Serial column on
+every tracked transfer. A product that already holds stock and no lots may
+refuse the change — Odoo protecting a valuation it cannot retrospectively split
+— in which case that one product is logged and skipped and the rest still get
+tracked. Look for:
+
+```
+centric_manufacturing_demo: could not put ... on lot tracking - ...
+```
+
+The opening count is seeded as **one lot per material**, standing for "what was
+on the floor at cutover". That is honest but coarse; split it against the real
+delivery notes before go-live, or the first recall traces back to a single
+number covering months of deliveries.
+
+The regrind loop is the limit of a strict forwards trace: recovered scrap is
+baled from every line and every grade at once, so it carries no lot. This is
+why the certified biodegradable grade takes no regrind at all — its certificate
+rests on a stated formulation, and a bale of unknown history cannot be declared
+against it.
+
+The custom print range is **made to order**, which means it turns on Odoo's
+Replenish on Order route database-wide (it ships archived). Nothing else is put
+on that route, but it becomes selectable on every product.
 
 The trading quantities balance against each other: receipts and the opening
 count cover what the manufacturing orders consume, and the done manufacturing

@@ -28,6 +28,7 @@ from datetime import timedelta
 
 from odoo import fields
 
+from .traceability_data import create_lot
 from .transaction_data import (
     CUSTOMERS,
     MANUFACTURING_ORDERS,
@@ -143,7 +144,30 @@ def _backdate(records, dt, field="date"):
         )
 
 
-def _validate_picking(picking, dt):
+def _label_incoming_lots(picking, company):
+    """P4.8 - give every tracked line on a receipt a lot number.
+
+    An incoming line is the one place in the chain where a lot number does not
+    already exist: it comes off the supplier's delivery note, and Odoo has
+    never seen it. Everything downstream - an extrusion order consuming resin,
+    a delivery shipping bags - takes the lots reservation already found on the
+    quants, so it needs nothing here.
+
+    Without this a receipt of a tracked material simply refuses to validate,
+    and the seeded purchase history would arrive as a pile of warnings.
+    """
+    if picking.picking_type_id.code != "incoming":
+        return
+    for move in picking.move_ids:
+        if move.product_id.tracking == "none":
+            continue
+        for line in move.move_line_ids:
+            if line.lot_id or line.lot_name:
+                continue
+            line.lot_id = create_lot(picking.env, move.product_id, company).id
+
+
+def _validate_picking(picking, dt, company=None):
     """Reserve, fill in and validate a transfer, then backdate it."""
     if picking.state in ("done", "cancel"):
         return
@@ -153,6 +177,9 @@ def _validate_picking(picking, dt):
         # wizard, and a demo has no business leaving backorders behind.
         move.quantity = move.product_uom_qty
         move.picked = True
+    # After the quantities, so the move lines the quantity created are all
+    # there to be labelled.
+    _label_incoming_lots(picking, company or picking.company_id)
     result = picking.button_validate()
     if isinstance(result, dict) and result.get("res_model"):
         # Belt and braces: if a confirmation wizard still appears, answer it
@@ -250,7 +277,7 @@ def _build_purchase(env, spec, company, partners, materials):
         return order
 
     for picking in order.picking_ids:
-        _validate_picking(picking, ordered_on + timedelta(days=7))
+        _validate_picking(picking, ordered_on + timedelta(days=7), company)
 
     if not _reaches(PURCHASE_FLOW, status, "billed"):
         return order
@@ -344,6 +371,17 @@ def _build_production(env, spec, company, products):
 
     mo.action_confirm()
     mo.action_assign()
+
+    # P4.8 - the run's own lot, assigned as soon as the order is confirmed
+    # rather than at the end: the shop floor is asked for it when the first
+    # operation is recorded, so an order left live on the extrusion line needs
+    # it too. This is the link the whole chain hangs on - the reel this order
+    # produces carries a number and the resin lots consumed sit under it, so
+    # Odoo's traceability report walks from the resin batch to the reel to the
+    # printed film to the delivered pallet without anybody reading the
+    # extrusion log book.
+    if product.tracking != "none" and not mo.lot_producing_id:
+        mo.lot_producing_id = create_lot(env, product, company).id
 
     if not _reaches(PRODUCTION_FLOW, status, "progress"):
         return mo
@@ -447,7 +485,7 @@ def _build_sale(env, spec, company, customers, products):
 
     delivered_on = ordered_on + timedelta(days=3)
     for picking in order.picking_ids:
-        _validate_picking(picking, delivered_on)
+        _validate_picking(picking, delivered_on, company)
 
     if not _reaches(SALE_FLOW, status, "invoiced"):
         return order
