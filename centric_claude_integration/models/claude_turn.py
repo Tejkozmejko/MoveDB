@@ -200,16 +200,20 @@ class CentricClaudeTurn(models.Model):
 
         Written at most every 20 seconds: a poll happens every few seconds and
         this would otherwise be a database write per poll, all day.
+
+        `last` is a datetime off the agent row, but strings are still accepted
+        so the check does not depend on where the value came from.
         """
         if not last:
             return True
-        try:
-            previous = fields.Datetime.from_string(last)
-        except (TypeError, ValueError):
+        if isinstance(last, str):
+            try:
+                last = fields.Datetime.from_string(last)
+            except (TypeError, ValueError):
+                return True
+        if not last:
             return True
-        if not previous:
-            return True
-        return (now - previous).total_seconds() >= 20
+        return (now - last).total_seconds() >= 20
 
     @api.model
     def _record_heartbeat(self, agent_name=None):
@@ -224,12 +228,13 @@ class CentricClaudeTurn(models.Model):
         indicator. A heartbeat must never be able to fail a claim.
         """
         now = fields.Datetime.now()
+        name = (agent_name or "bridge")[:120]
         # Cheap pre-check on the request's own cursor: skips opening a second
         # connection on the ~95% of polls that are inside the debounce window.
-        params = self.env["ir.config_parameter"].sudo()
-        if not self._heartbeat_is_due(
-            params.get_param("centric_claude.agent_last_seen"), now
-        ):
+        existing = self.env["centric.claude.agent"].sudo().search(
+            [("name", "=", name)], limit=1
+        )
+        if existing and not self._heartbeat_is_due(existing.last_seen, now):
             return
         try:
             with self.env.registry.cursor() as cr:
@@ -242,21 +247,16 @@ class CentricClaudeTurn(models.Model):
                 if not cr.fetchone()[0]:
                     return
                 env = api.Environment(cr, SUPERUSER_ID, {})
-                lock_params = env["ir.config_parameter"].sudo()
+                Agent = env["centric.claude.agent"].sudo()
                 # Re-read under the lock: the value may have moved on between
                 # the pre-check and here, and only this read is race-free.
-                if not self._heartbeat_is_due(
-                    lock_params.get_param("centric_claude.agent_last_seen"), now
-                ):
-                    return
-                lock_params.set_param(
-                    "centric_claude.agent_last_seen",
-                    fields.Datetime.to_string(now),
-                )
-                if agent_name:
-                    lock_params.set_param(
-                        "centric_claude.agent_name", agent_name[:120]
-                    )
+                agent = Agent.search([("name", "=", name)], limit=1)
+                if agent:
+                    if not self._heartbeat_is_due(agent.last_seen, now):
+                        return
+                    agent.last_seen = now
+                else:
+                    Agent.create({"name": name, "last_seen": now})
         except psycopg2.Error:
             # Losing a heartbeat costs an "offline" badge for a few seconds.
             # Failing the poll costs the developer their turn.
@@ -273,18 +273,13 @@ class CentricClaudeTurn(models.Model):
         saying so, and reading it costs nothing - which is the whole reason
         the poll no longer writes a heartbeat of its own.
         """
-        params = self.env["ir.config_parameter"].sudo()
-        raw = params.get_param("centric_claude.agent_last_seen")
-        name = params.get_param("centric_claude.agent_name") or ""
         now = fields.Datetime.now()
-
-        last = None
-        if raw:
-            try:
-                last = fields.Datetime.from_string(raw)
-            except (TypeError, ValueError):
-                last = None
-        if last and (now - last).total_seconds() <= self.HEARTBEAT_SECONDS:
+        agent = self.env["centric.claude.agent"].sudo().search(
+            [], order="last_seen desc", limit=1
+        )
+        name = agent.name if agent else ""
+        raw = fields.Datetime.to_string(agent.last_seen) if agent else ""
+        if agent and (now - agent.last_seen).total_seconds() <= self.HEARTBEAT_SECONDS:
             return True, raw, name
 
         recent = self.sudo().search(
