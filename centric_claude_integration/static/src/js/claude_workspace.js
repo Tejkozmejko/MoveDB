@@ -11,6 +11,16 @@ import { highlight, highlightDiff, languageOf } from "./claude_highlight";
 import { renderMarkdown } from "./claude_markdown";
 
 
+/** Seconds as "45s" or "2m 30s" - a running turn, not a duration to the hour. */
+function formatElapsed(seconds) {
+    const whole = Math.max(0, Math.floor(seconds));
+    if (whole < 60) {
+        return `${whole}s`;
+    }
+    return `${Math.floor(whole / 60)}m ${String(whole % 60).padStart(2, "0")}s`;
+}
+
+
 /** Starter content for a newly created file, keyed by extension. */
 function scaffoldFor(module, path) {
     const name = path.split("/").pop();
@@ -471,7 +481,24 @@ export class ClaudeDeveloperWorkspace extends Component {
             return "";
         }
         if (agent.state === "running") {
-            return `Running on ${agent.connected_agent || agent.agent_name || "your machine"}...`;
+            // What it is doing, then how much it has done. The activity
+            // changes when Claude moves on to something else; the counters
+            // come from the turn itself, so they keep moving in between.
+            const counts = [];
+            if (agent.progress_tools) {
+                counts.push(
+                    agent.progress_tools === 1
+                        ? "1 tool call"
+                        : `${agent.progress_tools} tool calls`
+                );
+            }
+            if (agent.elapsed) {
+                counts.push(formatElapsed(agent.elapsed));
+            }
+            const doing =
+                agent.progress ||
+                `Running on ${agent.connected_agent || agent.agent_name || "your machine"}`;
+            return counts.length ? `${doing} · ${counts.join(" · ")}` : `${doing}...`;
         }
         if (!agent.online) {
             // Distinguish "thinking" from "nothing is listening", which

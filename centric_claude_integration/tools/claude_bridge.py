@@ -919,7 +919,11 @@ def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None, images=
     )
     command = [
         claude_bin, "-p", build_prompt(turn, images),
-        "--output-format", "json",
+        # Streaming, not the single blob: `json` returns nothing at all until
+        # the run is over, so a two-minute turn was indistinguishable from a
+        # dead bridge. The stream carries one event per tool call, which is
+        # what lets the workspace say what is happening.
+        "--output-format", "stream-json", "--verbose",
         "--append-system-prompt", system,
     ]
     level = effort_for(turn)
@@ -943,9 +947,87 @@ def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None, images=
             environment.update(mcp_env)
         command += ["--allowedTools", ",".join(allowed)]
         command += extra_args
-        text, denials = _invoke_claude(command, repo, timeout, claude_bin,
-                                       environment)
+        text, denials = _invoke_claude(
+            command, repo, timeout, claude_bin, environment,
+            on_progress=progress_reporter(config, turn),
+        )
         return text + explain_denials(denials, turn)
+
+
+# A floor, not a heartbeat: progress is posted when Claude moves on to
+# something else, and a repeat of the same line would say nothing. Twelve
+# workers reporting into one dev-tier Odoo adds up, so no more often than this.
+PROGRESS_MIN_GAP_SECONDS = 2
+
+
+def describe_tool(name, tool_input):
+    """One short line naming what a tool call is about to do."""
+    def filename(key):
+        value = tool_input.get(key)
+        return os.path.basename(str(value)) if value else ""
+
+    if name in ("Read", "NotebookRead"):
+        return "Reading %s" % (filename("file_path") or "a file")
+    if name in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
+        return "Editing %s" % (filename("file_path") or "a file")
+    if name == "Grep":
+        return "Searching the code for %s" % (tool_input.get("pattern") or "a pattern")
+    if name == "Glob":
+        return "Looking for %s" % (tool_input.get("pattern") or "files")
+    if name == "Bash":
+        words = (tool_input.get("command") or "").strip().split()
+        return "Running %s" % (words[0] if words else "a command")
+    if name.startswith("mcp__odoo__"):
+        model = tool_input.get("model") or "Odoo"
+        return {
+            "odoo_find_models": "Looking for the right Odoo model",
+            "odoo_describe_model": "Reading the fields of %s" % model,
+            "odoo_search": "Searching %s" % model,
+            "odoo_read": "Reading a %s record" % model,
+            "odoo_count": "Counting %s records" % model,
+            "odoo_propose_change": "Preparing a change for you to confirm",
+            "odoo_propose_action": "Preparing an action for you to confirm",
+        }.get(name[len("mcp__odoo__"):], "Querying Odoo")
+    return "Using %s" % (name or "a tool")
+
+
+def describe_activity(event):
+    """What this stream event means for the person waiting, or None."""
+    if event.get("type") != "assistant":
+        return None
+    for block in event.get("message", {}).get("content", []) or []:
+        if block.get("type") == "tool_use":
+            return describe_tool(block.get("name") or "", block.get("input") or {})
+    return None
+
+
+def progress_reporter(config, turn):
+    """Tell Odoo what Claude is doing, so the workspace can show it.
+
+    The elapsed time shown to the user is computed from the turn's own
+    `claimed_at`, so it keeps counting between these posts rather than
+    freezing whenever Claude is busy on one long tool call.
+    """
+    if config is None or not turn.get("turn_id"):
+        return None
+    last = [0.0]
+
+    def report(activity, tools):
+        now = time.monotonic()
+        if now - last[0] < PROGRESS_MIN_GAP_SECONDS:
+            return
+        last[0] = now
+        try:
+            call_odoo(config.url, config.token,
+                      "/centric_claude/agent/progress",
+                      {"turn_id": turn["turn_id"],
+                       "activity": activity, "tools": tools})
+        except BridgeError:
+            # Progress is a courtesy. Never fail a turn because it could not
+            # be reported - the answer itself still has to get through.
+            pass
+
+    return report
 
 
 # Tools that only Developer Mode unlocks. Anything here being refused has one
@@ -1000,19 +1082,15 @@ def explain_denials(denials, turn):
     return chr(10) + chr(10) + chr(10).join(lines)
 
 
-def claude_failure(done):
-    """What to tell the developer when Claude Code exits non-zero.
+def claude_failure(payload, stderr="", returncode=None):
+    """What to tell the developer when a run fails.
 
-    Claude Code reports a failed run as JSON on stdout, with the sentence a
-    person needs in `result` - "You've hit your monthly spend limit", say. The
-    whole blob used to be pasted into the Odoo chat: several hundred
-    characters of token counts and cache statistics wrapped around the one line
-    that mattered, which nobody could be expected to find.
+    Claude Code puts the sentence a person needs in the final event's
+    `result` - "You've hit your monthly spend limit", say. The whole event
+    used to be pasted into the Odoo chat: several hundred characters of token
+    counts and cache statistics wrapped around the one line that mattered,
+    which nobody could be expected to find.
     """
-    try:
-        payload = json.loads(done.stdout or "")
-    except ValueError:
-        payload = None
     if isinstance(payload, dict):
         message = (payload.get("result") or "").strip()
         if message:
@@ -1025,30 +1103,80 @@ def claude_failure(done):
             if status:
                 return "Claude Code failed (HTTP %s): %s" % (status, message)
             return "Claude Code failed: %s" % message
-    detail = (done.stderr or done.stdout or "").strip()[:2000]
-    return "claude exited %s: %s" % (done.returncode, detail)
+    detail = (stderr or "").strip()[:2000]
+    return "claude exited %s: %s" % (returncode, detail or "no output")
 
 
-def _invoke_claude(command, repo, timeout, claude_bin, environment):
+def _invoke_claude(command, repo, timeout, claude_bin, environment,
+                   on_progress=None):
+    """Run one turn, reporting each tool call as it happens.
+
+    Reads the event stream line by line instead of waiting for one final blob,
+    so `on_progress` can be told what Claude is doing while it is still doing
+    it. The last event carries the answer.
+    """
     try:
-        done = subprocess.run(
-            command, cwd=repo, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=timeout,
-            env=environment,
+        process = subprocess.Popen(
+            command, cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace", env=environment,
+            bufsize=1,
         )
     except OSError as exc:
         raise BridgeError("Could not run %r: %s" % (claude_bin, exc)) from exc
-    except subprocess.TimeoutExpired as exc:
-        raise BridgeError("Claude did not finish within %s seconds." % timeout) from exc
 
-    if done.returncode != 0:
-        raise BridgeError(claude_failure(done))
+    # stderr gets its own thread: a full pipe buffer stops the child dead while
+    # we sit reading stdout, and then neither side ever moves again.
+    errors = []
+    drain = threading.Thread(target=errors.extend, args=(process.stderr,),
+                             daemon=True)
+    drain.start()
+
+    # A watchdog rather than a deadline checked in the loop: a run that hangs
+    # without printing anything would never reach the check.
+    expired = threading.Event()
+
+    def expire():
+        expired.set()
+        process.kill()
+
+    watchdog = threading.Timer(timeout, expire)
+    watchdog.start()
+
+    final, tools = None, 0
     try:
-        payload = json.loads(done.stdout)
-    except ValueError as exc:
-        raise BridgeError("Could not parse the Claude Code JSON output.") from exc
-    return ((payload.get("result") or "").strip(),
-            payload.get("permission_denials") or [])
+        for line in process.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue  # a stray non-JSON line is noise, not a failure
+            if event.get("type") == "result":
+                final = event
+                continue
+            activity = describe_activity(event)
+            if activity:
+                tools += 1
+                if on_progress:
+                    on_progress(activity, tools)
+        process.wait()
+    finally:
+        watchdog.cancel()
+        drain.join(timeout=1)
+        for stream in (process.stdout, process.stderr):
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+    if expired.is_set():
+        raise BridgeError("Claude did not finish within %s seconds." % timeout)
+    if process.returncode != 0 or final is None or final.get("is_error"):
+        raise BridgeError(claude_failure(final, "".join(errors),
+                                         process.returncode))
+    return ((final.get("result") or "").strip(),
+            final.get("permission_denials") or [])
 
 
 def _start_logging(path):

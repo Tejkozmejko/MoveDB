@@ -60,6 +60,13 @@ class CentricClaudeTurn(models.Model):
     agent_name = fields.Char(help="Identifies the bridge that claimed this turn.")
     claimed_at = fields.Datetime()
     finished_at = fields.Datetime()
+    # What the agent is doing right now, so a long turn can say so instead of
+    # sitting on "Running" for two minutes and looking like a hang.
+    progress = fields.Char(copy=False)
+    progress_tools = fields.Integer(
+        default=0, copy=False,
+        help="Tool calls the agent has made so far in this turn.",
+    )
     assistant_text = fields.Text()
     error = fields.Text()
     changed_file_count = fields.Integer(default=0)

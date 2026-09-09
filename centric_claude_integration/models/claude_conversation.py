@@ -1629,6 +1629,15 @@ Rules:
             # Questions are answered one at a time, so a queue behind you is the
             # difference between "slow" and "broken".
             "queue_position": Turn._queue_position(turn),
+            # What the agent is doing, and for how long. Elapsed is derived
+            # here rather than sent by the bridge, so it keeps counting through
+            # a long tool call instead of freezing until the next report.
+            "progress": (turn.progress or "") if turn else "",
+            "progress_tools": turn.progress_tools if turn else 0,
+            "elapsed": (
+                int((fields.Datetime.now() - turn.claimed_at).total_seconds())
+                if turn and turn.claimed_at else 0
+            ),
         }
 
     @api.model

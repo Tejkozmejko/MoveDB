@@ -174,6 +174,31 @@ class CentricClaudeAgentController(http.Controller):
         return {"ok": True, "staged": staged, "rejected": rejected}
 
     @http.route(
+        "/centric_claude/agent/progress",
+        type="jsonrpc", auth="public", methods=["POST"], csrf=False,
+    )
+    def progress(self, turn_id=None, activity=None, tools=None, **kwargs):
+        """Note what the agent is doing, for the workspace to display.
+
+        Deliberately forgiving: a turn that has just finished, or been
+        cancelled, is not an error worth reporting back - the bridge posts
+        these while working and must never be derailed by one being late.
+        """
+        user, reason = self._agent_check()
+        if not user:
+            return self._denied(reason)
+        turn = request.env["centric.claude.turn"].sudo().browse(
+            int(turn_id or 0)
+        ).exists()
+        if not turn or turn.state != "running":
+            return {"ok": False}
+        turn.write({
+            "progress": (activity or "")[:200],
+            "progress_tools": int(tools or 0),
+        })
+        return {"ok": True}
+
+    @http.route(
         "/centric_claude/agent/fail",
         type="jsonrpc", auth="public", methods=["POST"], csrf=False,
     )
