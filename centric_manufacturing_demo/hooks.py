@@ -1292,7 +1292,7 @@ def _create_quality_points(env, warehouse, materials, products, bags, company):
     return created
 
 
-def post_init_hook(env):
+def _seed(env):
     # Everything is seeded in the plant's company, whichever company the user
     # running the install happens to be in. Rebinding the environment also puts
     # the warehouse lookup and the vendor price lines in the right company.
@@ -1394,3 +1394,34 @@ def post_init_hook(env):
     # place: it buys the materials above, consumes them through the BoMs above
     # and sells the result, so it has nothing to work with until they exist.
     seed_transactions(env, company, partners, materials, products)
+
+
+def post_init_hook(env):
+    """Seed the plant, but never let seeding fail the install.
+
+    This is demo data. It runs twenty steps against a database it did not
+    create - a restored copy with its own companies, chart of accounts,
+    warehouses and fiscal positions - and creates products, bills of material,
+    purchase orders, manufacturing orders, invoices and payments across all of
+    them. Any one of those can meet a state this module did not anticipate.
+
+    Unguarded, that took the whole build down: a stumble seeding fake bags
+    stopped `centric_claude_integration` deploying, so the fixes people were
+    actually waiting on never reached the server. A demo fixture must not have
+    that power over the modules around it.
+
+    The failure is not hidden - it is logged with its full traceback at ERROR,
+    which is louder than it was before, since a build that dies at module load
+    reports the last thing it touched rather than the thing that broke. The
+    savepoint rolls the half-built demo data back so the database is left
+    clean, and the module installs empty: fix the cause and upgrade to retry.
+    """
+    try:
+        with env.cr.savepoint():
+            _seed(env)
+    except Exception:  # noqa: BLE001 - deliberately broad, see above.
+        _logger.exception(
+            "centric_manufacturing_demo: seeding failed and was rolled back. "
+            "The module is installed but holds no demo data; fix the error "
+            "above and upgrade the module to seed it again."
+        )
