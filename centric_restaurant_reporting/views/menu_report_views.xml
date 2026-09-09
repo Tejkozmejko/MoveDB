@@ -56,11 +56,15 @@
                 <field name="config_id"/>
                 <field name="user_id"/>
                 <filter name="filter_today" string="Today" domain="[('date', '&gt;=', context_today().strftime('%Y-%m-%d'))]"/>
-                <filter name="filter_this_week" string="This Week" domain="[('date', '&gt;=', (context_today() - datetime.timedelta(days=7)).strftime('%Y-%m-%d'))]"/>
-                <filter name="filter_this_month" string="This Month" domain="[('date', '&gt;=', (context_today().replace(day=1)).strftime('%Y-%m-%d'))]"/>
+                <filter name="filter_this_month" string="This Month" domain="[('date', '&gt;=', context_today().strftime('%Y-%m-01'))]"/>
+                <separator/>
+                <!-- Standard period picker: covers week/quarter/year and the
+                     period-on-period comparison, so the search view does not
+                     need hand-rolled date arithmetic. -->
+                <filter name="filter_order_date" string="Order Date" date="date"/>
                 <separator/>
                 <filter name="filter_loss_making" string="Loss Making" domain="[('margin', '&lt;', 0)]"/>
-                <group expand="0" string="Group By">
+                <group>
                     <filter name="group_product" string="Dish" context="{'group_by': 'product_id'}"/>
                     <filter name="group_categ" string="Product Category" context="{'group_by': 'categ_id'}"/>
                     <filter name="group_config" string="Point of Sale" context="{'group_by': 'config_id'}"/>
