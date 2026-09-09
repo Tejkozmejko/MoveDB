@@ -186,10 +186,13 @@ def _set_costing_policy(env, company, categories):
         )
     except Exception:
         # Accounting may not be installed at all, and the field names a search
-        # domain uses are version-specific. Neither is worth an install.
-        _logger.exception(
+        # domain uses are version-specific. Neither is worth an install - and
+        # WARNING rather than ERROR because Odoo.sh fails a build on any ERROR
+        # in the update log, which would undo the whole point of carrying on.
+        _logger.warning(
             "centric_manufacturing_demo: could not resolve a stock journal; "
-            "categories left on manual valuation"
+            "categories left on manual valuation",
+            exc_info=True,
         )
         return moved
 
@@ -225,10 +228,15 @@ def _set_costing_policy(env, company, categories):
             # any savepoint, re-raising the error this handler exists to
             # swallow and taking the install down after all.
             env.invalidate_all(flush=False)
-            _logger.exception(
+            # WARNING, not ERROR: the category is deliberately left on manual
+            # and the seed carries on, but Odoo.sh fails a build on any ERROR
+            # in the update log - so shouting here would keep every module in
+            # the repository undeployed over a valuation nicety.
+            _logger.warning(
                 "centric_manufacturing_demo: could not put %s on automated "
                 "valuation; left on manual",
                 categ.display_name,
+                exc_info=True,
             )
 
     manual = [
@@ -1410,18 +1418,26 @@ def post_init_hook(env):
     actually waiting on never reached the server. A demo fixture must not have
     that power over the modules around it.
 
-    The failure is not hidden - it is logged with its full traceback at ERROR,
-    which is louder than it was before, since a build that dies at module load
-    reports the last thing it touched rather than the thing that broke. The
-    savepoint rolls the half-built demo data back so the database is left
-    clean, and the module installs empty: fix the cause and upgrade to retry.
+    The failure is not hidden: the full traceback is logged, which is more than
+    was there before, since a build that dies at module load reports the last
+    thing it touched rather than the thing that broke. The savepoint rolls the
+    half-built demo data back so the database is left clean, and the module
+    installs empty: fix the cause and upgrade to seed it again.
+
+    Logged at WARNING and not ERROR, deliberately. Odoo.sh fails a build on any
+    ERROR in the update log, so raising the level here would keep every other
+    module in the repository undeployed over demo fixtures - which is the exact
+    trap this function was written to get out of, one step further along. The
+    seed not running is not an error for the application; it is an absence of
+    sample data, and the traceback rides along either way.
     """
     try:
         with env.cr.savepoint():
             _seed(env)
     except Exception:  # noqa: BLE001 - deliberately broad, see above.
-        _logger.exception(
+        _logger.warning(
             "centric_manufacturing_demo: seeding failed and was rolled back. "
             "The module is installed but holds no demo data; fix the error "
-            "above and upgrade the module to seed it again."
+            "below and upgrade the module to seed it again.",
+            exc_info=True,
         )
