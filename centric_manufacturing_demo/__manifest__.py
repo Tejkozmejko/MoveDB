@@ -72,11 +72,12 @@ like the live plant instead of an empty one:
 * **FIFO costing** on the packaging categories, set before the first product
   exists so material is costed under it from its first receipt rather than
   converted afterwards. The plant buys polymer on a moving market, and standard
-  costing would bury that in a price variance nobody reads. Valuation is left
-  where the database has it: automated valuation with no stock accounts on the
-  category makes every later stock move fail, and those accounts arrive with
-  the chart of accounts. The install log says which categories are still
-  periodic;
+  costing would bury that in a price variance nobody reads. Valuation is
+  switched to **automated** in the same pass, but only where the chart of
+  accounts can back it - a stock journal and a stock valuation account per
+  category - and only before the first receipt, because Odoo will not convert
+  a category that already holds valued stock. Where either condition fails the
+  category stays periodic and the install log names it;
 * an **opening stock count** for every bought-in material;
 * a **reordering rule per bought-in material**, sized off its monthly run-rate
   and the lead time and minimum order quantity on its primary vendor's price
@@ -134,7 +135,7 @@ an install down with it, so check the install log for
 Replaces ``centric_restaurant_demo``, which was removed when the restaurant
 scope was dropped.
 """,
-    "version": "19.0.5.0.0",
+    "version": "19.0.6.0.0",
     "category": "Manufacturing",
     "author": "Centric",
     "license": "LGPL-3",

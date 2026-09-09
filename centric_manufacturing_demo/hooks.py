@@ -27,16 +27,19 @@ from .material_data import (
     FILM_MARGIN,
     FINISHED_BAG_CATEG,
     FINISHED_BAGS,
+    FINISHED_CATEG,
     INDUSTRIAL_CATEG,
     INDUSTRIAL_PACKAGING,
     KG,
     MANUFACTURED,
     RAW_CATEG,
     RAW_MATERIALS,
+    ROOT_CATEG,
     SCRAP_COST,
     SCRAP_MATERIAL,
     SCRAP_OPENING_QTY,
     UNIT,
+    WIP_CATEG,
 )
 from .pricing import bag_cost, bag_price, film_kg_per_bag, with_margin
 from .quality_data import QUALITY_POINTS
@@ -96,7 +99,39 @@ def _categories(env):
     return categories
 
 
-def _set_costing_policy(env, categories):
+# Which balance-sheet stock account each packaging category is valued on, by
+# preference order - the first name that exists in the company's chart wins.
+# DEMO MAPPING: these are the generic Maltese chart's stock headings, chosen so
+# raw material, work in progress and finished goods do not all land in one
+# balance. Traplas' accountant must confirm them before go-live.
+_VALUATION_ACCOUNT_NAMES = {
+    ROOT_CATEG: ("Stocks",),
+    RAW_CATEG: ("Stock of raw materials", "Stocks"),
+    WIP_CATEG: ("Stock of raw materials", "Stocks"),
+    FINISHED_CATEG: ("Stock of goods finished goods", "Stocks"),
+    FINISHED_BAG_CATEG: ("Stock of goods finished goods", "Stocks"),
+    INDUSTRIAL_CATEG: ("Stock of goods finished goods", "Stocks"),
+}
+
+
+def _valuation_account(env, company, categ_name):
+    """Return the stock valuation account for a category, or an empty record."""
+    Account = env["account.account"]
+    for name in _VALUATION_ACCOUNT_NAMES.get(categ_name, ()):
+        account = Account.search(
+            [
+                ("company_ids", "in", company.id),
+                ("name", "=", name),
+                ("account_type", "=", "asset_current"),
+            ],
+            limit=1,
+        )
+        if account:
+            return account
+    return Account.browse()
+
+
+def _set_costing_policy(env, company, categories):
     """P3.9 - put the packaging categories on FIFO, return how many moved.
 
     Called before any product is created or any stock counted in, so the
@@ -108,15 +143,49 @@ def _set_costing_policy(env, categories):
     alone - costing method is an accounting decision, and a data module gets to
     make it once, on a category it has just created, not on every upgrade.
 
-    Valuation itself is not changed. Automated valuation with no stock accounts
-    on the category makes every later stock move fail, and those accounts come
-    from the chart of accounts P2.2 loads. The warning below is the handover.
+    Valuation is switched to automated (``real_time``) in the same pass, but
+    only where the chart of accounts can actually back it. Odoo 19 no longer
+    has the stock input/output interim accounts - a category needs a stock
+    journal and a stock valuation account, and nothing else - so both are
+    resolved from ``company``'s chart first and the category is left on manual
+    if either is missing. Flipping a category to automated with no valuation
+    account makes every later stock move fail, which is worse than a warning.
+
+    The switch is also only safe here, before the first receipt: Odoo refuses
+    to change the valuation of a category that already holds valued stock,
+    because it cannot retrospectively write the journal entries the earlier
+    moves never made. A category that already has layers is therefore left
+    alone and named in the warning.
     """
     moved = 0
     for categ in categories.values():
         if categ.property_cost_method == "standard":
             categ.property_cost_method = "fifo"
             moved += 1
+
+    journal = env["account.journal"].search(
+        [("company_id", "=", company.id), ("code", "=", "STJ")], limit=1
+    ) or env["account.journal"].search(
+        [("company_id", "=", company.id), ("type", "=", "general")], limit=1
+    )
+
+    Layer = env["stock.valuation.layer"]
+    for name, categ in categories.items():
+        if categ.property_valuation == "real_time":
+            continue
+        account = categ.property_stock_valuation_account_id or _valuation_account(
+            env, company, name
+        )
+        if not journal or not account:
+            continue
+        # An existing category carried over from an earlier install may already
+        # be holding stock; only a category with no layers can be converted.
+        if Layer.search_count([("product_id.categ_id", "=", categ.id)]):
+            continue
+        categ.property_stock_journal = journal.id
+        categ.property_stock_valuation_account_id = account.id
+        categ.property_valuation = "real_time"
+
     manual = [
         categ.display_name
         for categ in categories.values()
@@ -124,9 +193,10 @@ def _set_costing_policy(env, categories):
     ]
     if manual:
         _logger.warning(
-            "centric_manufacturing_demo: %s still on manual (periodic) stock "
-            "valuation - set the stock input, output and valuation accounts on "
-            "them and switch to automated once the chart of accounts is loaded",
+            "centric_manufacturing_demo: %s left on manual (periodic) stock "
+            "valuation - either the chart of accounts has no stock journal and "
+            "valuation account to point at, or the category already holds "
+            "valued stock and Odoo will not convert it in place",
             ", ".join(manual),
         )
     return moved
@@ -1195,7 +1265,7 @@ def post_init_hook(env):
     # Before any product exists or any stock is counted in: the costing method
     # has to be the one in force when the first layer lands, not one applied to
     # it afterwards.
-    costed = _set_costing_policy(env, categories)
+    costed = _set_costing_policy(env, company, categories)
     materials = _create_raw_materials(env, uoms, categories)
     workcenters = _create_workcenters(env, company)
     products = _create_boms(env, uoms, categories, materials, workcenters, company)
