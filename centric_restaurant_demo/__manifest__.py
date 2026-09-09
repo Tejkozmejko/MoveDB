@@ -1,6 +1,6 @@
 {
     "name": "Centric Restaurant Demo Data",
-    "summary": "Ingredient master, dish recipes (kit BoMs) and opening stock for the restaurant POS.",
+    "summary": "Ingredient master, dish recipes (kit BoMs), opening stock and supplier terms for the restaurant POS.",
     "description": """
 Fills in the parts of the restaurant rollout that need data rather than
 configuration:
@@ -12,13 +12,16 @@ configuration:
   actually depletes ingredients - no custom backflush code needed;
 * a rolled-up cost price on each dish, computed from its recipe, so POS margin
   and food-cost reporting has real numbers to work with;
-* an opening stock count for every ingredient.
+* an opening stock count for every ingredient;
+* a vendor per trade supplier, and a purchase price list line per ingredient
+  with the agreed price, minimum order quantity and delivery lead time - a
+  primary vendor for every ingredient plus a dearer backup for most.
 
 The quantities and costs here are PLAUSIBLE DEMO FIGURES, not the customer's
 real portion sizes or supplier prices. Replace them before go-live.
 
 Everything runs from a post-init hook and is idempotent: re-installing or
-upgrading will not duplicate products, recipes or stock.
+upgrading will not duplicate products, recipes, stock or vendor terms.
 """,
     "version": "19.0.1.0.0",
     "category": "Sales/Point of Sale",

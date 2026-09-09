@@ -2,6 +2,7 @@
 import logging
 
 from .recipe_data import INGREDIENTS, RECIPES, G, ML, UNIT
+from .supplier_data import BACKUP_PRICE_UPLIFT, MIN_QTY_BY_UOM, SOURCING, SUPPLIERS
 
 _logger = logging.getLogger(__name__)
 
@@ -147,14 +148,94 @@ def _set_opening_stock(env, uoms, ingredients):
         ).action_apply_inventory()
 
 
+def _create_suppliers(env):
+    """Create any missing vendor partner, return {name: res.partner}."""
+    Partner = env["res.partner"]
+    partners = {}
+    for name, vals in SUPPLIERS.items():
+        partner = Partner.search([("name", "=", name)], limit=1)
+        if not partner:
+            partner = Partner.create(
+                {
+                    "name": name,
+                    "company_type": "company",
+                    "supplier_rank": 1,
+                    "street": vals["street"],
+                    "city": vals["city"],
+                    "zip": vals["zip"],
+                    "phone": vals["phone"],
+                    "email": vals["email"],
+                }
+            )
+        partners[name] = partner
+    return partners
+
+
+def _create_price_lists(env, partners, ingredients):
+    """Add a purchase price list line per ingredient/vendor pair.
+
+    ``price`` is per base unit of the ingredient's own UoM, matching how
+    ``standard_price`` is stored, so the primary vendor's price reconciles with
+    the cost that the kit BoMs roll up onto the dishes. Existing lines for the
+    same product/vendor are left alone - agreed terms are the buyer's to
+    change, not the module's.
+    """
+    Supplierinfo = env["product.supplierinfo"]
+    created = 0
+    for ingredient_name, (primary, backup) in SOURCING.items():
+        product = ingredients.get(ingredient_name)
+        if not product:
+            _logger.warning(
+                "centric_restaurant_demo: ingredient %r not found, sourcing skipped",
+                ingredient_name,
+            )
+            continue
+
+        uom_xmlid, cost, _qty = INGREDIENTS[ingredient_name]
+        min_qty = MIN_QTY_BY_UOM[uom_xmlid]
+        candidates = [(primary, cost, 1)]
+        if backup:
+            candidates.append((backup, round(cost * BACKUP_PRICE_UPLIFT, 4), 2))
+
+        for vendor_name, price, sequence in candidates:
+            partner = partners[vendor_name]
+            existing = Supplierinfo.search(
+                [
+                    ("partner_id", "=", partner.id),
+                    ("product_tmpl_id", "=", product.product_tmpl_id.id),
+                ],
+                limit=1,
+            )
+            if existing:
+                continue
+            Supplierinfo.create(
+                {
+                    "partner_id": partner.id,
+                    "product_tmpl_id": product.product_tmpl_id.id,
+                    "price": price,
+                    "min_qty": min_qty,
+                    "delay": SUPPLIERS[vendor_name]["delay"],
+                    "sequence": sequence,
+                    "currency_id": env.company.currency_id.id,
+                }
+            )
+            created += 1
+    return created
+
+
 def post_init_hook(env):
     uoms = _resolve_uoms(env)
     categ = _ingredient_category(env)
     ingredients = _create_ingredients(env, uoms, categ)
     _create_recipes(env, ingredients)
     _set_opening_stock(env, uoms, ingredients)
+    partners = _create_suppliers(env)
+    price_lines = _create_price_lists(env, partners, ingredients)
     _logger.info(
-        "centric_restaurant_demo: %s ingredients, %s recipes, opening stock applied",
+        "centric_restaurant_demo: %s ingredients, %s recipes, opening stock applied, "
+        "%s vendors and %s purchase price lines",
         len(ingredients),
         len(RECIPES),
+        len(partners),
+        price_lines,
     )
