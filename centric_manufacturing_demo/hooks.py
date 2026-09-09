@@ -156,12 +156,25 @@ def _set_costing_policy(env, company, categories):
     because it cannot retrospectively write the journal entries the earlier
     moves never made. A category that already has layers is therefore left
     alone and named in the warning.
+
+    Every switch is made inside its own savepoint. Automated valuation is an
+    improvement on top of a working demo, not a precondition for one, so a
+    category Odoo refuses for a reason not anticipated above is rolled back and
+    left on manual rather than taking the whole install - and the rest of the
+    hook - down with it. The category is then named in the warning like any
+    other, and the exception is logged for whoever picks the chart up.
     """
     moved = 0
     for categ in categories.values():
         if categ.property_cost_method == "standard":
             categ.property_cost_method = "fifo"
             moved += 1
+
+    # Flush the costing method out before the savepoints below open. A pending
+    # write is flushed by whichever savepoint happens to be open when it is
+    # forced, and would be rolled back with it - the FIFO decision must not be
+    # undone by an unrelated valuation failure.
+    env.flush_all()
 
     journal = env["account.journal"].search(
         [("company_id", "=", company.id), ("code", "=", "STJ")], limit=1
@@ -182,9 +195,25 @@ def _set_costing_policy(env, company, categories):
         # be holding stock; only a category with no layers can be converted.
         if Layer.search_count([("product_id.categ_id", "=", categ.id)]):
             continue
-        categ.property_stock_journal = journal.id
-        categ.property_stock_valuation_account_id = account.id
-        categ.property_valuation = "real_time"
+        try:
+            with env.cr.savepoint():
+                categ.property_stock_journal = journal.id
+                categ.property_stock_valuation_account_id = account.id
+                categ.property_valuation = "real_time"
+                # Force the write out now, so anything the database or a
+                # constraint objects to is raised inside this savepoint and
+                # not later, once the savepoint has been released.
+                env.flush_all()
+        except Exception:
+            # The savepoint has already put the category back; drop the values
+            # the failed write left in cache so the warning below reads the
+            # real state rather than the one that was rolled back.
+            env.invalidate_all()
+            _logger.exception(
+                "centric_manufacturing_demo: could not put %s on automated "
+                "valuation; left on manual",
+                categ.display_name,
+            )
 
     manual = [
         categ.display_name
