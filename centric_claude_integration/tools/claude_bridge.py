@@ -917,14 +917,22 @@ def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None, images=
         ),
         data=data_prompt(turn),
     )
+    # Neither the question nor the system prompt goes on the command line.
+    # Windows caps a command line at about 32k characters, and the question
+    # alone can beat that on its own: a project's standing instructions run to
+    # 8k, the replayed transcript to 20k more. Once past the cap nothing runs
+    # at all - the turn dies with "The filename or extension is too long",
+    # which says nothing about the real cause. The prompt is piped to stdin
+    # and the system prompt handed over as a file, so argv stays a short list
+    # of flags no matter how long the conversation gets.
+    prompt = build_prompt(turn, images)
     command = [
-        claude_bin, "-p", build_prompt(turn, images),
+        claude_bin, "-p",
         # Streaming, not the single blob: `json` returns nothing at all until
         # the run is over, so a two-minute turn was indistinguishable from a
         # dead bridge. The stream carries one event per tool call, which is
         # what lets the workspace say what is happening.
         "--output-format", "stream-json", "--verbose",
-        "--append-system-prompt", system,
     ]
     level = effort_for(turn)
     if level:
@@ -937,6 +945,11 @@ def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None, images=
 
     environment = dict(os.environ)
     with tempfile.TemporaryDirectory(prefix="centric-claude-") as workdir:
+        system_path = os.path.join(workdir, "system-prompt.txt")
+        with open(system_path, "w", encoding="utf-8") as handle:
+            handle.write(system)
+        command += ["--append-system-prompt-file", system_path]
+
         mcp_path, odoo_tools, mcp_env = (None, (), {})
         if config is not None:
             mcp_path, odoo_tools, mcp_env = mcp_config_for(turn, config, workdir)
@@ -949,7 +962,7 @@ def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None, images=
         command += extra_args
         text, denials = _invoke_claude(
             command, repo, timeout, claude_bin, environment,
-            on_progress=progress_reporter(config, turn),
+            on_progress=progress_reporter(config, turn), stdin_text=prompt,
         )
         return text + explain_denials(denials, turn)
 
@@ -1108,21 +1121,42 @@ def claude_failure(payload, stderr="", returncode=None):
 
 
 def _invoke_claude(command, repo, timeout, claude_bin, environment,
-                   on_progress=None):
+                   on_progress=None, stdin_text=None):
     """Run one turn, reporting each tool call as it happens.
 
     Reads the event stream line by line instead of waiting for one final blob,
     so `on_progress` can be told what Claude is doing while it is still doing
-    it. The last event carries the answer.
+    it. The last event carries the answer. The question itself arrives on
+    stdin, which is what keeps a long conversation off the command line.
     """
     try:
         process = subprocess.Popen(
-            command, cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            command, cwd=repo, stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace", env=environment,
             bufsize=1,
         )
     except OSError as exc:
         raise BridgeError("Could not run %r: %s" % (claude_bin, exc)) from exc
+
+    # Written on a thread, like stderr is read on one: a prompt larger than the
+    # pipe buffer would otherwise block here while Claude waits for us to start
+    # reading its output, and neither side would move again.
+    def feed():
+        try:
+            if stdin_text:
+                process.stdin.write(stdin_text)
+        except (OSError, ValueError):
+            pass
+        finally:
+            # Closed either way: Claude waits for end-of-input before it
+            # decides the question is complete.
+            try:
+                process.stdin.close()
+            except (OSError, ValueError):
+                pass
+
+    threading.Thread(target=feed, daemon=True).start()
 
     # stderr gets its own thread: a full pipe buffer stops the child dead while
     # we sit reading stdout, and then neither side ever moves again.
