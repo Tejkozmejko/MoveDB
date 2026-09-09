@@ -103,7 +103,25 @@ def _create_raw_materials(env, uoms, categories):
     return materials
 
 
-def _create_workcenters(env):
+def _plant_company(env):
+    """Return the company that owns the plant's work centres.
+
+    The work centres were created by hand against the plant company, which is
+    not necessarily the company the installing user happens to be working in.
+    Everything company-dependent this hook creates - the BoMs and their
+    operations above all - has to line up with them, or Odoo rejects the BoM
+    for crossing companies. Fall back to the current company on a fresh
+    database where no work centre exists yet.
+    """
+    workcenter = (
+        env["mrp.workcenter"]
+        .with_context(active_test=False)
+        .search([("code", "in", list(WORKCENTERS))], limit=1)
+    )
+    return workcenter.company_id or env.company
+
+
+def _create_workcenters(env, company):
     """Return {code: mrp.workcenter}, creating only the ones that are missing.
 
     An existing work centre is returned untouched. The press, slitter and
@@ -117,7 +135,7 @@ def _create_workcenters(env):
             [("code", "=", code)], limit=1
         )
         if not workcenter:
-            workcenter = Workcenter.create(dict(vals, code=code))
+            workcenter = Workcenter.create(dict(vals, code=code, company_id=company.id))
             _logger.info(
                 "centric_manufacturing_demo: created work centre %s (%s)",
                 code,
@@ -127,7 +145,7 @@ def _create_workcenters(env):
     return workcenters
 
 
-def _create_boms(env, uoms, categories, materials, workcenters):
+def _create_boms(env, uoms, categories, materials, workcenters, company):
     """Create a manufacturing BoM per made product and roll its cost up.
 
     Unlike a kit, these are ``normal`` BoMs: they are consumed by a
@@ -196,10 +214,19 @@ def _create_boms(env, uoms, categories, materials, workcenters):
             "product_qty": run_qty,
             "product_uom_id": product.uom_id.id,
             "type": "normal",
+            # Pinned to the work centres' company: an operation may not point at
+            # a work centre owned by a different company than its BoM.
+            "company_id": company.id,
             "bom_line_ids": [(5, 0, 0)] + bom_lines,
             "operation_ids": [(5, 0, 0)] + operations,
         }
-        existing = Bom.search([("product_tmpl_id", "=", product.product_tmpl_id.id)], limit=1)
+        existing = Bom.search(
+            [
+                ("product_tmpl_id", "=", product.product_tmpl_id.id),
+                ("company_id", "in", (False, company.id)),
+            ],
+            limit=1,
+        )
         if existing:
             existing.write(vals)
         else:
@@ -313,17 +340,30 @@ def _create_price_lists(env, partners, materials):
 
 
 def post_init_hook(env):
+    # Everything is seeded in the plant's company, whichever company the user
+    # running the install happens to be in. Rebinding the environment also puts
+    # the warehouse lookup and the vendor price lines in the right company.
+    company = _plant_company(env)
+    env = env(
+        context=dict(
+            env.context,
+            allowed_company_ids=[company.id]
+            + [cid for cid in env.context.get("allowed_company_ids", []) if cid != company.id],
+        )
+    )
+
     uoms = _resolve_uoms(env)
     categories = _categories(env)
     materials = _create_raw_materials(env, uoms, categories)
-    workcenters = _create_workcenters(env)
-    products = _create_boms(env, uoms, categories, materials, workcenters)
+    workcenters = _create_workcenters(env, company)
+    products = _create_boms(env, uoms, categories, materials, workcenters, company)
     counted = _set_opening_stock(env, materials)
     partners = _create_suppliers(env)
     price_lines = _create_price_lists(env, partners, materials)
     _logger.info(
-        "centric_manufacturing_demo: %s materials, %s work centres, %s BoMs, "
-        "%s opening counts, %s vendors and %s purchase price lines",
+        "centric_manufacturing_demo: seeded %s - %s materials, %s work centres, "
+        "%s BoMs, %s opening counts, %s vendors and %s purchase price lines",
+        company.display_name,
         len(materials),
         len(workcenters),
         len(products),
