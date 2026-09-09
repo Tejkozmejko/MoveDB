@@ -1431,6 +1431,25 @@ def post_init_hook(env):
     seed not running is not an error for the application; it is an absence of
     sample data, and the traceback rides along either way.
     """
+    # Once per upgrade, not once per version crossed. Odoo runs every migration
+    # folder between the database's version and this one, and each of them
+    # calls this hook - so a database a few versions behind re-seeded itself
+    # once per folder, deleting and recreating every BoM, routing and
+    # by-product on each pass. Six identical passes, six thousand queries, and
+    # six chances to fail where one would do.
+    #
+    # Marked on the cursor rather than in a module global: every migration in
+    # one upgrade shares a cursor, and the next upgrade gets a fresh one, so
+    # this expires exactly when it should instead of lasting for the life of
+    # the process.
+    if getattr(env.cr, "_centric_demo_seeded", False):
+        _logger.info(
+            "centric_manufacturing_demo: already seeded in this upgrade, "
+            "skipping the repeat pass"
+        )
+        return
+    env.cr._centric_demo_seeded = True
+
     try:
         with env.cr.savepoint():
             _seed(env)
