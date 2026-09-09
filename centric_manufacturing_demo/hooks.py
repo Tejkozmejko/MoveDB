@@ -1038,7 +1038,7 @@ def _create_orderpoints(env, warehouse, materials):
             )
             continue
 
-        min_qty, max_qty, multiple = reorder_levels(
+        min_qty, max_qty = reorder_levels(
             monthly, float(seller.delay), seller.min_qty
         )
         Orderpoint.create(
@@ -1049,7 +1049,6 @@ def _create_orderpoints(env, warehouse, materials):
                 "company_id": warehouse.company_id.id,
                 "product_min_qty": min_qty,
                 "product_max_qty": max_qty,
-                "qty_multiple": multiple,
             }
         )
         created += 1

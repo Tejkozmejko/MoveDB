@@ -89,13 +89,19 @@ def _round_up_to(value, multiple):
 
 
 def reorder_levels(monthly_usage, lead_days, min_order_qty):
-    """Return ``(min_qty, max_qty, qty_multiple)`` for one reordering rule.
+    """Return ``(min_qty, max_qty)`` for one reordering rule.
 
     The reorder point is the stock the plant gets through while it waits for a
     replacement, plus a safety buffer proportional to that wait. The maximum
     adds a month of cover on top, then both are rounded up to whole minimum
     order quantities so the rule never proposes a purchase order the vendor
     would reject as below their minimum.
+
+    That rounding is the only place the vendor's minimum is enforced. Odoo 19
+    dropped the orderpoint's ``qty_multiple`` quantity in favour of
+    ``replenishment_uom_id``, a unit of measure - and a vendor minimum of 750 kg
+    is a quantity, not a unit the plant buys resin in, so there is no UoM to put
+    there. Rounding both levels up here gives the same guarantee without one.
     """
     daily = monthly_usage / WORKING_DAYS_PER_MONTH
     safety_days = max(lead_days * SAFETY_FRACTION, MIN_SAFETY_DAYS)
@@ -110,5 +116,4 @@ def reorder_levels(monthly_usage, lead_days, min_order_qty):
     return (
         round(_round_up_to(min_qty, min_order_qty), 2),
         round(_round_up_to(max_qty, min_order_qty), 2),
-        min_order_qty,
     )
