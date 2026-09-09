@@ -1,8 +1,14 @@
 import logging
 
-from odoo import _, api, fields, models
+import psycopg2
+
+from odoo import SUPERUSER_ID, _, api, fields, models
 
 _logger = logging.getLogger(__name__)
+
+# Arbitrary but fixed key for the advisory lock that serialises heartbeat
+# writes across workers. Any constant works as long as nothing else uses it.
+_HEARTBEAT_LOCK_KEY = 0x0C1A0DE1
 
 
 class CentricClaudeTurn(models.Model):
@@ -159,27 +165,73 @@ class CentricClaudeTurn(models.Model):
             ("id", "<", turn.id),
         ])
 
-    @api.model
-    def _record_heartbeat(self, agent_name=None):
-        """Note that a bridge just polled.
+    @staticmethod
+    def _heartbeat_is_due(last, now):
+        """True if the recorded heartbeat is old enough to be worth rewriting.
 
         Written at most every 20 seconds: a poll happens every few seconds and
         this would otherwise be a database write per poll, all day.
         """
-        params = self.env["ir.config_parameter"].sudo()
+        if not last:
+            return True
+        try:
+            previous = fields.Datetime.from_string(last)
+        except (TypeError, ValueError):
+            return True
+        if not previous:
+            return True
+        return (now - previous).total_seconds() >= 20
+
+    @api.model
+    def _record_heartbeat(self, agent_name=None):
+        """Note that a bridge just polled.
+
+        Runs in its own transaction. Several workers poll /claim at once, so
+        the old in-request write had every worker updating the same
+        ir_config_parameter row inside its request transaction: under
+        REPEATABLE READ that raises "could not serialize access due to
+        concurrent update", which poisons the request's transaction and makes
+        the whole /claim retry - for a write whose only purpose is an online
+        indicator. A heartbeat must never be able to fail a claim.
+        """
         now = fields.Datetime.now()
-        last = params.get_param("centric_claude.agent_last_seen")
-        if last:
-            try:
-                previous = fields.Datetime.from_string(last)
-                if previous and (now - previous).total_seconds() < 20:
+        # Cheap pre-check on the request's own cursor: skips opening a second
+        # connection on the ~95% of polls that are inside the debounce window.
+        params = self.env["ir.config_parameter"].sudo()
+        if not self._heartbeat_is_due(
+            params.get_param("centric_claude.agent_last_seen"), now
+        ):
+            return
+        try:
+            with self.env.registry.cursor() as cr:
+                # If another worker is already writing the heartbeat, its write
+                # is as good as ours: drop this one rather than queue on the
+                # row and risk serialising against it.
+                cr.execute(
+                    "SELECT pg_try_advisory_xact_lock(%s)", (_HEARTBEAT_LOCK_KEY,)
+                )
+                if not cr.fetchone()[0]:
                     return
-            except (TypeError, ValueError):
-                pass
-        params.set_param("centric_claude.agent_last_seen",
-                         fields.Datetime.to_string(now))
-        if agent_name:
-            params.set_param("centric_claude.agent_name", agent_name[:120])
+                env = api.Environment(cr, SUPERUSER_ID, {})
+                lock_params = env["ir.config_parameter"].sudo()
+                # Re-read under the lock: the value may have moved on between
+                # the pre-check and here, and only this read is race-free.
+                if not self._heartbeat_is_due(
+                    lock_params.get_param("centric_claude.agent_last_seen"), now
+                ):
+                    return
+                lock_params.set_param(
+                    "centric_claude.agent_last_seen",
+                    fields.Datetime.to_string(now),
+                )
+                if agent_name:
+                    lock_params.set_param(
+                        "centric_claude.agent_name", agent_name[:120]
+                    )
+        except psycopg2.Error:
+            # Losing a heartbeat costs an "offline" badge for a few seconds.
+            # Failing the poll costs the developer their turn.
+            _logger.debug("Claude heartbeat write skipped", exc_info=True)
 
     @api.model
     def _agent_online(self):
