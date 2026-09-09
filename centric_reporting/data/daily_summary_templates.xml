@@ -2,10 +2,10 @@
 <odoo>
 
     <!--
-        Rendered by centric.restaurant.daily.summary._cron_send_daily_summary.
+        Rendered by centric.reporting.daily.summary._cron_send_daily_summary.
         Plain tables and inline styles only: mail clients ignore stylesheets.
     -->
-    <template id="daily_summary_body" name="Restaurant Daily Trading Summary">
+    <template id="daily_summary_body" name="Daily Trading Summary">
         <div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #212529;">
             <h2 style="margin-bottom: 4px;">
                 <t t-esc="company.name"/> - trading summary
@@ -104,7 +104,7 @@
 
             <p style="color: #6c757d; font-size: 12px; margin-top: 24px;">
                 Margin is net revenue less the cost stored on each POS line, which for
-                the menu is the recipe roll-up. Sent by Centric Restaurant Reporting.
+                the menu is the recipe roll-up. Sent by Centric Reporting.
             </p>
         </div>
     </template>

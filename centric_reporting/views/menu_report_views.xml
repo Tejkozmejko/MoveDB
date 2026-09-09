@@ -2,8 +2,8 @@
 <odoo>
 
     <record id="view_menu_report_pivot" model="ir.ui.view">
-        <field name="name">centric.restaurant.menu.report.pivot</field>
-        <field name="model">centric.restaurant.menu.report</field>
+        <field name="name">centric.reporting.menu.report.pivot</field>
+        <field name="model">centric.reporting.menu.report</field>
         <field name="arch" type="xml">
             <pivot string="Menu Performance" sample="1">
                 <field name="product_id" type="row"/>
@@ -16,8 +16,8 @@
     </record>
 
     <record id="view_menu_report_graph" model="ir.ui.view">
-        <field name="name">centric.restaurant.menu.report.graph</field>
-        <field name="model">centric.restaurant.menu.report</field>
+        <field name="name">centric.reporting.menu.report.graph</field>
+        <field name="model">centric.reporting.menu.report</field>
         <field name="arch" type="xml">
             <graph string="Menu Performance" type="bar" sample="1">
                 <field name="product_id"/>
@@ -27,8 +27,8 @@
     </record>
 
     <record id="view_menu_report_list" model="ir.ui.view">
-        <field name="name">centric.restaurant.menu.report.list</field>
-        <field name="model">centric.restaurant.menu.report</field>
+        <field name="name">centric.reporting.menu.report.list</field>
+        <field name="model">centric.reporting.menu.report</field>
         <field name="arch" type="xml">
             <list string="Menu Performance" create="false">
                 <field name="date"/>
@@ -47,8 +47,8 @@
     </record>
 
     <record id="view_menu_report_search" model="ir.ui.view">
-        <field name="name">centric.restaurant.menu.report.search</field>
-        <field name="model">centric.restaurant.menu.report</field>
+        <field name="name">centric.reporting.menu.report.search</field>
+        <field name="model">centric.reporting.menu.report</field>
         <field name="arch" type="xml">
             <search string="Menu Performance">
                 <field name="product_id"/>
@@ -78,7 +78,7 @@
 
     <record id="action_menu_report" model="ir.actions.act_window">
         <field name="name">Menu Performance</field>
-        <field name="res_model">centric.restaurant.menu.report</field>
+        <field name="res_model">centric.reporting.menu.report</field>
         <field name="view_mode">pivot,graph,list</field>
         <field name="search_view_id" ref="view_menu_report_search"/>
         <field name="context">{'search_default_group_product': 1, 'search_default_filter_this_month': 1}</field>

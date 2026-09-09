@@ -10,27 +10,27 @@ _logger = logging.getLogger(__name__)
 
 # Comma-separated override for who receives the summary. When unset the mail
 # goes to every user in the POS Manager group that has an email address.
-RECIPIENTS_PARAM = "centric_restaurant_reporting.summary_recipients"
+RECIPIENTS_PARAM = "centric_reporting.summary_recipients"
 
 TOP_N = 5
 
 
-class CentricRestaurantDailySummary(models.AbstractModel):
-    """The nightly trading summary emailed to the restaurant managers.
+class CentricDailySummary(models.AbstractModel):
+    """The nightly trading summary emailed to the POS managers.
 
     Abstract rather than transient: there is nothing worth storing, the cron
     just calls ``_cron_send_daily_summary`` and the figures are read straight
-    off ``centric.restaurant.menu.report``.
+    off ``centric.reporting.menu.report``.
     """
 
-    _name = "centric.restaurant.daily.summary"
-    _description = "Restaurant Daily Trading Summary"
+    _name = "centric.reporting.daily.summary"
+    _description = "Daily Trading Summary"
 
     # ------------------------------------------------------------------
     # Timezone helpers
     # ------------------------------------------------------------------
     def _timezone(self):
-        """The restaurant's trading day, not the server's.
+        """The company's trading day, not the server's.
 
         A service that runs past midnight UTC would otherwise be split across
         two reports.
@@ -64,7 +64,7 @@ class CentricRestaurantDailySummary(models.AbstractModel):
             ("date", "<", end),
             ("company_id", "=", company.id),
         ]
-        Report = self.env["centric.restaurant.menu.report"]
+        Report = self.env["centric.reporting.menu.report"]
 
         totals = Report._read_group(
             base_domain, [], ["qty:sum", "revenue:sum", "cost:sum", "margin:sum"]
@@ -142,7 +142,7 @@ class CentricRestaurantDailySummary(models.AbstractModel):
         recipients = self._recipients()
         if not recipients:
             _logger.warning(
-                "centric_restaurant_reporting: no recipients for the daily summary "
+                "centric_reporting: no recipients for the daily summary "
                 "(set the %r system parameter, or give the POS managers an email "
                 "address); nothing sent",
                 RECIPIENTS_PARAM,
@@ -151,7 +151,7 @@ class CentricRestaurantDailySummary(models.AbstractModel):
 
         values = self._summary_values()
         body = self.env["ir.qweb"]._render(
-            "centric_restaurant_reporting.daily_summary_body", values
+            "centric_reporting.daily_summary_body", values
         )
         subject = "%s - trading summary for %s" % (
             values["company"].name,
@@ -166,7 +166,7 @@ class CentricRestaurantDailySummary(models.AbstractModel):
             }
         ).send()
         _logger.info(
-            "centric_restaurant_reporting: daily summary for %s sent to %s",
+            "centric_reporting: daily summary for %s sent to %s",
             values["date"],
             ", ".join(recipients),
         )

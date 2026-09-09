@@ -9,8 +9,8 @@
             has been agreed.
         -->
         <record id="ir_cron_daily_trading_summary" model="ir.cron">
-            <field name="name">Restaurant: daily trading summary email</field>
-            <field name="model_id" ref="model_centric_restaurant_daily_summary"/>
+            <field name="name">Centric: daily trading summary email</field>
+            <field name="model_id" ref="model_centric_reporting_daily_summary"/>
             <field name="state">code</field>
             <field name="code">model._cron_send_daily_summary()</field>
             <field name="interval_number">1</field>

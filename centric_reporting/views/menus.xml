@@ -5,14 +5,14 @@
         Hung under the existing Point of Sale > Reporting menu so managers find
         it next to the stock POS reports rather than in a new app.
     -->
-    <menuitem id="menu_restaurant_menu_report"
+    <menuitem id="menu_menu_performance"
               name="Menu Performance"
               parent="point_of_sale.menu_point_rep"
               action="action_menu_report"
               groups="point_of_sale.group_pos_manager"
               sequence="60"/>
 
-    <menuitem id="menu_restaurant_wastage_report"
+    <menuitem id="menu_wastage_report"
               name="Wastage"
               parent="point_of_sale.menu_point_rep"
               action="action_wastage_report"

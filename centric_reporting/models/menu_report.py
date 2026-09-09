@@ -2,19 +2,19 @@
 from odoo import fields, models, tools
 
 
-class CentricRestaurantMenuReport(models.Model):
+class CentricMenuReport(models.Model):
     """One row per POS order line, with the margin already worked out.
 
     Odoo ships ``report.pos.order``, but it aggregates to order level and does
-    not expose cost, so it cannot answer "what does this dish actually make?".
-    This view keeps the line grain and reads ``pos_order_line.total_cost``,
-    which is the stored cost Odoo snapshots at sale time. For the menu that is
-    the kit-BoM roll-up written by ``centric_restaurant_demo``, so margin here
-    is recipe-driven rather than a guess.
+    not expose cost, so it cannot answer "what does this product actually
+    make?". This view keeps the line grain and reads
+    ``pos_order_line.total_cost``, the stored cost Odoo snapshots at sale time
+    from the standard price. Margin is therefore recipe-driven only where the
+    product carries a BoM-derived standard price.
     """
 
-    _name = "centric.restaurant.menu.report"
-    _description = "Restaurant Menu Performance"
+    _name = "centric.reporting.menu.report"
+    _description = "Menu Performance"
     _auto = False
     _rec_name = "product_id"
     _order = "date desc"
