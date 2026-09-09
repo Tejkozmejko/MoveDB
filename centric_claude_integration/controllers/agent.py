@@ -78,9 +78,14 @@ class CentricClaudeAgentController(http.Controller):
             return self._denied(reason)
         env = request.env(user=user.id)
         Turn = env["centric.claude.turn"].sudo()
-        # Every poll is proof a bridge is alive, which is what lets the chat say
-        # "nothing is listening" instead of waiting forever.
-        Turn._record_heartbeat(agent_name)
+        # Deliberately no heartbeat here. The bridge pings /agent/ping on its
+        # own thread every 20 seconds, which is one writer; claiming is a dozen
+        # workers every few seconds, and all of them were writing the same
+        # ir_config_parameter row. That row is the single hottest write in the
+        # module - the log was pages of "could not serialize access due to
+        # concurrent update" on it - and none of those writes said anything the
+        # ping had not already said. Liveness is a property of the bridge, so
+        # the bridge reports it, once.
         Turn._reclaim_stale()
         logins = [
             login.strip() for login in (serve or "").split(",") if login.strip()

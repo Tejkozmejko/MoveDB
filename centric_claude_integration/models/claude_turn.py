@@ -264,20 +264,37 @@ class CentricClaudeTurn(models.Model):
 
     @api.model
     def _agent_online(self):
-        """(online, last_seen, name) for the local bridge."""
+        """(online, last_seen, name) for the local bridge.
+
+        Two independent signs of life, both read-only. The ping is the
+        deliberate one; a turn claimed moments ago is the incidental one, and
+        it covers a bridge whose ping thread has died or is too old to have
+        one. Claiming work is at least as good evidence of being alive as
+        saying so, and reading it costs nothing - which is the whole reason
+        the poll no longer writes a heartbeat of its own.
+        """
         params = self.env["ir.config_parameter"].sudo()
         raw = params.get_param("centric_claude.agent_last_seen")
         name = params.get_param("centric_claude.agent_name") or ""
-        if not raw:
-            return False, "", name
-        try:
-            last = fields.Datetime.from_string(raw)
-        except (TypeError, ValueError):
-            return False, "", name
-        if not last:
-            return False, "", name
-        age = (fields.Datetime.now() - last).total_seconds()
-        return age <= self.HEARTBEAT_SECONDS, raw, name
+        now = fields.Datetime.now()
+
+        last = None
+        if raw:
+            try:
+                last = fields.Datetime.from_string(raw)
+            except (TypeError, ValueError):
+                last = None
+        if last and (now - last).total_seconds() <= self.HEARTBEAT_SECONDS:
+            return True, raw, name
+
+        recent = self.sudo().search(
+            [("claimed_at", "!=", False)], order="claimed_at desc", limit=1
+        )
+        if recent and (now - recent.claimed_at).total_seconds() <= self.HEARTBEAT_SECONDS:
+            return True, fields.Datetime.to_string(recent.claimed_at), (
+                recent.agent_name or name
+            )
+        return False, raw or "", name
 
     @api.model
     def _reclaim_stale(self):
