@@ -126,6 +126,16 @@ class CentricClaudeTurn(models.Model):
                 row = self.env.cr.fetchone()
             if row:
                 turn = self.browse(row[0])
+        except psycopg2.errors.SerializationFailure:
+            # Another bridge claimed a candidate and committed after our
+            # snapshot was taken. Under REPEATABLE READ - which is what Odoo
+            # runs - FOR UPDATE does not skip such a row: SKIP LOCKED only
+            # skips rows held by an *uncommitted* lock, so a row already
+            # claimed and committed raises instead. The row is gone either
+            # way, so report an empty queue and let the next poll read a
+            # fresh snapshot.
+            _logger.debug("Claim lost the race to another bridge.")
+            return self.browse(())
         except Exception:  # noqa: BLE001
             # No SQL cursor (or a database without SKIP LOCKED): fall back to
             # the plain read. Still correct for a single bridge, which is the
@@ -140,11 +150,26 @@ class CentricClaudeTurn(models.Model):
 
         if not turn:
             return self.browse(())
-        turn.write({
-            "state": "running",
-            "agent_name": (agent_name or "bridge")[:120],
-            "claimed_at": fields.Datetime.now(),
-        })
+        # The write needs its own savepoint for the same reason the select did.
+        # The unlocked fallback above can hand back a row another bridge has
+        # already claimed, and marking it running then fails to serialise. That
+        # is a lost race, not a broken request - but without a savepoint it
+        # aborts the transaction and the whole poll returns a 500.
+        try:
+            with self.env.cr.savepoint():
+                turn.write({
+                    "state": "running",
+                    "agent_name": (agent_name or "bridge")[:120],
+                    "claimed_at": fields.Datetime.now(),
+                })
+                # write() only fills the cache; the UPDATE runs at the next
+                # flush. Force it here so the failure lands inside the
+                # savepoint instead of escaping to the request's commit.
+                turn.flush_recordset()
+        except psycopg2.errors.SerializationFailure:
+            _logger.debug("Claim lost the race while marking turn running.")
+            self.env.invalidate_all(flush=False)
+            return self.browse(())
         return turn
 
     @api.model
