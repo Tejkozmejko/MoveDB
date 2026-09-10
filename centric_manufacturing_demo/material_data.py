@@ -23,6 +23,7 @@ WIP_CATEG = "Packaging Semi-Finished"
 FINISHED_CATEG = "Packaging Finished Goods"
 FINISHED_BAG_CATEG = "Packaging Finished Bags"
 INDUSTRIAL_CATEG = "Packaging Industrial"
+REFUSE_CATEG = "Packaging Refuse Sacks"
 
 # The category tree, child -> parent. The three original categories were flat,
 # which meant Inventory reported the plant as three unrelated headings with no
@@ -41,6 +42,16 @@ CATEG_PARENT = {
     # or a production manager rather than a retailer. It gets its own heading
     # so the two can be reported apart while still adding up under Packaging.
     INDUSTRIAL_CATEG: FINISHED_CATEG,
+    # Refuse and waste sacks are a finished bag by construction - film in,
+    # counted units out, off the same bag line - but they are deliberately not
+    # filed under FINISHED_BAG_CATEG. Two reasons, and the second is the one
+    # that matters: they are sold to a different buyer (a council or a waste
+    # contractor on a tender, not a retailer on a price list), and the
+    # eco-contribution in ``ecotax_data`` is mapped onto the carrier bag range
+    # and not onto this one. A tax that is applied per category is a tax that
+    # can be checked by looking at the category, which is worth more than the
+    # tidiness of one fewer heading.
+    REFUSE_CATEG: FINISHED_CATEG,
 }
 
 # Parents first, so a category is always created after the one it hangs off.
@@ -51,6 +62,7 @@ CATEG_ORDER = (
     FINISHED_CATEG,
     FINISHED_BAG_CATEG,
     INDUSTRIAL_CATEG,
+    REFUSE_CATEG,
 )
 
 # name -> (uom xmlid, cost per base unit, opening stock quantity)
@@ -63,6 +75,10 @@ RAW_MATERIALS = {
     "White Masterbatch (TiO2)": (KG, 2.95, 1200),
     "Black Masterbatch": (KG, 2.40, 900),
     "Blue Masterbatch": (KG, 3.10, 400),
+    # Green for the organic waste stream. The colour is what the householder
+    # sorts by, so it is a specification and not a decoration: a sack that
+    # reads as the wrong stream is contamination at the transfer station.
+    "Green Masterbatch": (KG, 3.05, 350),
     "Slip / Antiblock Additive": (KG, 3.75, 600),
     "Oxo-Biodegradable Additive": (KG, 6.20, 250),
     # P3.7: cling. Stretch wrap has to hold a pallet together, and without a
@@ -81,6 +97,12 @@ RAW_MATERIALS = {
     "Photopolymer Printing Plate Set": (UNIT, 240.00, 12),
     # Converting consumables
     'Paper Core 76mm (3")': (UNIT, 0.85, 4000),
+    # Bought as tape on a reel and threaded into the hem on the bag line, so it
+    # is weighed like the compound rather than counted like a core. It is the
+    # only converting consumable that is not film and not board, which is why
+    # it sits on its own here rather than with the polymers above: nobody
+    # extrudes it.
+    "LDPE Drawstring Tape 8mm": (KG, 2.85, 300),
     'Paper Core 152mm (6")': (UNIT, 1.95, 1200),
     "Export Carton 600x400x400": (UNIT, 1.15, 2500),
 }
@@ -245,6 +267,112 @@ MANUFACTURED = {
         # fed back into the uncertified black and carrier grades.
         "byproducts": [(SCRAP_MATERIAL, 3.5, 1.0)],
     },
+    # -------------------------------------------------------------------- P8.1
+    # The waste sack grades.
+    #
+    # These four exist to be converted into refuse and waste sacks, and they
+    # are where the regrind loop pays for itself. A sack is opaque, unprinted
+    # and looked at by nobody, so recovered trim costs it nothing in
+    # appearance - which is why the regrind fraction here runs from a fifth to
+    # nearly a third of the blend, against the 2% a clear carrier grade will
+    # take. Read the four together and the ordering is the argument: the
+    # heavier and the more opaque the grade, the more recovered material it
+    # carries.
+    #
+    # The colours are a specification, not a decoration. Malta's kerbside
+    # collection is separated by the colour of the sack the householder puts
+    # out, so a sack that reads as the wrong stream is contamination at the
+    # transfer station rather than a cosmetic complaint. WHICH colour means
+    # which stream is a DEMO ASSUMPTION - see ``refuse_data`` - and has to be
+    # confirmed against the current national scheme before go-live.
+    "Blown Film Reel 60um Black Heavy (Jumbo)": {
+        "uom": KG,
+        "categ": WIP_CATEG,
+        "qty": 100.0,
+        "sale_ok": False,
+        # The most regrind of any grade the plant extrudes. A 240 litre wheelie
+        # liner is carried by a machine and split by a bin lorry; nothing about
+        # it rewards prime resin, and the gauge is heavy enough to swallow the
+        # gels a recovered pellet brings with it.
+        "components": [
+            ("LDPE Film Grade Resin", 56.5),
+            ("HDPE Blown Film Resin", 12.0),
+            ("Black Masterbatch", 3.5),
+            ("Slip / Antiblock Additive", 1.0),
+            ("Regrind LDPE Pellet", 30.0),
+            ('Paper Core 152mm (6")', 1.0),
+        ],
+        # Heavy gauge is the fastest thing on the line measured in kilogrammes:
+        # the extruder is output-limited, not speed-limited.
+        "operations": [("Extrude and wind jumbo reel", "TP-EXTRUDE", 120.0)],
+        "byproducts": [(SCRAP_MATERIAL, 3.0, 1.0)],
+    },
+    "Blown Film Reel 30um Grey (Jumbo)": {
+        "uom": KG,
+        "categ": WIP_CATEG,
+        "qty": 100.0,
+        "sale_ok": False,
+        # Grey is what recovered film wants to be anyway. Mixed regrind from
+        # every grade at once pulls a blend towards grey whatever else is in
+        # it, so a grey sack is the one product where the regrind fraction
+        # costs nothing to hide - the pigment is chasing the blend rather than
+        # covering it. Hence a fifth of the charge on a comparatively thin
+        # gauge.
+        "components": [
+            ("LDPE Film Grade Resin", 65.0),
+            ("LLDPE Octene Resin", 10.0),
+            ("Black Masterbatch", 1.2),
+            ("White Masterbatch (TiO2)", 3.8),
+            ("Slip / Antiblock Additive", 1.0),
+            ("Regrind LDPE Pellet", 22.0),
+            ('Paper Core 152mm (6")', 1.0),
+        ],
+        "operations": [("Extrude and wind jumbo reel", "TP-EXTRUDE", 155.0)],
+        "byproducts": [(SCRAP_MATERIAL, 3.0, 1.0)],
+    },
+    "Blown Film Reel 25um Green (Jumbo)": {
+        "uom": KG,
+        "categ": WIP_CATEG,
+        "qty": 100.0,
+        "sale_ok": False,
+        # Less regrind than the grey, and not because the sack is better: a
+        # strong green has to be hit reproducibly from one run to the next, and
+        # a variable grey feedstock underneath it moves the colour. The
+        # masterbatch loading is the highest of the four for the same reason.
+        "components": [
+            ("LDPE Film Grade Resin", 73.0),
+            ("LLDPE Octene Resin", 12.0),
+            ("Green Masterbatch", 4.5),
+            ("Slip / Antiblock Additive", 1.5),
+            ("Regrind LDPE Pellet", 12.0),
+            ('Paper Core 152mm (6")', 1.0),
+        ],
+        "operations": [("Extrude and wind jumbo reel", "TP-EXTRUDE", 165.0)],
+        "byproducts": [(SCRAP_MATERIAL, 3.5, 1.0)],
+    },
+    "Blown Film Reel 20um White (Jumbo)": {
+        "uom": KG,
+        "categ": WIP_CATEG,
+        "qty": 100.0,
+        "sale_ok": False,
+        # The exception that proves the rule about opacity. White is opaque and
+        # the sack is still unprinted, but a recovered pellet in a white blend
+        # does not disappear - it reads as grey speckle, and at 20 micron a gel
+        # is also a hole. So this grade takes a token 4%, the same order as the
+        # clear carrier grade, and the kitchen bags made from it stay white.
+        "components": [
+            ("LDPE Film Grade Resin", 78.0),
+            ("LLDPE Octene Resin", 14.0),
+            ("White Masterbatch (TiO2)", 5.0),
+            ("Slip / Antiblock Additive", 2.0),
+            ("Regrind LDPE Pellet", 4.0),
+            ('Paper Core 152mm (6")', 1.0),
+        ],
+        # The thinnest gauge here, and so the slowest per kilogramme: the line
+        # runs at a web speed, and a thin web is fewer kilogrammes an hour.
+        "operations": [("Extrude and wind jumbo reel", "TP-EXTRUDE", 170.0)],
+        "byproducts": [(SCRAP_MATERIAL, 4.0, 1.0)],
+    },
     "Printed Carrier Bag Film 30um - 2 Colour": {
         "uom": KG,
         "categ": WIP_CATEG,
@@ -379,6 +507,15 @@ BAG_RUN_QTY = 1000.0
 #       the quotation and the delivery note. A claim on a bag is a regulated
 #       statement, so it names the standard and the certificate it rests on.
 #   "margin": gross margin the range is quoted at, see pricing.py.
+#   "registration": optional. The licence number a certified compostable grade
+#       carries. A certification scheme does not licence a material, it
+#       licences a *product* made from it, and the licensee is obliged to print
+#       the scheme's logo and this number on the bag itself. Holding it on the
+#       product rather than in the certification prose means the number that
+#       goes on the quotation and the delivery note is the same string as the
+#       one the plate is cut from, and there is one place to correct it when
+#       the licence is renewed. Absent on everything uncertified, which is
+#       every other line in this file.
 #
 # Three optional keys let the same table describe the industrial range in
 # INDUSTRIAL_PACKAGING below, which converts film into counted units in exactly
@@ -433,6 +570,7 @@ FINISHED_BAGS = {
             "TUV-OK-C-2024-08817 (OK compost INDUSTRIAL). Not certified for "
             "home composting. Do not place in the LDPE recycling stream."
         ),
+        "registration": "7P0847",
         "margin": 0.38,
     },
 }

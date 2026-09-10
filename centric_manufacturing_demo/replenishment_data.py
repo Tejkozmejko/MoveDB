@@ -58,6 +58,10 @@ MONTHLY_USAGE = {
     "White Masterbatch (TiO2)": 600.0,
     "Black Masterbatch": 450.0,
     "Blue Masterbatch": 150.0,
+    # Green carries more than blue despite being the newer colour: the
+    # organic sack is a collection line ordered by the pallet, and blue
+    # is a print colour used a few kilogrammes at a time.
+    "Green Masterbatch": 260.0,
     "Slip / Antiblock Additive": 300.0,
     "Oxo-Biodegradable Additive": 120.0,
     # Only the stretch grade takes tackifier, at 4% of a grade the plant does
@@ -75,6 +79,8 @@ MONTHLY_USAGE = {
     # blank sets in so a repeat job is not held up by a 7 day lead time.
     "Photopolymer Printing Plate Set": 3.0,
     # Converting consumables.
+    # Only the drawstring bag takes tape, at about 0.9 kg per thousand.
+    "LDPE Drawstring Tape 8mm": 55.0,
     'Paper Core 76mm (3")': 1400.0,
     'Paper Core 152mm (6")': 420.0,
     "Export Carton 600x400x400": 900.0,

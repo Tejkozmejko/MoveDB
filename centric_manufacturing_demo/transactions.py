@@ -28,6 +28,7 @@ from datetime import timedelta
 
 from odoo import fields
 
+from .ecotax_data import COLLECTION_POINT_OF_SALE, ECO_CONTRIBUTION
 from .traceability_data import create_lot
 from .transaction_data import (
     CUSTOMERS,
@@ -436,7 +437,54 @@ def _create_productions(env, company, products):
 # ---------------------------------------------------------------------------
 
 
-def _build_sale(env, spec, company, customers, products):
+def _eco_contribution_tax(env, company):
+    """P8.2 - the carrier bag levy tax, if the master data hook managed to make it.
+
+    Looked up by name rather than passed down from ``hooks``, because tax
+    creation is allowed to fail on a database whose chart of accounts will not
+    carry it - see ``hooks._create_eco_contribution_tax``. An empty recordset
+    here means the levy simply does not appear on the seeded orders, which is a
+    poorer demo but a working one.
+    """
+    return env["account.tax"].search(
+        [
+            ("name", "=", ECO_CONTRIBUTION["name"]),
+            ("company_id", "=", company.id),
+        ],
+        limit=1,
+    )
+
+
+def _apply_eco_contribution(order, spec, eco_tax):
+    """P8.2 - put the levy on this order's lines, or deliberately take it off.
+
+    The levy reaches an order line by itself: it is on the carrier bag
+    products' ``taxes_id``, and a sales order line takes its taxes from the
+    product. So the interesting case is the *subtraction* - an order seeded to
+    demonstrate the point-of-sale model has to have the levy removed from lines
+    that would otherwise carry it, which is exactly what a plant invoicing
+    under that model does.
+
+    The re-adding branch is not redundant even though the product default
+    covers it. A price list, a fiscal position, or somebody having edited the
+    product can all leave a line without the tax, and an order that says it is
+    demonstrating the invoiced model has to actually demonstrate it. It is
+    guarded on the product carrying the levy in the first place, so it can
+    never bolt a carrier bag levy onto a line of film or a refuse sack.
+    """
+    if not eco_tax:
+        return
+    point_of_sale = spec.get("eco_collection") == COLLECTION_POINT_OF_SALE
+    for line in order.order_line:
+        carries = eco_tax in line.tax_id
+        if point_of_sale:
+            if carries:
+                line.tax_id = [(3, eco_tax.id)]
+        elif not carries and eco_tax in line.product_id.taxes_id:
+            line.tax_id = [(4, eco_tax.id)]
+
+
+def _build_sale(env, spec, company, customers, products, eco_tax=None):
     customer = customers.get(spec["customer"])
     if not customer:
         raise _Skip("customer %r missing" % spec["customer"])
@@ -470,6 +518,11 @@ def _build_sale(env, spec, company, customers, products):
         }
     )
 
+    # Before the quotation is sent or confirmed: the taxes on a confirmed
+    # order are what the delivery note and the invoice are built from, so this
+    # has to happen while the document is still a draft.
+    _apply_eco_contribution(order, spec, eco_tax)
+
     status = spec["status"]
     if status == "sent":
         order.action_quotation_sent()
@@ -502,6 +555,10 @@ def _build_sale(env, spec, company, customers, products):
 
 def _create_sales(env, company, customers, products):
     Order = env["sale.order"]
+    # Resolved once rather than per order: it is the same record every time,
+    # and a search inside the loop would run it for the film orders that have
+    # nothing to do with the levy.
+    eco_tax = _eco_contribution_tax(env, company)
     made = failed = 0
     for spec in SALES_ORDERS:
         if Order.search_count(
@@ -510,7 +567,7 @@ def _create_sales(env, company, customers, products):
             continue
         try:
             with env.cr.savepoint():
-                _build_sale(env, spec, company, customers, products)
+                _build_sale(env, spec, company, customers, products, eco_tax)
             made += 1
         except Exception as error:  # noqa: BLE001
             failed += 1
@@ -537,6 +594,13 @@ def seed_transactions(env, company, suppliers, materials, products):
     ``suppliers``, ``materials`` and ``products`` are the maps the master data
     hook has already built, passed in rather than looked up again so the two
     halves of the seed cannot drift apart on a renamed product.
+
+    ``products`` is every made product, weighed and counted alike - the film
+    and the reels plus the bag, industrial and waste sack ranges merged in by
+    ``hooks._seed``. It used to be the film alone, which quietly meant a bag
+    could not be manufactured or sold by the trading history no matter what
+    ``transaction_data`` asked for: the lookup simply missed and the document
+    was skipped with a warning nobody read as a missing feature.
     """
     env = env(context=dict(env.context, mail_notrack=True, tracking_disable=True))
     customers = _create_customers(env)

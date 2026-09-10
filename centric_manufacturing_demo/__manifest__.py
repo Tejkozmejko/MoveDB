@@ -66,6 +66,42 @@ like the live plant instead of an empty one:
   untracked on purpose - see ``traceability_data`` - and the regrind loop is
   the honest limit of the chain, which is why the certified biodegradable grade
   takes no regrind at all;
+* a **refuse and waste sack range** - swing bin liner, drawstring kitchen bag,
+  240 litre wheelie liner, a colour coded set for separated kerbside collection
+  and a certified compostable caddy liner - on four new opaque grades. This is
+  where the regrind loop finally pays: a sack is unprinted and looked at by
+  nobody, so the recovered fraction runs from a fifth to nearly a third of the
+  blend against the 2% a clear carrier grade will take, and the four grades
+  read in order of how much they carry. The white kitchen grade is the
+  exception that shows the rule - white is opaque, but recovered pellet reads
+  as grey speckle in it and at 20 micron a gel is a hole, so it takes a token
+  4%. The compostable liner takes none at all, for the reason the certified
+  carrier already took none: a certificate covers a stated formulation, and a
+  bale of unknown history cannot be declared against it. It reuses the bag
+  range's kilogramme-to-unit machinery rather than a copy of it, and every
+  weight is worked from the sack's own geometry so it can be checked against
+  the product name rather than taken on trust. The range sits in its own
+  category, because a refuse sack is sold on a tender to a council and a
+  carrier bag is sold on a price list to a retailer - and because the levy
+  below has to be able to tell them apart;
+* an **eco-contribution on carrier bags**, as a fixed amount per bag rather
+  than a percentage. That is the whole point of the record and not a detail of
+  it: a levy is a charge for the bag existing, so it has to land identically on
+  a cheap bag and a dear one, where a percentage would charge least on exactly
+  the product the levy exists to discourage most. Two sales orders are seeded
+  on the same customer, product and quantity in the same week, differing only
+  in who hands the levy over - one with it on the plant's invoice to the
+  retailer, one with it left off and charged to the shopper at the till - so
+  the argument is visible in Accounting as a difference in one figure rather
+  than described in a paragraph. Refuse sacks, industrial packaging and film on
+  the reel are deliberately outside it, and the products that are inside it are
+  a list rather than a rule on the category, so adding a bag to the range is
+  never silently adding it to a tax. **Every rate and date is a demo figure and
+  lives in one block in ``ecotax_data``**; confirm it against the Maltese
+  legislation in force before go-live. The certified compostable products also
+  carry their certification registration number onto the quotation and the
+  delivery note, because a scheme licences a product rather than a material and
+  obliges the licensee to print that number on the bag;
 * a **rolled-up cost** on every made product, materials plus work centre time,
   computed level by level so the printed film carries the extrusion and
   regrind cost underneath it;
@@ -135,7 +171,7 @@ an install down with it, so check the install log for
 Replaces ``centric_restaurant_demo``, which was removed when the restaurant
 scope was dropped.
 """,
-    "version": "19.0.6.0.1",
+    "version": "19.0.7.0.0",
     "category": "Manufacturing",
     "author": "Centric",
     "license": "LGPL-3",

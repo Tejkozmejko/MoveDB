@@ -92,6 +92,7 @@ SOURCING = {
     "White Masterbatch (TiO2)": ("EuroMasterbatch NV", None),
     "Black Masterbatch": ("EuroMasterbatch NV", None),
     "Blue Masterbatch": ("EuroMasterbatch NV", None),
+    "Green Masterbatch": ("EuroMasterbatch NV", None),
     "Slip / Antiblock Additive": ("OxoBio Additives Ltd", "EuroMasterbatch NV"),
     "Oxo-Biodegradable Additive": ("OxoBio Additives Ltd", None),
     "Polyisobutylene Tackifier": ("NordPolymer B.V.", "Adriatic Polymers GmbH"),
@@ -102,6 +103,10 @@ SOURCING = {
     "Flexo Ink - White": ("InkTech Italia S.r.l.", None),
     "Solvent-Based Ink Extender": ("InkTech Italia S.r.l.", None),
     "Photopolymer Printing Plate Set": ("Kordin Engineering Services Ltd", None),
+    # The tape converter is a local extruder, not a masterbatch house: it is
+    # the same kind of business as the plant itself, two streets away, which is
+    # why the lead time is days rather than weeks.
+    "LDPE Drawstring Tape 8mm": ("Malta Core & Carton Ltd", None),
     'Paper Core 76mm (3")': ("Malta Core & Carton Ltd", None),
     'Paper Core 152mm (6")': ("Malta Core & Carton Ltd", None),
     "Export Carton 600x400x400": ("Malta Core & Carton Ltd", None),
@@ -122,6 +127,7 @@ MIN_QTY_OVERRIDE = {
     "White Masterbatch (TiO2)": 250.0,
     "Black Masterbatch": 250.0,
     "Blue Masterbatch": 100.0,
+    "Green Masterbatch": 250.0,
     "Slip / Antiblock Additive": 100.0,
     "Oxo-Biodegradable Additive": 50.0,
     "Polyisobutylene Tackifier": 100.0,
@@ -132,6 +138,7 @@ MIN_QTY_OVERRIDE = {
     "Flexo Ink - White": 25.0,
     "Solvent-Based Ink Extender": 25.0,
     "Photopolymer Printing Plate Set": 1.0,
+    "LDPE Drawstring Tape 8mm": 50.0,
     'Paper Core 152mm (6")': 50.0,
     "Export Carton 600x400x400": 250.0,
 }

@@ -53,6 +53,7 @@ MATERIAL_LOT_PREFIX = {
     "White Masterbatch (TiO2)": "MB-W",
     "Black Masterbatch": "MB-K",
     "Blue Masterbatch": "MB-B",
+    "Green Masterbatch": "MB-G",
     "Slip / Antiblock Additive": "ADD-S",
     "Oxo-Biodegradable Additive": "ADD-O",
     "Polyisobutylene Tackifier": "ADD-T",
@@ -75,6 +76,13 @@ FINISHED_LOT_PREFIX = "JOB"
 # somebody makes here rather than one the code makes for them.
 UNTRACKED_MATERIALS = (
     "Photopolymer Printing Plate Set",
+    # Drawstring tape sits with the cores and cartons rather than with the
+    # compound, and the test is the same one: could a bad batch of it reach a
+    # customer as a defect in the bag? A tape that breaks is a bag that will
+    # not tie, which is a complaint and a credit note - not a recall, and not
+    # something anyone would trace to a resin batch. Tracking it would put a
+    # lot prompt on every receipt to buy nothing.
+    "LDPE Drawstring Tape 8mm",
     'Paper Core 76mm (3")',
     'Paper Core 152mm (6")',
     "Export Carton 600x400x400",

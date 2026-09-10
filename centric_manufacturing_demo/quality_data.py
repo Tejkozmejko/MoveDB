@@ -1,12 +1,18 @@
 # -*- coding: utf-8 -*-
 """P7.1 - quality control checkpoints.
 
-The four checks below are the ones the plant already does and writes on a
+The checks below are the ones the plant already does and writes on a
 clipboard: gauge on the extruder, colour against the approved proof on the
 press, seal strength off the bag line, and an incoming check on resin before it
 is tipped into a silo. Putting them on ``quality.point`` is what turns them
 from a clipboard into a record attached to the works order, so a customer
 complaint six months later can be traced to the shift that made the reel.
+
+Two more came with the waste sack range (P8.1): a gauge and colour check on the
+four sack grades, and a drop test on the filled sack. The drop test is the one
+that earns its place - those grades carry up to 30% recovered material, and a
+drop test is where too much of it, or a bale of the wrong history, actually
+shows itself. Everything else about regrind is an argument on paper.
 
 Each checkpoint is one of three test types:
 
@@ -100,6 +106,19 @@ QUALITY_POINTS = {
             "Carrier Bag 380x450mm - 2 Colour Printed",
             "Refuse Sack 750x950mm Black Heavy Duty",
             "Biodegradable Carrier Bag 300x400mm",
+            # P8.1 - the waste sack range joins the existing seal check rather
+            # than getting one of its own. It is the same test on the same
+            # machine, and the tolerance band already spans the range: 9 N/15mm
+            # is set by what the heaviest sack has to carry when full, so a
+            # swing bin liner passing it has a comfortable margin and a wheelie
+            # liner failing it is the failure the band was drawn for.
+            "Swing Bin Liner 11L 300x600mm White",
+            "Drawstring Kitchen Bag 30L 480x600mm White",
+            "Wheelie Bin Liner 240L 1100x1400mm Black",
+            "Waste Sack 700x1100mm Black - Mixed Waste",
+            "Waste Sack 700x1100mm Green - Organic Waste",
+            "Waste Sack 700x1100mm Grey - Recyclables",
+            "Compostable Caddy Liner 10L 380x480mm",
         ],
         "picking_type": None,
         "operation": "Convert, seal and cut to bags",
@@ -114,6 +133,63 @@ QUALITY_POINTS = {
             "length against the works order at the same time. A seal under "
             "tolerance is a sack that fails full, which is the complaint that "
             "costs the account."
+        ),
+    },
+    # ---------------------------------------------------------------- P8.1
+    "Extrusion - waste sack grade gauge and colour": {
+        "products": [
+            "Blown Film Reel 60um Black Heavy (Jumbo)",
+            "Blown Film Reel 30um Grey (Jumbo)",
+            "Blown Film Reel 25um Green (Jumbo)",
+            "Blown Film Reel 20um White (Jumbo)",
+        ],
+        "picking_type": None,
+        "operation": "Extrude and wind jumbo reel",
+        # Deliberately passfail and not measure, unlike the gauge check above
+        # it. A ``measure`` point carries ONE norm and ONE tolerance band, and
+        # these four grades run at four nominal gauges from 20 to 60 micron -
+        # so a single band either passes everything or fails everything. The
+        # honest answer is to check each reel against the gauge on its own
+        # works order, which is a judgement against a written instruction.
+        # Splitting this into four measure points, one per grade, is the better
+        # answer the day somebody wants the readings trended.
+        "test_type": "passfail",
+        "note": (
+            "Check the gauge against the nominal on the works order, not "
+            "against a fixed figure - these grades run from 20 to 60 micron. "
+            "Five readings across the layflat, mean within plus or minus 8% of "
+            "nominal. Then check the colour against the retained sample for "
+            "the grade: on a collection sack the colour IS the specification, "
+            "because the householder sorts by it and a sack read as the wrong "
+            "stream is contamination at the transfer station."
+        ),
+    },
+    "Bag line - waste sack drop test": {
+        "products": [
+            "Wheelie Bin Liner 240L 1100x1400mm Black",
+            "Waste Sack 700x1100mm Black - Mixed Waste",
+            "Waste Sack 700x1100mm Green - Organic Waste",
+            "Waste Sack 700x1100mm Grey - Recyclables",
+        ],
+        "picking_type": None,
+        "operation": "Convert, seal and cut to bags",
+        "test_type": "measure",
+        # Drops survived out of ten, not a pass/fail on one drop. A sack that
+        # fails one drop in ten is a different product from one that fails
+        # eight, and averaging the complaint over a season loses that.
+        "norm": 10.0,
+        "tolerance_min": 9.0,
+        "tolerance_max": 10.0,
+        "norm_unit": "drops passed of 10",
+        "note": (
+            "Once per run on the collection grades: fill a sack to its rated "
+            "volume with the test medium, tie it, and drop it from 1.2 m onto "
+            "concrete ten times. Record how many drops it survives intact. "
+            "This is the test the whole regrind argument rests on - these are "
+            "the grades carrying up to 30% recovered material, and this is "
+            "where too much of it, or a bale of the wrong history, shows up. "
+            "A sack that splits on the round is picked up by hand by somebody, "
+            "and that is how a council contract is lost."
         ),
     },
 }

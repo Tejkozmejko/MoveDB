@@ -19,6 +19,11 @@ from .custom_print_data import (
     artwork_inks,
     press_minutes,
 )
+from .ecotax_data import (
+    ECO_CONTRIBUTION,
+    LEVIED_PRODUCTS,
+    LEVY_CUSTOM_PRINT,
+)
 from .landed_cost_data import LANDED_COSTS
 from .material_data import (
     BAG_RUN_QTY,
@@ -34,6 +39,7 @@ from .material_data import (
     MANUFACTURED,
     RAW_CATEG,
     RAW_MATERIALS,
+    REFUSE_CATEG,
     ROOT_CATEG,
     SCRAP_COST,
     SCRAP_MATERIAL,
@@ -43,6 +49,7 @@ from .material_data import (
 )
 from .pricing import bag_cost, bag_price, film_kg_per_bag, with_margin
 from .quality_data import QUALITY_POINTS
+from .refuse_data import REFUSE_SACKS
 from .replenishment_data import MONTHLY_USAGE, reorder_levels
 from .supplier_data import (
     BACKUP_PRICE_UPLIFT,
@@ -111,6 +118,7 @@ _VALUATION_ACCOUNT_NAMES = {
     FINISHED_CATEG: ("Stock of goods finished goods", "Stocks"),
     FINISHED_BAG_CATEG: ("Stock of goods finished goods", "Stocks"),
     INDUSTRIAL_CATEG: ("Stock of goods finished goods", "Stocks"),
+    REFUSE_CATEG: ("Stock of goods finished goods", "Stocks"),
 }
 
 
@@ -523,6 +531,22 @@ def _create_converted(
         )
         cost = bag_cost(spec, film.standard_price, extras_cost, line.costs_hour, run_qty)
 
+        # P8.2 - the certification licence number, on the ranges that have one.
+        # A compostable bag is certified as a product and not as a material,
+        # and the licence obliges the maker to print the scheme's logo and this
+        # number on the bag itself. The same string therefore has to reach the
+        # paperwork the customer reads, which is what ``description_sale`` is.
+        # Appended to the claim rather than held in a field of its own so it
+        # travels with the sentence it qualifies: a registration number with no
+        # claim beside it tells a reader nothing, and a claim with no number
+        # behind it is the one that gets challenged.
+        claim = spec["certification"]
+        if spec.get("registration"):
+            claim = "%s Certification registration number %s." % (
+                claim,
+                spec["registration"],
+            )
+
         bag = _product(
             env,
             name,
@@ -538,12 +562,20 @@ def _create_converted(
                 # The certification claim travels with the product onto the
                 # quotation and the delivery note, which is where a customer
                 # reads it and where it has to be accurate.
-                "description_sale": spec["certification"],
+                "description_sale": claim,
             },
         )
         bags[name] = bag
 
         template = bag.product_tmpl_id
+        # An upgrade has to be able to add a licence number to a product this
+        # module created before the number existed, but it has no business
+        # overwriting sales copy somebody has since rewritten. So: write it if
+        # there is nothing there, or if what is there is still exactly the
+        # string a previous run of this seed put there. Anything else is
+        # somebody's work and is left alone.
+        if template.description_sale in (False, "", spec["certification"]):
+            template.description_sale = claim
         template.standard_price = round(cost, 4)
         template.list_price = round(bag_price(cost, spec["margin"]), 4)
         # Kilogrammes per finished bag - the conversion, on the product itself.
@@ -911,6 +943,111 @@ def _create_custom_print_products(env, uoms, categories, materials, workcenters,
                 price,
             )
     return variants
+
+
+def _create_eco_contribution_tax(env, company, bags, artworks):
+    """P8.2 - the carrier bag eco-contribution, as a fixed per-bag sales tax.
+
+    Fixed, not percentage, and that is the whole point of the record rather
+    than a detail of it. A levy on a bag is a charge for the bag existing, so
+    it lands identically on a cheap bag and a dear one; a percentage tax would
+    charge least on exactly the product the levy exists to discourage most.
+    ``amount_type = 'fixed'`` is how Odoo says that, and it is also the setting
+    people get wrong, because a rate of 0.15 is accepted by the form either way
+    and differs by two orders of magnitude on the invoice.
+
+    The tax is left tax-EXCLUDED, which is Odoo's default and therefore not set
+    here explicitly. The levy has to be visible as its own line: the argument
+    the seeded orders exist to illustrate is about who hands the money over,
+    and folding it into the unit price is precisely how that becomes
+    unanswerable from the paperwork.
+
+    Failure is not fatal, in the same way and for the same reason as the landed
+    costs and the quality points. A restored database may have a chart of
+    accounts that will not carry a new tax - no fiscal country set, a tax group
+    that does not exist, a locked fiscal position - and demo data does not get
+    to take an install down over it. The levy then simply does not appear, the
+    log says so, and everything else in the seed still lands.
+
+    Which products are levied is a list in ``ecotax_data`` and deliberately not
+    a rule derived from the category, so that adding a bag to the range is
+    never silently adding it to a tax.
+
+    Returns how many product templates ended up carrying the levy. The tax
+    record itself is deliberately not returned: the only other code that wants
+    it is the trading history, which resolves it by name when it gets there, so
+    handing it back would be a value threaded through ``_seed`` for nobody.
+    """
+    Tax = env["account.tax"]
+    fields = Tax._fields
+
+    tax = Tax.search(
+        [("name", "=", ECO_CONTRIBUTION["name"]), ("company_id", "=", company.id)],
+        limit=1,
+    )
+    if not tax:
+        vals = {
+            "name": ECO_CONTRIBUTION["name"],
+            "amount_type": "fixed",
+            "amount": ECO_CONTRIBUTION["amount"],
+            "type_tax_use": "sale",
+            "company_id": company.id,
+            "description": ECO_CONTRIBUTION["description"],
+            "invoice_label": ECO_CONTRIBUTION["name"],
+        }
+        # Required since the tax gained a fiscal country, and a company that
+        # has not got one is exactly the restored-database case above.
+        country = (
+            company.account_fiscal_country_id
+            if "account_fiscal_country_id" in company._fields
+            else company.country_id
+        ) or company.country_id
+        if country:
+            vals["country_id"] = country.id
+        try:
+            # Its own savepoint: a refused tax must not abort the cursor and
+            # take the rest of the seed with it.
+            with env.cr.savepoint():
+                tax = Tax.create(
+                    {key: value for key, value in vals.items() if key in fields}
+                )
+        except Exception:  # noqa: BLE001 - see the docstring.
+            _logger.warning(
+                "centric_manufacturing_demo: could not create the %r tax, so "
+                "the carrier bag levy is not on the seeded orders. Everything "
+                "else is unaffected.",
+                ECO_CONTRIBUTION["name"],
+                exc_info=True,
+            )
+            return 0
+
+    # The templates that carry it. (4, id) adds without replacing, so whatever
+    # VAT or fiscal tax the product already had stays exactly where it is - the
+    # levy is charged alongside the tax on the goods, not instead of it.
+    templates = env["product.template"].browse()
+    for name in LEVIED_PRODUCTS:
+        product = bags.get(name)
+        if product:
+            templates |= product.product_tmpl_id
+    if LEVY_CUSTOM_PRINT and artworks:
+        # The made-to-order printed carrier is one template with a variant per
+        # customer artwork, so it is reached through a variant rather than by
+        # name. It is a carrier bag like any other and is levied like one.
+        templates |= next(iter(artworks.values())).product_tmpl_id
+
+    levied = 0
+    for template in templates:
+        if tax not in template.taxes_id:
+            template.taxes_id = [(4, tax.id)]
+        levied += 1
+
+    _logger.info(
+        "centric_manufacturing_demo: eco-contribution %.2f per bag on %s "
+        "product(s) - DEMO RATE, confirm against the legislation in force",
+        ECO_CONTRIBUTION["amount"],
+        levied,
+    )
+    return levied
 
 
 def _enable_traceability(env, warehouse, tracked):
@@ -1347,9 +1484,27 @@ def _seed(env):
         INDUSTRIAL_PACKAGING,
         INDUSTRIAL_CATEG,
     )
+    # The waste sack range: the same _create_converted over a third table. It
+    # comes after the industrial range only because the tables are read in the
+    # order they were written - it depends on nothing the industrial range
+    # makes, and both depend only on the film above them.
+    refuse = _create_converted(
+        env,
+        uoms,
+        categories,
+        materials,
+        workcenters,
+        products,
+        company,
+        REFUSE_SACKS,
+        REFUSE_CATEG,
+    )
     artworks = _create_custom_print_products(
         env, uoms, categories, materials, workcenters, products, company
     )
+    # After the bags exist and before anything is sold: a tax added to a
+    # product after an order has been priced does not reach that order.
+    levied = _create_eco_contribution_tax(env, company, bags, artworks)
     warehouse = _warehouse(env, company)
     # Before the opening count and before anything trades: a product put on lot
     # tracking after it already holds stock leaves that stock unlabelled, which
@@ -1360,6 +1515,7 @@ def _seed(env):
         + list(products.values())
         + list(bags.values())
         + list(industrial.values())
+        + list(refuse.values())
         + list(artworks.values())
         if product.product_tmpl_id.name not in UNTRACKED_MATERIALS
         and product.product_tmpl_id.name != SCRAP_MATERIAL
@@ -1372,13 +1528,17 @@ def _seed(env):
     # order quantity off the vendor line the call above has just made.
     orderpoints = _create_orderpoints(env, warehouse, materials)
     landed = _create_landed_cost_products(env)
+    # Every counted range in one map for the checkpoints, which do not care
+    # which table a product came from - only whether the check names it.
+    converted = dict(bags, **dict(industrial, **refuse))
     checkpoints = _create_quality_points(
-        env, warehouse, materials, products, dict(bags, **industrial), company
+        env, warehouse, materials, products, converted, company
     )
     _logger.info(
         "centric_manufacturing_demo: seeded %s - %s categories put on FIFO, "
         "%s materials, %s work centres, %s BoMs, %s bags, %s industrial items, "
-        "%s custom print artworks, %s products put on lot tracking, "
+        "%s waste sacks, %s custom print artworks, %s products levied the "
+        "eco-contribution, %s products put on lot tracking, "
         "%s opening counts, %s vendors, %s purchase price lines, "
         "%s reordering rules, %s landed cost products and %s quality checkpoints",
         company.display_name,
@@ -1388,7 +1548,9 @@ def _seed(env):
         len(products),
         len(bags),
         len(industrial),
+        len(refuse),
         len(artworks),
+        levied,
         on_lots,
         counted,
         len(partners),
@@ -1401,7 +1563,13 @@ def _seed(env):
     # The trading history comes last and only once the master data is in
     # place: it buys the materials above, consumes them through the BoMs above
     # and sells the result, so it has nothing to work with until they exist.
-    seed_transactions(env, company, partners, materials, products)
+    # The counted ranges go down with the film: a manufacturing order for a
+    # sack and a sales order for a carrier bag both resolve their product out
+    # of this one map, and a bag missing from it is a document silently
+    # skipped rather than an error anybody sees.
+    seed_transactions(
+        env, company, partners, materials, dict(products, **converted)
+    )
 
 
 def post_init_hook(env):

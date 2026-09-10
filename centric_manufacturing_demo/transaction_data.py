@@ -33,6 +33,8 @@ it, so the demo is never stale: ``-110`` is a hundred and ten days ago,
 ``+3`` is three days out.
 """
 
+from .ecotax_data import COLLECTION_INVOICED, COLLECTION_POINT_OF_SALE
+
 # --------------------------------------------------------------------------
 # Customers
 # --------------------------------------------------------------------------
@@ -80,6 +82,29 @@ CUSTOMERS = {
         "phone": "+356 2148 9900",
         "email": "supplychain@islandmart.example",
         "payment_term": "60 Days",
+    },
+    # P8.1 - the buyers for the waste sack range, and a different trade from
+    # everyone above. The five customers above buy film to wrap their own
+    # product in; these two buy sacks to put other people's rubbish in, on a
+    # tender rather than off a price list, and they pay like public bodies pay.
+    "Cottonera Local Council": {
+        "street": "Misrah Gavino Gulia",
+        "city": "Cospicua",
+        "zip": "BML 1010",
+        "phone": "+356 2180 2255",
+        "email": "procurement@cottoneracouncil.example",
+        # The longest terms the plant grants anyone. Not a concession - it is
+        # what a council's payment run does, and pricing a tender without
+        # allowing for it is how a converter wins one and regrets it.
+        "payment_term": "60 Days",
+    },
+    "Northern Region Waste Services Ltd": {
+        "street": "Burmarrad Road",
+        "city": "St Paul's Bay",
+        "zip": "SPB 9060",
+        "phone": "+356 2157 7130",
+        "email": "operations@northernwaste.example",
+        "payment_term": "45 Days",
     },
 }
 
@@ -179,6 +204,23 @@ PURCHASE_ORDERS = [
         "status": "draft",
         "lines": [("HDPE Blown Film Resin", 4000.0)],
     },
+    # P8.1 - what the waste sack range needed buying in that the plant did not
+    # already stock: a green for the organic stream, and tape for the
+    # drawstring hem.
+    {
+        "ref": "TP-DEMO-PO-09",
+        "vendor": "EuroMasterbatch NV",
+        "days": -50,
+        "status": "billed",
+        "lines": [("Green Masterbatch", 500.0)],
+    },
+    {
+        "ref": "TP-DEMO-PO-10",
+        "vendor": "Malta Core & Carton Ltd",
+        "days": -18,
+        "status": "received",
+        "lines": [("LDPE Drawstring Tape 8mm", 150.0)],
+    },
 ]
 
 # --------------------------------------------------------------------------
@@ -258,6 +300,122 @@ MANUFACTURING_ORDERS = [
         "days": 7,
         "status": "draft",
     },
+    # ---------------------------------------------------------------- P8.1
+    # The waste sack range, from the granulator up. Appended rather than
+    # interleaved by date, because what matters to the seeder is the order of
+    # this list - each order runs against the stock the ones above it left -
+    # and the dates are stamped on afterwards. Reading the two halves in
+    # sequence is also the clearer story: the plant's existing film business,
+    # then the sack business built on top of it.
+    #
+    # Regrind first, and a big one. The four waste sack grades between them eat
+    # about 830 kg of pellet, against the 500 kg the original run made, so
+    # without this the extrusion orders below would confirm and then sit
+    # unreserved - which is the failure mode the note at the top of this file
+    # warns about, made concrete.
+    {
+        "ref": "TP-DEMO-MO-10",
+        "product": "Regrind LDPE Pellet",
+        "qty": 900.0,
+        "days": -88,
+        "status": "done",
+    },
+    {
+        # Tops the clear reel back up: the carrier bag film below comes off it,
+        # and the existing print orders had left it thin.
+        "ref": "TP-DEMO-MO-11",
+        "product": "Blown Film Reel 50um Clear (Jumbo)",
+        "qty": 1500.0,
+        "days": -84,
+        "status": "done",
+    },
+    {
+        # The 40 micron black already existed as a grade and had never been
+        # run: the heavy duty sack it was written for is sold from stock the
+        # plant bought in. The mixed waste collection sack is what finally puts
+        # the extruder on it.
+        "ref": "TP-DEMO-MO-12",
+        "product": "Blown Film Reel 40um Black (Jumbo)",
+        "qty": 800.0,
+        "days": -78,
+        "status": "done",
+    },
+    {
+        "ref": "TP-DEMO-MO-13",
+        "product": "Blown Film Reel 60um Black Heavy (Jumbo)",
+        "qty": 1200.0,
+        "days": -74,
+        "status": "done",
+    },
+    {
+        "ref": "TP-DEMO-MO-14",
+        "product": "Blown Film Reel 30um Grey (Jumbo)",
+        "qty": 800.0,
+        "days": -70,
+        "status": "done",
+    },
+    {
+        "ref": "TP-DEMO-MO-15",
+        "product": "Blown Film Reel 25um Green (Jumbo)",
+        "qty": 600.0,
+        "days": -66,
+        "status": "done",
+    },
+    {
+        "ref": "TP-DEMO-MO-16",
+        "product": "Blown Film Reel 20um White (Jumbo)",
+        "qty": 900.0,
+        "days": -62,
+        "status": "done",
+    },
+    # The carrier bag chain, run so the two eco-contribution sales orders have
+    # something real to ship. Printed film first, then the bags off it.
+    {
+        "ref": "TP-DEMO-MO-17",
+        "product": "Printed Carrier Bag Film 30um - 2 Colour",
+        "qty": 600.0,
+        "days": -58,
+        "status": "done",
+    },
+    {
+        "ref": "TP-DEMO-MO-18",
+        "product": "Carrier Bag 380x450mm - 2 Colour Printed",
+        "qty": 30000.0,
+        "days": -54,
+        "status": "done",
+    },
+    # Sacks. Counted in units, off the bag line, consuming the reels above.
+    {
+        "ref": "TP-DEMO-MO-19",
+        "product": "Wheelie Bin Liner 240L 1100x1400mm Black",
+        "qty": 500.0,
+        "days": -40,
+        "status": "done",
+    },
+    {
+        "ref": "TP-DEMO-MO-20",
+        "product": "Waste Sack 700x1100mm Black - Mixed Waste",
+        "qty": 5000.0,
+        "days": -35,
+        "status": "done",
+    },
+    {
+        "ref": "TP-DEMO-MO-21",
+        "product": "Waste Sack 700x1100mm Grey - Recyclables",
+        "qty": 4000.0,
+        "days": -30,
+        "status": "done",
+    },
+    {
+        # Released and reserving, not yet run: puts the new bag line range on
+        # the shopfloor view and the work centre load report rather than only
+        # in the stock ledger.
+        "ref": "TP-DEMO-MO-22",
+        "product": "Swing Bin Liner 11L 300x600mm White",
+        "qty": 6000.0,
+        "days": 5,
+        "status": "confirmed",
+    },
 ]
 
 # --------------------------------------------------------------------------
@@ -272,8 +430,24 @@ MANUFACTURING_ORDERS = [
 #   paid       the invoice has been paid into the bank journal
 #
 # The delivered quantities stay inside what the ``done`` manufacturing orders
-# above produced - 3700 kg of bread bag film and 2000 kg of shrink wrap - so
-# nothing ships out of negative stock.
+# above produced - 3700 kg of bread bag film and 2000 kg of shrink wrap, and
+# for the P8.1 range 30,000 carrier bags, 5,000 mixed waste sacks, 4,000
+# recyclables sacks and 500 wheelie liners - so nothing ships out of negative
+# stock.
+#
+# ``eco_collection`` is optional and only means anything on an order carrying
+# carrier bags. It picks which of the two collection models in ``ecotax_data``
+# the order demonstrates:
+#
+#   COLLECTION_INVOICED        the levy is on the plant's invoice to the
+#                              retailer, so the plant collects and remits it
+#   COLLECTION_POINT_OF_SALE   the levy is left off the plant's invoice and
+#                              charged to the shopper at the till instead
+#
+# Absent, the order is priced with whatever taxes the products carry, which for
+# the carrier bag range means the levy is applied - the same as
+# COLLECTION_INVOICED. It is spelled out on the two orders below anyway,
+# because the whole point of them is to be read side by side.
 SALES_ORDERS = [
     {
         "ref": "TP-DEMO-SO-01",
@@ -336,5 +510,69 @@ SALES_ORDERS = [
         "days": -1,
         "status": "draft",
         "lines": [("Printed Shrink Wrap 50um - 2 Colour", 1000.0)],
+    },
+    # ---------------------------------------------------------------- P8.2
+    # The eco-contribution, twice. Same customer, same product, same 10,000
+    # bags, same week, both invoiced and posted - and the ONLY difference
+    # between them is who hands the levy over. That is deliberate: put the two
+    # invoices side by side in Accounting and the entire argument is visible as
+    # a difference in one figure, which is a good deal more convincing than a
+    # paragraph explaining it.
+    #
+    # At the demo rate, 10,000 bags is 1,500 euro of levy. On SO-09 that sits
+    # on the plant's invoice and the plant is financing it until a 60 day
+    # customer pays. On SO-10 it does not appear at all, and the shopper pays
+    # it at the till on the bags they actually take.
+    {
+        "ref": "TP-DEMO-SO-09",
+        "customer": "IslandMart Retail Group Ltd",
+        "days": -18,
+        "status": "invoiced",
+        "eco_collection": COLLECTION_INVOICED,
+        "lines": [("Carrier Bag 380x450mm - 2 Colour Printed", 10000.0)],
+    },
+    {
+        "ref": "TP-DEMO-SO-10",
+        "customer": "IslandMart Retail Group Ltd",
+        "days": -17,
+        "status": "invoiced",
+        "eco_collection": COLLECTION_POINT_OF_SALE,
+        "lines": [("Carrier Bag 380x450mm - 2 Colour Printed", 10000.0)],
+    },
+    # ---------------------------------------------------------------- P8.1
+    # The waste sack trade: a council on the collection set, a contractor on
+    # wheelie liners, and a retailer quoting the household range. No levy on
+    # any of them - see ecotax_data on why a refuse sack is not a carrier bag.
+    {
+        "ref": "TP-DEMO-SO-11",
+        "customer": "Cottonera Local Council",
+        "days": -24,
+        "status": "paid",
+        "lines": [
+            ("Waste Sack 700x1100mm Black - Mixed Waste", 3000.0),
+            ("Waste Sack 700x1100mm Grey - Recyclables", 2500.0),
+        ],
+    },
+    {
+        "ref": "TP-DEMO-SO-12",
+        "customer": "Northern Region Waste Services Ltd",
+        "days": -9,
+        "status": "delivered",
+        "lines": [("Wheelie Bin Liner 240L 1100x1400mm Black", 400.0)],
+    },
+    {
+        # A quotation, not an order, and that is what lets it price the three
+        # lines the plant has not made yet - the green sack, the caddy liner
+        # and the drawstring bag. A quotation reserves nothing, so the range
+        # can be shown being sold without inventing stock for it.
+        "ref": "TP-DEMO-SO-13",
+        "customer": "IslandMart Retail Group Ltd",
+        "days": -3,
+        "status": "sent",
+        "lines": [
+            ("Waste Sack 700x1100mm Green - Organic Waste", 4000.0),
+            ("Compostable Caddy Liner 10L 380x480mm", 5000.0),
+            ("Drawstring Kitchen Bag 30L 480x600mm White", 3000.0),
+        ],
     },
 ]
