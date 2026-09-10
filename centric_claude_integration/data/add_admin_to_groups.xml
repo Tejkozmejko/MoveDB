@@ -6,7 +6,7 @@
             <value eval="[('id', '=', 2)]"/>
         </function>
         <value eval="{
-            'groups_ids': [
+            'group_ids': [
                 (4, ref('group_claude_user')),
                 (4, ref('group_claude_admin'))
             ]

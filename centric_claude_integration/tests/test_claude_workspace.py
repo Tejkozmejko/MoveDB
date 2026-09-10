@@ -404,7 +404,7 @@ class TestClaudeWorkspace(TransactionCase):
         user = self.env["res.users"].create({
             "name": "Claude %s" % level,
             "login": "claude_%s_%s" % (level, self.env.cr.dbname[-4:]),
-            "groups_id": [
+            "group_ids": [
                 (4, self.env.ref("base.group_user").id),
                 (4, self.env.ref("centric_claude_integration.group_claude_user").id),
                 (4, self.env.ref(group[level]).id),
@@ -420,7 +420,7 @@ class TestClaudeWorkspace(TransactionCase):
     def test_a_user_without_a_data_group_has_no_level(self):
         user = self.env["res.users"].create({
             "name": "Plain", "login": "claude_plain_%s" % self.env.cr.dbname[-4:],
-            "groups_id": [(4, self.env.ref("base.group_user").id)],
+            "group_ids": [(4, self.env.ref("base.group_user").id)],
         })
         self.assertEqual(self.env(user=user)["centric.claude.data"]._level(), "none")
 
@@ -489,7 +489,7 @@ class TestClaudeWorkspace(TransactionCase):
         code_admin = self.env["res.users"].create({
             "name": "Code Only",
             "login": "claude_codeonly_%s" % self.env.cr.dbname[-4:],
-            "groups_id": [
+            "group_ids": [
                 (4, self.env.ref("base.group_user").id),
                 (4, self.env.ref("centric_claude_integration.group_claude_admin").id),
             ],
