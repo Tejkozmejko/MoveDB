@@ -291,7 +291,11 @@ class CentricClaudeConversation(models.Model):
         conv._check_owner()
         enabled_bool = bool(enabled)
         conv.write({'bypass_permissions': enabled_bool})
-        conv.refresh()
+        # No cache invalidation here. `refresh()` was removed from the ORM
+        # years ago, so this raised AttributeError and the toggle failed every
+        # time it was clicked - and the call was never needed anyway: `write`
+        # updates the record's cache, so the payload built below already reads
+        # the value that was just stored.
         return self._conversation_payload(conv)
 
     @api.model

@@ -124,6 +124,38 @@ LEVIED_PRODUCTS = (
     "Biodegradable Carrier Bag 300x400mm",
 )
 
+
+# Candidate names for the customer-taxes many2many, most recent first. Kept as
+# two separate tuples rather than one merged list because the models do not use
+# the same word: a sales order line calls them taxes on the line, a product
+# calls them the taxes on the product, and searching one model with the other's
+# vocabulary is how a lookup silently finds the wrong field.
+LINE_TAX_FIELDS = ("tax_ids", "tax_id")
+PRODUCT_TAX_FIELDS = ("taxes_ids", "taxes_id")
+
+
+def customer_tax_field(record, candidates):
+    """First name in ``candidates`` that ``record`` actually has, or None.
+
+    Odoo 19 renamed a run of many2many fields to a consistent ``_ids`` plural -
+    ``res.users.groups_id`` became ``group_ids``, and the taxes on a sales
+    order line became ``tax_ids``. Hard-coding either name is how this module
+    would break on the version it was not written against, and the failure is
+    not a graceful one: reading a field that is not there raises inside the
+    per-document savepoint, so every sales order in the trading history would
+    be rolled back and logged as skipped. A demo database with no sales in it,
+    over a field rename.
+
+    So resolve it off the model and let the caller fail soft. Returning None
+    means the levy simply is not applied, which is a poorer demo than intended
+    and a working one either way.
+    """
+    for name in candidates:
+        if name in record._fields:
+            return name
+    return None
+
+
 # The made-to-order printed carrier is a carrier bag like any other, so it is
 # levied too - but it is a product *template* carrying one variant per customer
 # artwork rather than a product with a name of its own, which is why it cannot

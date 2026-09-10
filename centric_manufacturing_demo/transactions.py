@@ -28,7 +28,13 @@ from datetime import timedelta
 
 from odoo import fields
 
-from .ecotax_data import COLLECTION_POINT_OF_SALE, ECO_CONTRIBUTION
+from .ecotax_data import (
+    COLLECTION_POINT_OF_SALE,
+    ECO_CONTRIBUTION,
+    LINE_TAX_FIELDS,
+    PRODUCT_TAX_FIELDS,
+    customer_tax_field,
+)
 from .traceability_data import create_lot
 from .transaction_data import (
     CUSTOMERS,
@@ -459,7 +465,7 @@ def _apply_eco_contribution(order, spec, eco_tax):
     """P8.2 - put the levy on this order's lines, or deliberately take it off.
 
     The levy reaches an order line by itself: it is on the carrier bag
-    products' ``taxes_id``, and a sales order line takes its taxes from the
+    products' customer taxes, and a sales order line takes its taxes from the
     product. So the interesting case is the *subtraction* - an order seeded to
     demonstrate the point-of-sale model has to have the levy removed from lines
     that would otherwise carry it, which is exactly what a plant invoicing
@@ -474,14 +480,34 @@ def _apply_eco_contribution(order, spec, eco_tax):
     """
     if not eco_tax:
         return
+    lines = order.order_line
+    if not lines:
+        return
+    # Resolved rather than hard-coded - see ``ecotax_data.customer_tax_field``
+    # on why, and on what reading the wrong name would cost.
+    line_field = customer_tax_field(lines, LINE_TAX_FIELDS)
+    product_field = (
+        customer_tax_field(lines.product_id, PRODUCT_TAX_FIELDS)
+        if lines.product_id
+        else None
+    )
+    if not line_field or not product_field:
+        _logger.warning(
+            "centric_manufacturing_demo: no customer tax field on %s, so the "
+            "eco-contribution is not applied to %s",
+            lines._name,
+            spec["ref"],
+        )
+        return
+
     point_of_sale = spec.get("eco_collection") == COLLECTION_POINT_OF_SALE
-    for line in order.order_line:
-        carries = eco_tax in line.tax_id
+    for line in lines:
+        carries = eco_tax in line[line_field]
         if point_of_sale:
             if carries:
-                line.tax_id = [(3, eco_tax.id)]
-        elif not carries and eco_tax in line.product_id.taxes_id:
-            line.tax_id = [(4, eco_tax.id)]
+                line[line_field] = [(3, eco_tax.id)]
+        elif not carries and eco_tax in line.product_id[product_field]:
+            line[line_field] = [(4, eco_tax.id)]
 
 
 def _build_sale(env, spec, company, customers, products, eco_tax=None):

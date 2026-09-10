@@ -23,6 +23,8 @@ from .ecotax_data import (
     ECO_CONTRIBUTION,
     LEVIED_PRODUCTS,
     LEVY_CUSTOM_PRINT,
+    PRODUCT_TAX_FIELDS,
+    customer_tax_field,
 )
 from .landed_cost_data import LANDED_COSTS
 from .material_data import (
@@ -1035,10 +1037,22 @@ def _create_eco_contribution_tax(env, company, bags, artworks):
         # name. It is a carrier bag like any other and is levied like one.
         templates |= next(iter(artworks.values())).product_tmpl_id
 
+    if not templates:
+        return 0
+    # Same resolution as the sales order lines, and for the same reason.
+    tax_field = customer_tax_field(templates, PRODUCT_TAX_FIELDS)
+    if not tax_field:
+        _logger.warning(
+            "centric_manufacturing_demo: no customer tax field on "
+            "product.template, so the eco-contribution was created but is not "
+            "on any product"
+        )
+        return 0
+
     levied = 0
     for template in templates:
-        if tax not in template.taxes_id:
-            template.taxes_id = [(4, tax.id)]
+        if tax not in template[tax_field]:
+            template[tax_field] = [(4, tax.id)]
         levied += 1
 
     _logger.info(
