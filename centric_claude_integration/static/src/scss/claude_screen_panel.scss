@@ -1,0 +1,179 @@
+.o_cc_screen_panel {
+    position: fixed;
+    inset: var(--o-navbar-height, 46px) 0 0 auto;
+    z-index: 1040;
+    width: min(440px, 100vw);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--body-bg, #fff);
+    color: var(--body-color, #20242a);
+    border-left: 1px solid var(--border-color, #dedede);
+    box-shadow: -8px 0 32px rgba(0, 0, 0, .12);
+    font-size: 14px;
+
+    .o_cc_screen_header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--border-color, #e8e8e8);
+    }
+
+    .o_cc_screen_brand {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 17px;
+    }
+
+    .o_cc_mark { width: 25px; height: 25px; color: #d97757; }
+
+    .o_cc_screen_icon {
+        width: 30px;
+        height: 30px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        &:hover { background: rgba(127, 127, 127, .12); }
+    }
+
+    .o_cc_screen_context {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 14px 18px;
+        background: rgba(217, 119, 87, .06);
+        border-bottom: 1px solid var(--border-color, #e8e8e8);
+        overflow-wrap: anywhere;
+        strong { line-height: 1.4; }
+        small { opacity: .72; }
+    }
+
+    .o_cc_screen_eyebrow {
+        color: #ad583c;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        font-size: 10px;
+        font-weight: 700;
+    }
+
+    .o_cc_screen_changed, .o_cc_screen_notice {
+        font-size: 12px;
+        border-left: 3px solid #d97757;
+        padding: 6px 10px;
+        margin-top: 8px;
+    }
+
+    .o_cc_screen_messages {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        overscroll-behavior: contain;
+        padding: 20px 18px;
+    }
+
+    .o_cc_screen_empty {
+        padding: 12px 0;
+        p { opacity: .72; line-height: 1.6; }
+    }
+
+    .o_cc_screen_suggestions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 20px;
+        button {
+            text-align: left;
+            background: transparent;
+            color: inherit;
+            border: 1px solid var(--border-color, #ddd);
+            border-radius: 10px;
+            padding: 10px 12px;
+            &:hover { border-color: #d97757; background: rgba(217, 119, 87, .05); }
+        }
+    }
+
+    .o_cc_screen_message {
+        margin-bottom: 20px;
+        overflow-wrap: anywhere;
+        line-height: 1.6;
+        &.o_cc_screen_message_user {
+            padding: 12px;
+            background: rgba(127, 127, 127, .07);
+            border-radius: 10px;
+        }
+    }
+
+    .o_cc_screen_author { display: block; font-size: 12px; margin-bottom: 6px; }
+    .o_cc_screen_message_body {
+        p:last-child { margin-bottom: 0; }
+        pre { overflow: auto; padding: 10px; background: rgba(127, 127, 127, .08); }
+        code { white-space: pre-wrap; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid var(--border-color, #ddd); padding: 6px; }
+        .o_cc_md_table { overflow: auto; }
+        blockquote { border-left: 3px solid #d97757; padding-left: 12px; }
+    }
+
+    .o_cc_screen_operation {
+        border: 1px solid #d97757;
+        border-radius: 10px;
+        padding: 12px;
+        margin: 12px 0;
+        pre { white-space: pre-wrap; margin: 10px 0; font-size: 12px; }
+    }
+
+    .o_cc_screen_progress { font-size: 12px; opacity: .75; padding: 10px 0; }
+    .o_cc_screen_composer {
+        padding: 12px 18px 16px;
+        border-top: 1px solid var(--border-color, #e8e8e8);
+        small { display: block; text-align: center; font-size: 11px; opacity: .65; margin-top: 8px; }
+    }
+
+    .o_cc_screen_input_row {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        padding: 10px;
+        border: 1px solid var(--border-color, #ccc);
+        border-radius: 12px;
+        &:focus-within { border-color: #d97757; }
+        textarea {
+            width: 100%;
+            min-width: 0;
+            max-height: 180px;
+            border: 0;
+            outline: none;
+            resize: vertical;
+            background: transparent;
+            color: inherit;
+            line-height: 1.5;
+        }
+    }
+
+    .o_cc_screen_send {
+        flex-shrink: 0;
+        width: 32px;
+        height: 32px;
+        border: 0;
+        border-radius: 8px;
+        background: #bb6142;
+        color: white;
+        &:disabled { opacity: .4; }
+    }
+
+    button:focus-visible { outline: 2px solid #d97757; outline-offset: 2px; }
+}
+
+// Keep the current record usable next to the panel. On a phone the panel uses
+// the screen width and its Close button returns to the underlying record.
+@media (min-width: 992px) {
+    body:has(.o_cc_screen_panel) .o_action_manager { margin-right: 440px; }
+}
+
+@media (max-width: 575.98px) {
+    .o_cc_screen_panel { width: 100vw; }
+}

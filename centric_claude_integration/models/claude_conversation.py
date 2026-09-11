@@ -346,7 +346,7 @@ class CentricClaudeConversation(models.Model):
                 # The turn points at its message so the bridge can find the
                 # images without guessing which message it came from.
                 "message_id": message.id,
-                "prompt": text,
+                "prompt": conv._screen_message_prompt(text),
                 "developer_mode": conv.developer_mode,
                 "effort": conv.effort,
                 "base_branch": conv.base_branch,

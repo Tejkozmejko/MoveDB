@@ -6,8 +6,9 @@
             <button t-if="state.allowed"
                     class="o_cc_systray_btn"
                     type="button"
-                    title="Claude Developer"
-                    aria-label="Claude Developer"
+                    title="Ask Claude about this screen"
+                    aria-label="Ask Claude about this screen"
+                    t-att-aria-expanded="screenState.open ? 'true' : 'false'"
                     t-on-click="openWorkspace">
                 <t t-call="centric_claude_integration.ClaudeMark"/>
             </button>

@@ -347,8 +347,9 @@ class CentricClaudeTurn(models.Model):
         ).sorted("id")[-30:]
         # The level travels with the turn: the tools the local agent may use
         # depend on the person who asked, not on the bridge.
+        requester = conversation.user_id if conversation.screen_context else self.user_id
         level = self.env['centric.claude.data'].with_user(
-            self.user_id or self.env.user
+            requester or self.env.user
         )._data_access()
         return {
             "effort": self.effort or "high",

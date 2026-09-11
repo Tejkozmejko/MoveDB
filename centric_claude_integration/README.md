@@ -18,6 +18,40 @@ This addon puts a controlled Claude developer workspace inside Odoo.
 - Create a pull request from Odoo.
 - Keep repository and code-change audit logs.
 
+## Ask Claude about this screen
+
+Open a saved Helpdesk ticket and click the Claude mark in Odoo's top bar. A
+panel opens beside the ticket with its name under **Context**. Ask for a
+summary, missing information, or a draft customer reply without leaving the
+ticket. The same entry point works on other standard Odoo forms, lists and
+kanban views; Helpdesk does not have to be installed for the addon to load.
+
+On a list, selected records take priority. With no selection, or with **Select
+all matching records**, the context uses the current search domain rather than
+just the loaded page. The panel identifies which scope is in use. Only record
+identifiers and validated filters are passed as context; Claude reads saved
+data through its existing tools, using the asking user's rights and selected
+companies. Unsaved form edits are not included. An account needs both Claude
+workspace access and a Claude Data level to use this feature.
+
+Navigating to another record keeps the existing conversation attached to its
+original context. Choose **Use current screen** to start a new chat for the new
+record or selection. Closing and reopening the panel preserves its chat for
+the current browser session. The expand button opens that conversation in the
+full workspace, where it also remains available in chat history.
+
+Replies are drafts. Proposed data changes appear in the panel with **Confirm
+change** and **Decline** buttons; asking a question does not apply them.
+
+After updating this addon, upgrade **Centric Claude Integration** in Apps and
+reload Odoo to install the new context field and frontend assets. Both the
+Anthropic API and the existing local bridge receive screen context.
+
+Screen-context checks are in `tests/test_claude_screen.py` and run with the
+module's Odoo tests. The standalone frontend checks can be run with
+`node centric_claude_integration/tests/test_claude_screen_ui.cjs` from the addons
+repository root.
+
 ## Safety model
 
 Code writing requires all of the following:

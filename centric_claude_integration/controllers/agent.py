@@ -265,13 +265,21 @@ class CentricClaudeAgentController(http.Controller):
         if not turn.user_id:
             return {"error": "That turn has no requesting user."}
 
-        env = request.env(user=turn.user_id.id)
-        data = env["centric.claude.data"]
+        # A screen conversation has a server-bound, immutable owner. Do not
+        # accept a different execution identity from a writable queue record.
+        requester = (
+            turn.conversation_id.user_id
+            if turn.conversation_id.screen_context else turn.user_id
+        )
+        env = request.env(user=requester.id)
         conversation = env["centric.claude.conversation"].browse(
             turn.conversation_id.id
         )
         params = params or {}
         try:
+            env = conversation._screen_environment()
+            data = env["centric.claude.data"]
+            conversation = conversation.with_env(env)
             return {"result": self._run_odoo_op(env, data, conversation, op, params)}
         except AccessError as exc:
             # A refusal is information Claude should act on, not a crash.

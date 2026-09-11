@@ -315,7 +315,10 @@ export class ClaudeDeveloperWorkspace extends Component {
             const data = await this.call("workspace_bootstrap");
             this.state.access = data.access || {};
             this.applySidebar(data);
-            if (this.state.conversations.length) {
+            const requestedId = this.props.action?.context?.claude_conversation_id;
+            if (requestedId) {
+                await this.selectConversation(requestedId);
+            } else if (this.state.conversations.length) {
                 await this.selectConversation(this.state.conversations[0].id);
             }
         } catch (error) {

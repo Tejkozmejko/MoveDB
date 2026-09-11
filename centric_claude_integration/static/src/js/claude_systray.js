@@ -18,7 +18,8 @@ export class ClaudeSystrayItem extends Component {
     static props = {};
 
     setup() {
-        this.action = useService("action");
+        this.screen = useService("centric_claude_screen");
+        this.screenState = useState(this.screen.state);
         this.state = useState({ allowed: false });
         onWillStart(async () => {
             // The registry is client-side, so the group check has to happen
@@ -31,7 +32,7 @@ export class ClaudeSystrayItem extends Component {
     }
 
     openWorkspace() {
-        this.action.doAction("centric_claude_integration.action_claude_workspace");
+        this.screen.toggle();
     }
 }
 

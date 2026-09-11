@@ -11,6 +11,12 @@
                     <span>Claude Developer</span>
                 </span>
 
+                <span t-if="state.conversation &amp;&amp; state.conversation.screen_context"
+                      class="o_cc_chip" t-att-title="state.conversation.screen_context.scope_label">
+                    <i class="fa fa-crosshairs"/>
+                    <t t-esc="state.conversation.screen_context.label"/>
+                </span>
+
                 <span class="o_cc_chip" t-if="state.access.repository">
                     <i class="fa fa-github"/><t t-esc="state.access.repository"/>
                 </span>
