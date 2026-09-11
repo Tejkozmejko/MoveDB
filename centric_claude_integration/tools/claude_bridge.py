@@ -544,6 +544,15 @@ def git(repo, *args):
     return done.stdout
 
 
+def git_common_dir(path):
+    """The git directory whose objects ``path`` checks out, normalised, or None."""
+    try:
+        found = git(path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    except BridgeError:
+        return None
+    return os.path.normcase(os.path.abspath(found.strip()))
+
+
 def worktree_for(repo, index):
     """A private checkout for one worker, created once and reused.
 
@@ -558,7 +567,26 @@ def worktree_for(repo, index):
     path = os.path.join(WORKTREE_DIR, "w%d" % index)
     marker = os.path.join(path, ".git")          # a file in a worktree, not a dir
     if os.path.exists(marker):
-        return path
+        if git_common_dir(path) == git_common_dir(repo):
+            return path
+        # Reused only if it belongs to *this* clone. The worktree directory is
+        # shared by every clone the bridge has ever been pointed at, so after
+        # `--repo` moved to another checkout, every worker silently went on
+        # answering from the old clone's worktrees - whose object store never
+        # fetches, because `refresh_origin` fetches the configured repo. The
+        # first branch the old clone had not seen then failed every turn with
+        # a missing commit. Moved aside rather than deleted: a failed turn may
+        # have left work in it that somebody wants back.
+        stale = "%s.stale-%s" % (path, time.strftime("%Y%m%d-%H%M%S"))
+        try:
+            os.rename(path, stale)
+        except OSError as exc:
+            raise BridgeError(
+                "%s belongs to another clone and could not be moved aside (%s). "
+                "Close anything using it and start the bridge again." % (path, exc)
+            )
+        say("    worker %d: %s belonged to another clone; moved to %s and "
+            "rebuilt from %s" % (index, path, stale, repo))
     os.makedirs(WORKTREE_DIR, exist_ok=True)
     # Drop registrations whose directory was deleted by hand, or `add` refuses.
     git(repo, "worktree", "prune")
@@ -629,6 +657,15 @@ def sync_worktree(repo, path, branch=None, label=""):
     bridge will land on the same branch sooner or later.
     """
     head = resolve_branch(repo, branch, label)
+    # Clear the tree *before* moving it, not only after. A turn that timed out
+    # or failed leaves its half-written edits behind, and `checkout` refuses to
+    # switch commits over local changes it would overwrite - so with the reset
+    # only after the checkout, the one case this function exists for was the
+    # one it could not handle: the leftovers blocked the checkout, the reset
+    # never ran, and every later turn on that worker died the same way until
+    # somebody cleaned the worktree by hand.
+    git(path, "reset", "--hard")
+    git(path, "clean", "-fd")
     git(path, "checkout", "--detach", head)
     git(path, "reset", "--hard", head)
     git(path, "clean", "-fd")
