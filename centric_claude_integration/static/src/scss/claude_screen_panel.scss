@@ -2,7 +2,9 @@
     position: fixed;
     inset: var(--o-navbar-height, 46px) 0 0 auto;
     z-index: 1040;
-    width: min(440px, 100vw);
+    // Odoo's LibSass evaluates min() itself and cannot compare px with vw.
+    width: 440px;
+    max-width: 100vw;
     display: flex;
     flex-direction: column;
     min-height: 0;

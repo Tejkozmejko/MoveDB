@@ -1,5 +1,9 @@
+import ast
 import base64
+from pathlib import Path
 from unittest.mock import patch
+
+import sass
 
 from odoo import fields
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -42,6 +46,20 @@ class TestClaudeWorkspace(TransactionCase):
         })
 
     # -- helpers ----------------------------------------------------------
+    def test_backend_stylesheets_compile_with_odoo_sass(self):
+        """Compile the addon styles with the compiler used by Odoo's asset builder."""
+        addon = Path(__file__).resolve().parents[1]
+        manifest = ast.literal_eval((addon / "__manifest__.py").read_text(encoding="utf-8"))
+        sources = []
+        for asset in manifest["assets"]["web.assets_backend"]:
+            if asset.endswith(".scss"):
+                with self.subTest(asset=asset):
+                    source = (addon.parent / asset).read_text(encoding="utf-8")
+                    self.assertTrue(sass.compile(string=source))
+                    sources.append(source)
+        self.assertTrue(sources, "No addon stylesheets were checked")
+        self.assertTrue(sass.compile(string="\n".join(sources)))
+
     def test_unified_diff_is_generated(self):
         diff = self.Conversation._make_diff(
             "models/example.py",
