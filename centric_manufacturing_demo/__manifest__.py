@@ -171,7 +171,7 @@ an install down with it, so check the install log for
 Replaces ``centric_restaurant_demo``, which was removed when the restaurant
 scope was dropped.
 """,
-    "version": "19.0.7.0.1",
+    "version": "19.0.7.0.2",
     "category": "Manufacturing",
     "author": "Centric",
     "license": "LGPL-3",

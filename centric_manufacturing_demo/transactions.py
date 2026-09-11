@@ -198,6 +198,21 @@ def _validate_picking(picking, dt, company=None):
         )
         if hasattr(wizard, "process"):
             wizard.process()
+    if picking.state != "done":
+        # Loudly, not quietly. A transfer that did not validate used to return
+        # as though it had, so the order carried on to invoicing and failed
+        # there with "nothing has been delivered" - a message about the invoice
+        # for a problem with the picking. Naming the picking, and whatever
+        # Odoo asked for instead, puts the actual cause in the warning.
+        asked = result.get("res_model") if isinstance(result, dict) else None
+        raise _Skip(
+            "%s was not validated (still %s)%s"
+            % (
+                picking.name,
+                picking.state,
+                " - Odoo asked for %s" % asked if asked else "",
+            )
+        )
     _backdate(picking.move_ids, dt)
     _backdate(picking.move_ids.move_line_ids, dt)
     _backdate(picking, dt, "date_done")
@@ -351,6 +366,30 @@ def _run_workorders(mo):
         workorder.button_finish()
 
 
+# The field a works order records its own lot on, newest name first. Odoo 19
+# made it a many2many - one order may now produce several lots - and reading the
+# old single-lot name raised on every order, so no manufacturing order in the
+# trading history could be built, and nothing downstream of production had any
+# stock to ship.
+PRODUCING_LOT_FIELDS = ("lot_producing_ids", "lot_producing_id")
+
+
+def _set_producing_lot(env, mo, product, company):
+    """Give ``mo`` the lot for the run it is about to make, unless it has one.
+
+    Resolved off the model rather than hard-coded, for the same reason the tax
+    fields are in ``ecotax_data``: the name moved between versions, and the
+    cost of guessing wrong is every order in the table, not one.
+    """
+    name = next((f for f in PRODUCING_LOT_FIELDS if f in mo._fields), None)
+    if not name:
+        raise _Skip("mrp.production has no field to record the produced lot on")
+    if mo[name]:
+        return
+    lot = create_lot(env, product, company)
+    mo[name] = lot.id if mo._fields[name].type == "many2one" else [(6, 0, [lot.id])]
+
+
 def _build_production(env, spec, company, products):
     product = products.get(spec["product"])
     if not product:
@@ -387,8 +426,8 @@ def _build_production(env, spec, company, products):
     # Odoo's traceability report walks from the resin batch to the reel to the
     # printed film to the delivered pallet without anybody reading the
     # extrusion log book.
-    if product.tracking != "none" and not mo.lot_producing_id:
-        mo.lot_producing_id = create_lot(env, product, company).id
+    if product.tracking != "none":
+        _set_producing_lot(env, mo, product, company)
 
     if not _reaches(PRODUCTION_FLOW, status, "progress"):
         return mo
