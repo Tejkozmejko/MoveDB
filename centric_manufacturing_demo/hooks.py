@@ -947,6 +947,34 @@ def _create_custom_print_products(env, uoms, categories, materials, workcenters,
     return variants
 
 
+def _unfilled_required_fields(model, vals):
+    """Required stored fields that would reach the INSERT empty.
+
+    Why ask in Python when the create already sits in a savepoint: a savepoint
+    rolls a failed INSERT back, but it does not stop Odoo's SQL layer logging
+    the failure at ERROR on its way past - and Odoo.sh fails a build on any
+    ERROR in the log, caught or not. See ``post_init_hook`` on what that rule
+    has already cost this module. A NOT NULL violation therefore has to be seen
+    coming, not survived.
+
+    The record is built with ``new`` over the model's own defaults, so computed
+    required fields - a tax's country and tax group among them - are resolved
+    exactly as the create would resolve them, without anything being written.
+    """
+    record = model.new(dict(model.default_get(list(model._fields)), **vals))
+    missing = []
+    for name, field in model._fields.items():
+        if not (field.required and field.store):
+            continue
+        # NOT NULL on a number or a flag is met by 0 or False, and a new record
+        # reads those back as falsy whether they were set or not.
+        if field.type in ("boolean", "integer", "float", "monetary"):
+            continue
+        if not record[name]:
+            missing.append(name)
+    return missing
+
+
 def _create_eco_contribution_tax(env, company, bags, artworks):
     """P8.2 - the carrier bag eco-contribution, as a fixed per-bag sales tax.
 
@@ -983,10 +1011,22 @@ def _create_eco_contribution_tax(env, company, bags, artworks):
     Tax = env["account.tax"]
     fields = Tax._fields
 
-    tax = Tax.search(
+    # Archived included. An archived tax still holds its name against the
+    # uniqueness constraint, so a search that skips it walks straight into the
+    # INSERT that constraint refuses - with an ERROR in the log to show for it.
+    tax = Tax.with_context(active_test=False).search(
         [("name", "=", ECO_CONTRIBUTION["name"]), ("company_id", "=", company.id)],
         limit=1,
     )
+    if tax and not tax.active:
+        # Somebody switched it off. That is a decision about the levy, not a
+        # gap for the seed to fill, so it is respected rather than revived.
+        _logger.info(
+            "centric_manufacturing_demo: the %r tax is archived, so the "
+            "carrier bag levy is left off",
+            ECO_CONTRIBUTION["name"],
+        )
+        return 0
     if not tax:
         vals = {
             "name": ECO_CONTRIBUTION["name"],
@@ -1006,13 +1046,34 @@ def _create_eco_contribution_tax(env, company, bags, artworks):
         ) or company.country_id
         if country:
             vals["country_id"] = country.id
+        vals = {key: value for key, value in vals.items() if key in fields}
+        try:
+            missing = _unfilled_required_fields(Tax, vals)
+        except Exception:  # noqa: BLE001 - a check that cannot run is a skip.
+            _logger.warning(
+                "centric_manufacturing_demo: could not check the %r tax before "
+                "creating it, so the carrier bag levy is left off",
+                ECO_CONTRIBUTION["name"],
+                exc_info=True,
+            )
+            return 0
+        if missing:
+            # The case this exists for: a company with no fiscal country, or a
+            # chart with no tax group to put the levy in. Skipped here, in
+            # Python, at WARNING - instead of at the database, at ERROR.
+            _logger.warning(
+                "centric_manufacturing_demo: the %r tax cannot be created on "
+                "this database - %s would be empty. The carrier bag levy is "
+                "left off; everything else is unaffected.",
+                ECO_CONTRIBUTION["name"],
+                ", ".join(missing),
+            )
+            return 0
         try:
             # Its own savepoint: a refused tax must not abort the cursor and
             # take the rest of the seed with it.
             with env.cr.savepoint():
-                tax = Tax.create(
-                    {key: value for key, value in vals.items() if key in fields}
-                )
+                tax = Tax.create(vals)
         except Exception:  # noqa: BLE001 - see the docstring.
             _logger.warning(
                 "centric_manufacturing_demo: could not create the %r tax, so "
