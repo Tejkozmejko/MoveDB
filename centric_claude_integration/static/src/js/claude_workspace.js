@@ -412,6 +412,56 @@ export class ClaudeDeveloperWorkspace extends Component {
         }
     }
 
+    /** Yes to every change still waiting, in the order Claude proposed them. */
+    async answerAllOperations() {
+        const pending = this.pendingOperations;
+        if (!this.state.conversation || this.state.busy || !pending.length) {
+            return;
+        }
+        const deletions = pending.filter((op) => op.kind === "unlink").length;
+        const actions = pending.filter((op) => op.kind === "method").length;
+        const extras = [];
+        if (deletions) {
+            extras.push(`${deletions} deletion${deletions === 1 ? "" : "s"}`);
+        }
+        if (actions) {
+            extras.push(`${actions} action${actions === 1 ? "" : "s"}`);
+        }
+        const body =
+            `Apply all ${pending.length} proposed changes, in the order Claude proposed them?` +
+            (extras.length ? ` This includes ${extras.join(" and ")}.` : "") +
+            " If one fails, it stops there and the rest stay waiting.";
+        if (!(await this.confirm("Yes to all", body, "Apply all"))) {
+            return;
+        }
+        const ids = new Set(pending.map((op) => op.id));
+        this.state.busy = true;
+        try {
+            const payload = await this.call("apply_all_workspace_operations", [
+                this.state.conversation.id,
+            ]);
+            this.applyConversationPayload(payload);
+            const answered = this.state.operations.filter((op) => ids.has(op.id));
+            const applied = answered.filter((op) => op.state === "applied").length;
+            const failed = answered.find((op) => op.state === "failed");
+            if (failed) {
+                this.notification.add(
+                    `Applied ${applied} of ${ids.size}. Stopped at "${failed.summary}": ${failed.error}`,
+                    { type: "warning", sticky: true }
+                );
+            } else {
+                this.notification.add(`Applied all ${applied}.`, { type: "success" });
+            }
+        } catch (error) {
+            this.notifyError(error);
+        } finally {
+            // Same rule as a single answer: a queued turn owns busy.
+            if (!this.state.agent.waiting) {
+                this.state.busy = false;
+            }
+        }
+    }
+
     get lastMessageId() {
         const messages = this.state.messages;
         return messages.length ? messages[messages.length - 1].id : 0;

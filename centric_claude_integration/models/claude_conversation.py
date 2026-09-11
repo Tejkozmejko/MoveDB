@@ -1669,6 +1669,55 @@ Rules:
         return self._conversation_payload(conv)
 
     @api.model
+    def apply_all_workspace_operations(self, conversation_id):
+        """The user answered Yes to every change still waiting, in one go.
+
+        In the order Claude proposed them, because a later proposal may lean on
+        an earlier one - a task on the project created just before it. For the
+        same reason the run stops at the first change that fails: carrying on
+        would apply changes that assumed the failed one had worked. What was
+        applied stays applied, the failure is recorded against its change, and
+        everything after it is left waiting for its own answer.
+        """
+        conv = self.browse(int(conversation_id)).exists()
+        if not conv:
+            raise UserError(_("Claude conversation not found."))
+        conv._check_owner()
+        pending = conv.operation_ids.filtered(
+            lambda operation: operation.state == "proposed"
+        ).sorted("id")
+        if not pending:
+            raise UserError(_("There are no changes waiting for approval."))
+
+        results, failed = [], None
+        for operation in pending:
+            applied, outcome = operation._apply_in_batch()
+            if not applied:
+                failed = (operation, outcome)
+                break
+            results.append(outcome)
+
+        lines = [_("Confirmed all by %(user)s: %(done)s of %(total)s applied.") % {
+            "user": self.env.user.name, "done": len(results), "total": len(pending),
+        }]
+        lines += ["- %s" % result for result in results]
+        if failed:
+            lines.append(_('Stopped at "%(summary)s": %(error)s') % {
+                "summary": failed[0].summary, "error": failed[1][:500],
+            })
+            left = len(pending) - len(results) - 1
+            if left:
+                lines.append(_("%s change(s) after it are still waiting.") % left)
+        # One entry for the whole answer, so the transcript shows what the user
+        # agreed to and Claude can see on its next turn where the run stopped.
+        self.env["centric.claude.message"].create({
+            "conversation_id": conv.id,
+            "role": "assistant",
+            "content": chr(10).join(lines),
+        })
+        return self._conversation_payload(conv)
+
+    @api.model
     def reject_workspace_operation(self, conversation_id, operation_id):
         """The user answered No."""
         conv = self.browse(int(conversation_id)).exists()

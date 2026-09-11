@@ -552,61 +552,97 @@ class CentricClaudeOperation(models.Model):
     def apply(self):
         """Carry out the change, as the user who is approving it."""
         self.ensure_one()
+        record_model = self._check_can_apply()
+        try:
+            result = self._execute(record_model)
+        except Exception as exc:  # noqa: BLE001 - the reason belongs in the UI.
+            # Do not swallow this: Odoo rolls the transaction back on an
+            # exception, so the failure must be raised after being described.
+            self.env.cr.rollback()
+            self._mark_failed(exc)
+            self.env.cr.commit()
+            raise UserError(_("The change could not be applied:\n\n%s") % exc) from exc
+        self._mark_applied(result)
+        return result
+
+    def _apply_in_batch(self):
+        """Apply as one of several, without raising. Returns (applied, message).
+
+        ``apply`` answers a single Yes: on failure it rolls the whole transaction
+        back and commits the failure before raising. Right for one change, and
+        exactly wrong for ten - that rollback would silently undo every change
+        already applied in the same request, while the screen said they had
+        worked. Here each change runs in its own savepoint instead, so a failure
+        undoes that change and nothing else, and nothing is raised, so the
+        request commits the ones that worked together with the failure.
+        """
+        self.ensure_one()
+        try:
+            with self.env.cr.savepoint():
+                result = self._execute(self._check_can_apply())
+                self._mark_applied(result)
+            return True, result
+        except Exception as exc:  # noqa: BLE001 - reported, and the batch stops.
+            # The savepoint undid this change in the database. Drop what it left
+            # in the cache without flushing, or the rolled-back write is pushed
+            # straight back out; earlier changes were flushed when their own
+            # savepoints closed, so nothing of theirs is lost here.
+            self.env.invalidate_all(flush=False)
+            # Only a change still waiting can be marked failed. One answered
+            # meanwhile - in another tab, say - keeps the answer it was given.
+            if self.state == "proposed":
+                self._mark_failed(exc)
+            return False, str(exc)
+
+    def _check_can_apply(self):
+        """Refuse a change that is not ours to apply; return the model it targets."""
+        self.ensure_one()
         if self.state != "proposed":
             raise UserError(_("This change is %s, so it cannot be applied.") % self.state)
         if self.user_id != self.env.user and not self.env.user.has_group(
             "centric_claude_integration.group_claude_admin"
         ):
             raise AccessError(_("You can only apply changes from your own conversations."))
-
-        data = self.env["centric.claude.data"]
         # Re-check permission at apply time. The proposal may be minutes old and
         # the user's rights, or the administrator's settings, may have changed.
         operation = {"create": "create", "write": "write",
                      "unlink": "unlink", "method": "write"}[self.kind]
-        record_model = data._require_write(self.model_name, operation=operation)
+        return self.env["centric.claude.data"]._require_write(
+            self.model_name, operation=operation
+        )
 
-        try:
-            if self.kind == "create":
-                created = record_model.create(
-                    data._validate_values(record_model, self._values())
-                )
-                result = _("Created %(name)s (id %(id)s)") % {
-                    "name": created.display_name, "id": created.id
-                }
-                self.record_ids = str(created.id)
-            else:
-                records = record_model.browse(self._target_ids()).exists()
-                if not records:
-                    raise UserError(_("Those records no longer exist."))
-                if self.kind == "write":
-                    records.write(data._validate_values(record_model, self._values()))
-                    result = _("Updated %s record(s)") % len(records)
-                elif self.kind == "unlink":
-                    names = ", ".join(records.mapped("display_name")[:10])
-                    records.unlink()
-                    result = _("Deleted %(count)s record(s): %(names)s") % {
-                        "count": len(records), "names": names
-                    }
-                else:
-                    returned = self._run_method(records)
-                    result = _("Ran %(method)s on %(count)s record(s). Result: %(result)s") % {
-                        "method": self.method, "count": len(records),
-                        "result": str(returned)[:500],
-                    }
-        except Exception as exc:  # noqa: BLE001 - the reason belongs in the UI.
-            # Do not swallow this: Odoo rolls the transaction back on an
-            # exception, so the failure must be raised after being described.
-            self.env.cr.rollback()
-            self.write({"state": "failed", "error": str(exc)[:2000]})
-            self.env.cr.commit()
-            self.conversation_id._audit(
-                "data_apply", details=_("%(kind)s on %(model)s failed: %(error)s") % {
-                    "kind": self.kind, "model": self.model_name, "error": str(exc)[:300]
-                }, success=False,
+    def _execute(self, record_model):
+        """Make the change and describe what happened. Raises on failure."""
+        self.ensure_one()
+        data = self.env["centric.claude.data"]
+        if self.kind == "create":
+            created = record_model.create(
+                data._validate_values(record_model, self._values())
             )
-            raise UserError(_("The change could not be applied:\n\n%s") % exc) from exc
+            self.record_ids = str(created.id)
+            return _("Created %(name)s (id %(id)s)") % {
+                "name": created.display_name, "id": created.id
+            }
+        records = record_model.browse(self._target_ids()).exists()
+        if not records:
+            raise UserError(_("Those records no longer exist."))
+        if self.kind == "write":
+            records.write(data._validate_values(record_model, self._values()))
+            return _("Updated %s record(s)") % len(records)
+        if self.kind == "unlink":
+            names = ", ".join(records.mapped("display_name")[:10])
+            records.unlink()
+            return _("Deleted %(count)s record(s): %(names)s") % {
+                "count": len(records), "names": names
+            }
+        returned = self._run_method(records)
+        return _("Ran %(method)s on %(count)s record(s). Result: %(result)s") % {
+            "method": self.method, "count": len(records),
+            "result": str(returned)[:500],
+        }
 
+    def _mark_applied(self, result):
+        self.ensure_one()
         self.write({
             "state": "applied",
             "result": result,
@@ -619,7 +655,15 @@ class CentricClaudeOperation(models.Model):
                 "kind": self.kind, "model": self.model_name, "result": result
             },
         )
-        return result
+
+    def _mark_failed(self, exc):
+        self.ensure_one()
+        self.write({"state": "failed", "error": str(exc)[:2000]})
+        self.conversation_id._audit(
+            "data_apply", details=_("%(kind)s on %(model)s failed: %(error)s") % {
+                "kind": self.kind, "model": self.model_name, "error": str(exc)[:300]
+            }, success=False,
+        )
 
     def _run_method(self, records):
         """Call a public model method, e.g. action_post on an invoice."""

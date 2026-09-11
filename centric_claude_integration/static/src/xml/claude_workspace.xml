@@ -522,6 +522,19 @@
                                         </div>
                                     </t>
 
+                                    <div t-if="pendingOperations.length &gt; 1" class="o_cc_confirm">
+                                        <div class="o_cc_confirm_actions">
+                                            <span class="o_cc_hint flex-grow-1">
+                                                <t t-esc="pendingOperations.length"/> changes are waiting for your answer.
+                                            </span>
+                                            <button class="btn btn-sm btn-primary"
+                                                    t-att-disabled="state.busy"
+                                                    t-on-click="() => this.answerAllOperations()">
+                                                <i class="fa fa-check-square-o me-1"/>Yes to all
+                                            </button>
+                                        </div>
+                                    </div>
+
                                     <t t-foreach="pendingOperations" t-as="op" t-key="op.id">
                                         <div class="o_cc_confirm">
                                             <div class="o_cc_confirm_head">

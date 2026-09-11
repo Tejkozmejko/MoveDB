@@ -592,6 +592,42 @@ class TestClaudeWorkspace(TransactionCase):
             self.env["res.partner"].search_count([("name", "=", "Claude Once Co")]), 1
         )
 
+    def test_yes_to_all_applies_every_waiting_change(self):
+        conversation = self._conversation()
+        for name in ("Claude All One", "Claude All Two", "Claude All Three"):
+            conversation._propose_change(
+                "create", "res.partner", "", '{"name": "%s"}' % name, "Add"
+            )
+        self.Conversation.apply_all_workspace_operations(conversation.id)
+        self.assertEqual(
+            self.env["res.partner"].search_count([("name", "like", "Claude All ")]), 3
+        )
+        self.assertEqual(set(conversation.operation_ids.mapped("state")), {"applied"})
+
+    def test_yes_to_all_stops_at_a_failure_and_keeps_what_worked(self):
+        conversation = self._conversation()
+        doomed = self.env["res.partner"].create({"name": "Claude Doomed Co"})
+        first = conversation._propose_change(
+            "create", "res.partner", "", '{"name": "Claude Before Co"}', "Add"
+        )
+        broken = conversation._propose_change(
+            "write", "res.partner", str(doomed.id), '{"name": "Renamed"}', "Rename"
+        )
+        after = conversation._propose_change(
+            "create", "res.partner", "", '{"name": "Claude After Co"}', "Add"
+        )
+        # Gone by the time the user answers, so the rename fails at apply time.
+        doomed.unlink()
+
+        self.Conversation.apply_all_workspace_operations(conversation.id)
+
+        Operation = self.env["centric.claude.operation"]
+        self.assertEqual(Operation.browse(first["operation_id"]).state, "applied")
+        self.assertEqual(Operation.browse(broken["operation_id"]).state, "failed")
+        self.assertEqual(Operation.browse(after["operation_id"]).state, "proposed")
+        self.assertTrue(self.env["res.partner"].search([("name", "=", "Claude Before Co")]))
+        self.assertFalse(self.env["res.partner"].search([("name", "=", "Claude After Co")]))
+
     def test_a_credential_field_can_never_be_set(self):
         conversation = self._conversation()
         with self.assertRaises(AccessError):
