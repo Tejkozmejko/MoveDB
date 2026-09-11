@@ -19,7 +19,14 @@ class CentricClaudeAgentController(http.Controller):
     # Odoo 19 renamed the JSON-RPC route type; "json" still works but warns on
     # every import. The wire format is unchanged, so the bridge needs no edit.
     _MAX_FILE_BYTES = 512000
-    _MAX_FILES_PER_TURN = 40
+    # How many files one turn may send back. They all arrive in this single
+    # request, and staging each one costs one or two GitHub API calls on the
+    # token the whole team shares, so this bounds how long the request runs.
+    # It is also the net that catches a turn diffed against the wrong branch -
+    # one reported 237 changed files before Claude had edited anything. Raised
+    # from 40, which was never measured: past the limit a turn loses all of its
+    # work, so the number should be generous, not tight.
+    _MAX_FILES_PER_TURN = 100
 
     # -- authentication ---------------------------------------------------
     def _agent_check(self):
