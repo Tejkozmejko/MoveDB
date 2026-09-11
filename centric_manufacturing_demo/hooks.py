@@ -164,7 +164,7 @@ def _set_costing_policy(env, company, categories):
     The switch is also only safe here, before the first receipt: Odoo refuses
     to change the valuation of a category that already holds valued stock,
     because it cannot retrospectively write the journal entries the earlier
-    moves never made. A category that already has layers is therefore left
+    moves never made. A category that already holds stock is therefore left
     alone and named in the warning.
 
     Every category is handled inside its own savepoint, and the savepoint opens
@@ -206,7 +206,6 @@ def _set_costing_policy(env, company, categories):
         )
         return moved
 
-    Layer = env["stock.valuation.layer"]
     for name, categ in categories.items():
         try:
             with env.cr.savepoint():
@@ -219,9 +218,18 @@ def _set_costing_policy(env, company, categories):
                 if not journal or not account:
                     continue
                 # An existing category carried over from an earlier install may
-                # already be holding stock; only a category with no layers can
-                # be converted.
-                if Layer.search_count([("product_id.categ_id", "=", categ.id)]):
+                # already be holding stock; only a category with none can be
+                # converted. Asked of stock.quant, not stock.valuation.layer:
+                # Odoo 19 removed the layer model when it rebuilt valuation
+                # around the stock move, and looking it up raised KeyError
+                # *outside* this savepoint - which rolled back the entire seed,
+                # products and all, on every install since automated valuation
+                # was added. The lookup now sits inside the savepoint too, so
+                # the next model this function outlives costs one category
+                # its automated valuation, not the whole demo.
+                if env["stock.quant"].search_count(
+                    [("product_id.categ_id", "=", categ.id), ("quantity", "!=", 0)]
+                ):
                     continue
                 categ.property_stock_journal = journal.id
                 categ.property_stock_valuation_account_id = account.id
