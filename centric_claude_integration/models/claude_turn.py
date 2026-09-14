@@ -366,6 +366,12 @@ class CentricClaudeTurn(models.Model):
                 : self.env["centric.claude.project"].MAX_INSTRUCTIONS
             ],
             "prompt": self.prompt,
+            # Which saved Claude Code session to resume, and a checksum so the
+            # bridge downloads it only when its own copy is missing or stale.
+            # The file itself is fetched separately from /agent/session: a
+            # session runs to megabytes and claiming a turn has to stay small.
+            "session_id": conversation.agent_session_id or "",
+            "session_sha": conversation.agent_session_sha or "",
             "developer_mode": self.developer_mode,
             "base_branch": self.base_branch or "",
             "review_branch": self.review_branch or "",

@@ -97,6 +97,15 @@
                         </setting>
                     </block>
 
+                    <block title="Chat Memory" name="centric_claude_chat_memory">
+                        <setting string="Forget Chat Memory After (days)" help="With the local agent backend each chat keeps Claude's saved session, so the next question picks up where the last left off. It is deleted once the chat is inactive this long; the messages stay, and the chat continues from them. Set 0 to keep sessions forever.">
+                            <field name="centric_claude_session_retention_days"/>
+                        </setting>
+                        <setting string="Maximum Chat Memory Size (MB)" help="Largest compressed session kept per chat. A longer one is not saved, and that chat starts a fresh session from its messages.">
+                            <field name="centric_claude_session_max_mb"/>
+                        </setting>
+                    </block>
+
                     <block title="Code Permissions" name="centric_claude_code_permissions">
                         <setting string="Allow Source Code Reading" help="Code Reader, Developer and Administrator users can browse approved repository modules.">
                             <field name="centric_claude_code_read_enabled"/>

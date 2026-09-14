@@ -129,6 +129,22 @@ class ResConfigSettings(models.TransientModel):
              "filestore does not grow forever. Transcripts are kept. Set 0 to "
              "keep images indefinitely.",
     )
+    centric_claude_session_retention_days = fields.Integer(
+        string="Forget Chat Memory After (days)",
+        default=30,
+        config_parameter="centric_claude.session_retention_days",
+        help="A chat's saved Claude session - what lets the next question pick "
+             "up where the last one left off - is deleted once the chat has been "
+             "inactive this long. The messages are kept, and the chat carries on "
+             "from them with a fresh session. Set 0 to keep sessions forever.",
+    )
+    centric_claude_session_max_mb = fields.Float(
+        string="Maximum Chat Memory Size (MB)",
+        default=5.0,
+        config_parameter="centric_claude.session_max_mb",
+        help="Largest compressed session kept per chat. A longer one is not "
+             "saved, and that chat starts a fresh session from its messages.",
+    )
     centric_claude_code_write_enabled = fields.Boolean(
         string="Allow Code Modifications",
         default=False,
