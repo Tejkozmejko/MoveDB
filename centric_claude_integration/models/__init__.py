@@ -6,6 +6,7 @@ from . import claude_data
 from . import claude_attachment
 from . import claude_project
 from . import claude_conversation
+from . import claude_session
 from . import claude_agent
 from . import claude_turn
 from . import claude_screen

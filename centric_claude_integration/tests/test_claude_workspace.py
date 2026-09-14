@@ -1,5 +1,7 @@
 import ast
 import base64
+import gzip
+import hashlib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -984,6 +986,79 @@ class TestClaudeWorkspace(TransactionCase):
         attachment = self.env["centric.claude.attachment"].browse(summary["id"])
         self.assertEqual(base64.b64decode(attachment.datas), self.PNG_BYTES)
         self.assertEqual(attachment.file_size, len(self.PNG_BYTES))
+
+    # -- saved Claude Code sessions ---------------------------------------
+    SESSION_ID = "8a7759b8-f1f5-4327-8b94-7276d8689ea3"
+    SESSION_RAW = b'{"type":"user","message":"remember 4817"}\n'
+
+    def _session_upload(self):
+        return (
+            base64.b64encode(gzip.compress(self.SESSION_RAW)).decode(),
+            hashlib.sha256(self.SESSION_RAW).hexdigest(),
+        )
+
+    def test_a_saved_session_round_trips_and_rides_on_the_turn(self):
+        self._configure(**{"centric_claude.backend": "agent"})
+        conversation = self._conversation()
+        data, sha = self._session_upload()
+        result = conversation._store_agent_session(self.SESSION_ID, data, sha)
+        self.assertTrue(result["stored"])
+
+        downloaded = conversation._agent_session_payload()
+        self.assertEqual(downloaded["session_id"], self.SESSION_ID)
+        self.assertEqual(downloaded["sha"], sha)
+        self.assertEqual(gzip.decompress(base64.b64decode(downloaded["data"])), self.SESSION_RAW)
+
+        self.Conversation.send_workspace_message(conversation.id, "carry on")
+        turn = self.env["centric.claude.turn"].search([
+            ("conversation_id", "=", conversation.id)
+        ])
+        payload = turn._payload_for_agent()
+        self.assertEqual(payload["session_id"], self.SESSION_ID)
+        self.assertEqual(payload["session_sha"], sha)
+        # The file is fetched on its own; claiming a turn must stay small.
+        self.assertNotIn(data, str(payload))
+
+    def test_a_session_over_the_size_cap_is_dropped_not_kept_stale(self):
+        conversation = self._conversation()
+        data, sha = self._session_upload()
+        conversation._store_agent_session(self.SESSION_ID, data, sha)
+        self.params.set_param("centric_claude.session_max_mb", "0.000001")
+        result = conversation._store_agent_session(self.SESSION_ID, data, sha)
+        self.assertFalse(result["stored"])
+        self.assertFalse(conversation.agent_session_id)
+
+    def test_a_session_that_is_not_gzip_is_refused(self):
+        conversation = self._conversation()
+        with self.assertRaises(UserError):
+            conversation._store_agent_session(
+                self.SESSION_ID, base64.b64encode(self.SESSION_RAW).decode(),
+                hashlib.sha256(self.SESSION_RAW).hexdigest(),
+            )
+
+    def test_inactive_sessions_are_forgotten_and_the_messages_kept(self):
+        conversation = self._conversation()
+        self.env["centric.claude.message"].create({
+            "conversation_id": conversation.id, "role": "user", "content": "hi",
+        })
+        conversation._store_agent_session(self.SESSION_ID, *self._session_upload())
+        self.params.set_param("centric_claude.session_retention_days", "30")
+        conversation.sudo().write({
+            "agent_session_updated": fields.Datetime.subtract(fields.Datetime.now(), days=60),
+        })
+        self.Conversation._gc_agent_sessions()
+        self.assertFalse(conversation.agent_session_id)
+        self.assertTrue(conversation.message_ids)
+
+    def test_session_retention_of_zero_keeps_sessions(self):
+        conversation = self._conversation()
+        conversation._store_agent_session(self.SESSION_ID, *self._session_upload())
+        self.params.set_param("centric_claude.session_retention_days", "0")
+        conversation.sudo().write({
+            "agent_session_updated": fields.Datetime.subtract(fields.Datetime.now(), days=900),
+        })
+        self.Conversation._gc_agent_sessions()
+        self.assertEqual(conversation.agent_session_id, self.SESSION_ID)
 
     def test_deleting_a_chat_removes_its_images(self):
         conversation = self._conversation()
