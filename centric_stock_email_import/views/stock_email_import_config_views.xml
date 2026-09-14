@@ -4,7 +4,7 @@
         <field name="name">stock.email.import.config.list</field>
         <field name="model">stock.email.import.config</field>
         <field name="arch" type="xml">
-            <list>
+            <list class="o_sei_view">
                 <field name="name"/>
                 <field name="alias_full_name" string="Email Address" widget="CopyClipboardChar"/>
                 <field name="user_id" widget="many2one_avatar_user"/>
