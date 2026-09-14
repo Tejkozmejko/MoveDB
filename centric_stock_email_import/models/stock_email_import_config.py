@@ -68,6 +68,8 @@ class StockEmailImportConfig(models.Model):
     )
     template_file = fields.Binary(attachment=True, readonly=True)
     import_count = fields.Integer(compute="_compute_import_count")
+    done_count = fields.Integer(compute="_compute_import_count")
+    attention_count = fields.Integer(compute="_compute_import_count")
 
     _company_uniq = models.Constraint(
         "UNIQUE(company_id)",
@@ -76,11 +78,16 @@ class StockEmailImportConfig(models.Model):
 
     def _compute_import_count(self):
         data = self.env["stock.email.import"]._read_group(
-            [("config_id", "in", self.ids)], ["config_id"], ["__count"],
+            [("config_id", "in", self.ids)], ["config_id", "state"], ["__count"],
         )
-        counts = {config.id: count for config, count in data}
+        counts = {}
+        for config, state, count in data:
+            counts.setdefault(config.id, {})[state] = count
         for config in self:
-            config.import_count = counts.get(config.id, 0)
+            by_state = counts.get(config.id, {})
+            config.import_count = sum(by_state.values())
+            config.done_count = by_state.get("done", 0)
+            config.attention_count = by_state.get("failed", 0) + by_state.get("rejected", 0)
 
     @api.constrains("user_id", "company_id")
     def _check_user_rights(self):
@@ -132,14 +139,15 @@ class StockEmailImportConfig(models.Model):
 
     def action_view_imports(self):
         self.ensure_one()
-        return {
-            "type": "ir.actions.act_window",
-            "name": _("Stock Email Imports"),
-            "res_model": "stock.email.import",
-            "view_mode": "list,form",
-            "domain": [("config_id", "=", self.id)],
-            "context": {"default_config_id": self.id},
-        }
+        action = self.env["ir.actions.act_window"]._for_xml_id(
+            "centric_stock_email_import.action_stock_email_import")
+        action["domain"] = [("config_id", "=", self.id)]
+        context = {"default_config_id": self.id}
+        filter_name = self.env.context.get("import_filter")
+        if filter_name:
+            context["search_default_%s" % filter_name] = 1
+        action["context"] = context
+        return action
 
     def action_download_template(self):
         """A starter sheet whose headers are the first name of each mapping."""

@@ -7,13 +7,13 @@
               groups="stock.group_stock_user"/>
 
     <menuitem id="menu_stock_email_import"
-              name="Imports"
+              name="Stocktakes"
               parent="menu_stock_email_import_root"
               action="action_stock_email_import"
               sequence="10"/>
 
     <menuitem id="menu_stock_email_import_config"
-              name="Configuration"
+              name="Mailboxes"
               parent="menu_stock_email_import_root"
               action="action_stock_email_import_config"
               sequence="20"
