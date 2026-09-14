@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <menuitem id="menu_stock_email_import_root"
+              name="Stock Email Import"
+              parent="stock.menu_stock_root"
+              sequence="90"
+              groups="stock.group_stock_user"/>
+
+    <menuitem id="menu_stock_email_import"
+              name="Imports"
+              parent="menu_stock_email_import_root"
+              action="action_stock_email_import"
+              sequence="10"/>
+
+    <menuitem id="menu_stock_email_import_config"
+              name="Configuration"
+              parent="menu_stock_email_import_root"
+              action="action_stock_email_import_config"
+              sequence="20"
+              groups="stock.group_stock_manager"/>
+
+    <menuitem id="menu_stock_email_import_column"
+              name="Column Mapping"
+              parent="menu_stock_email_import_root"
+              action="action_stock_email_import_column"
+              sequence="30"
+              groups="stock.group_stock_manager"/>
+</odoo>

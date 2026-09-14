@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- noupdate: administrators extend these header names for their own
+         sheets, and an upgrade must not undo that. -->
+    <data noupdate="1">
+        <record id="column_product_code" model="stock.email.import.column">
+            <field name="sequence">10</field>
+            <field name="target">product_code</field>
+            <field name="header_names">Product Code, Internal Reference, Reference, Default Code, SKU, Item Code, Code, Product Ref</field>
+        </record>
+        <record id="column_barcode" model="stock.email.import.column">
+            <field name="sequence">20</field>
+            <field name="target">barcode</field>
+            <field name="header_names">Barcode, EAN, UPC, GTIN</field>
+        </record>
+        <record id="column_product_name" model="stock.email.import.column">
+            <field name="sequence">30</field>
+            <field name="target">product_name</field>
+            <field name="header_names">Name, Product Name, Product, Description, Item, Item Name</field>
+        </record>
+        <record id="column_category" model="stock.email.import.column">
+            <field name="sequence">40</field>
+            <field name="target">category</field>
+            <field name="header_names">Category, Product Category</field>
+        </record>
+        <record id="column_quantity" model="stock.email.import.column">
+            <field name="sequence">50</field>
+            <field name="target">quantity</field>
+            <field name="header_names">Quantity, Counted Quantity, Counted Qty, Qty, Counted, Count, Stock Count, On Hand, Qty On Hand</field>
+        </record>
+        <record id="column_location" model="stock.email.import.column">
+            <field name="sequence">60</field>
+            <field name="target">location</field>
+            <field name="header_names">Location, Bin, Stock Location</field>
+        </record>
+        <record id="column_lot" model="stock.email.import.column">
+            <field name="sequence">70</field>
+            <field name="target">lot</field>
+            <field name="header_names">Lot, Lot Number, Lot/Serial Number, Serial, Serial Number, Batch, Batch Number</field>
+        </record>
+        <record id="column_price" model="stock.email.import.column">
+            <field name="sequence">80</field>
+            <field name="target">price</field>
+            <field name="header_names">Price, Unit Price, Cost, Unit Cost</field>
+        </record>
+    </data>
+</odoo>

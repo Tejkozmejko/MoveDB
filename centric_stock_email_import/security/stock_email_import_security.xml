@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="rule_stock_email_import_company" model="ir.rule">
+        <field name="name">Stock Email Import: multi-company</field>
+        <field name="model_id" ref="model_stock_email_import"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="rule_stock_email_import_line_company" model="ir.rule">
+        <field name="name">Stock Email Import Line: multi-company</field>
+        <field name="model_id" ref="model_stock_email_import_line"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="rule_stock_email_import_config_company" model="ir.rule">
+        <field name="name">Stock Email Import Configuration: multi-company</field>
+        <field name="model_id" ref="model_stock_email_import_config"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+</odoo>

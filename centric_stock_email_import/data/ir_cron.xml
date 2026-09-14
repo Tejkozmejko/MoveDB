@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Incoming emails wake this job immediately (ir.cron._trigger); the
+         hourly run only catches anything left waiting after a restart. -->
+    <record id="ir_cron_process_stock_email_imports" model="ir.cron">
+        <field name="name">Stock Email Import: apply waiting sheets</field>
+        <field name="model_id" ref="model_stock_email_import"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_process_pending()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">hours</field>
+        <field name="active" eval="True"/>
+    </record>
+
+</odoo>

@@ -1,0 +1,400 @@
+import logging
+
+import psycopg2
+
+from odoo import SUPERUSER_ID, _, api, fields, models
+
+_logger = logging.getLogger(__name__)
+
+# Arbitrary but fixed key for the advisory lock that serialises heartbeat
+# writes across workers. Any constant works as long as nothing else uses it.
+_HEARTBEAT_LOCK_KEY = 0x0C1A0DE1
+
+# The same idea for the stale-turn sweep, which every worker also runs on
+# every poll. One sweeper is enough; the rest gain nothing by queueing.
+_RECLAIM_LOCK_KEY = 0x0C1A0DE2
+
+
+class CentricClaudeTurn(models.Model):
+    """One queued request for the local Claude Code agent.
+
+    Odoo.sh cannot run the Claude Code CLI itself, so the developer's machine
+    runs a small bridge that claims pending turns over HTTPS, executes them with
+    `claude -p` against the local checkout, and posts the result back. This model
+    is the queue: the browser creates a row, the bridge claims and completes it.
+    """
+
+    _name = "centric.claude.turn"
+    _description = "Claude Agent Turn"
+    _order = "id desc"
+
+    conversation_id = fields.Many2one(
+        "centric.claude.conversation",
+        required=True,
+        ondelete="cascade",
+        index=True,
+    )
+    user_id = fields.Many2one(
+        "res.users",
+        required=True,
+        default=lambda self: self.env.user,
+        index=True,
+    )
+    message_id = fields.Many2one(
+        "centric.claude.message",
+        ondelete="set null",
+        index=True,
+        help="The chat message this turn answers. Carries the attachments.",
+    )
+    prompt = fields.Text(required=True)
+    state = fields.Selection(
+        [
+            ("pending", "Waiting for the agent"),
+            ("running", "Running"),
+            ("done", "Done"),
+            ("failed", "Failed"),
+            ("cancelled", "Cancelled"),
+        ],
+        default="pending",
+        required=True,
+        index=True,
+    )
+    developer_mode = fields.Boolean(
+        help="Snapshot of the conversation's Developer Mode when the turn was queued.",
+    )
+    effort = fields.Char(
+        help="Snapshot of the conversation's effort level when the turn was queued.",
+    )
+    base_branch = fields.Char()
+    review_branch = fields.Char()
+    agent_name = fields.Char(help="Identifies the bridge that claimed this turn.")
+    claimed_at = fields.Datetime()
+    finished_at = fields.Datetime()
+    # What the agent is doing right now, so a long turn can say so instead of
+    # sitting on "Running" for two minutes and looking like a hang.
+    progress = fields.Char(copy=False)
+    progress_tools = fields.Integer(
+        default=0, copy=False,
+        help="Tool calls the agent has made so far in this turn.",
+    )
+    assistant_text = fields.Text()
+    error = fields.Text()
+    changed_file_count = fields.Integer(default=0)
+
+    # A turn left running longer than this is assumed dead and can be re-claimed.
+    CLAIM_TIMEOUT_MINUTES = 30
+
+    # How recently a bridge must have polled to count as connected. It polls
+    # every few seconds while busy and every 15 while idle, so a minute is
+    # comfortably longer than a healthy gap.
+    HEARTBEAT_SECONDS = 60
+
+    @api.model
+    def _claim_next(self, agent_name=None, logins=None):
+        """Take the oldest pending turn, atomically. Empty recordset if none.
+
+        Reading a pending row and then writing "running" is two steps, and two
+        bridges polling at the same moment both pass the read before either
+        writes - so the same question gets answered twice, on two machines,
+        from two checkouts. SKIP LOCKED is the standard queue primitive: each
+        caller takes a row nobody else has locked, instead of colliding on the
+        same one.
+
+        `logins` restricts a bridge to particular people, so a team can run one
+        bridge each without answering each other's questions.
+        """
+        domain = [("state", "=", "pending")]
+        if logins:
+            domain.append(("user_id.login", "in", list(logins)))
+        # Narrow with the ORM first, so record rules and the login filter apply,
+        # then lock within that set.
+        candidates = self.search(domain, order="id asc", limit=50)
+        if not candidates:
+            return self.browse(())
+
+        turn = self.browse(())
+        try:
+            # Inside a savepoint, so a failed statement rolls back to here
+            # rather than poisoning the request. Without it the fallback below
+            # was unreachable: PostgreSQL refuses every later command in an
+            # aborted transaction, so the `turn.write` that follows died with
+            # "current transaction is aborted, commands ignored until end of
+            # transaction block" - and every worker's poll failed with it.
+            with self.env.cr.savepoint():
+                self.env.cr.execute(
+                    "SELECT id FROM centric_claude_turn "
+                    "WHERE id IN %s AND state = 'pending' "
+                    "ORDER BY id ASC FOR UPDATE SKIP LOCKED LIMIT 1",
+                    (tuple(candidates.ids),),
+                )
+                row = self.env.cr.fetchone()
+            if row:
+                turn = self.browse(row[0])
+        except psycopg2.errors.SerializationFailure:
+            # Another bridge claimed a candidate and committed after our
+            # snapshot was taken. Under REPEATABLE READ - which is what Odoo
+            # runs - FOR UPDATE does not skip such a row: SKIP LOCKED only
+            # skips rows held by an *uncommitted* lock, so a row already
+            # claimed and committed raises instead. The row is gone either
+            # way, so report an empty queue and let the next poll read a
+            # fresh snapshot.
+            _logger.debug("Claim lost the race to another bridge.")
+            return self.browse(())
+        except Exception:  # noqa: BLE001
+            # No SQL cursor (or a database without SKIP LOCKED): fall back to
+            # the plain read. Still correct for a single bridge, which is the
+            # common case; only concurrent bridges need the lock.
+            # Logged, not swallowed: this used to hide the only description of
+            # what actually went wrong.
+            _logger.warning(
+                "Locking claim failed, falling back to an unlocked read.",
+                exc_info=True,
+            )
+            turn = candidates[:1]
+
+        if not turn:
+            return self.browse(())
+        # The write needs its own savepoint for the same reason the select did.
+        # The unlocked fallback above can hand back a row another bridge has
+        # already claimed, and marking it running then fails to serialise. That
+        # is a lost race, not a broken request - but without a savepoint it
+        # aborts the transaction and the whole poll returns a 500.
+        try:
+            with self.env.cr.savepoint():
+                turn.write({
+                    "state": "running",
+                    "agent_name": (agent_name or "bridge")[:120],
+                    "claimed_at": fields.Datetime.now(),
+                })
+                # write() only fills the cache; the UPDATE runs at the next
+                # flush. Force it here so the failure lands inside the
+                # savepoint instead of escaping to the request's commit.
+                turn.flush_recordset()
+        except psycopg2.errors.SerializationFailure:
+            _logger.debug("Claim lost the race while marking turn running.")
+            self.env.invalidate_all(flush=False)
+            return self.browse(())
+        return turn
+
+    @api.model
+    def _queue_position(self, turn):
+        """How many pending turns are ahead of this one.
+
+        Only counts if turn is pending; running/done/cancelled turns are never
+        queued. This is called on every poll, so we avoid the count when it
+        would be zero anyway.
+        """
+        if not turn:
+            return 0
+        if turn.state != "pending":
+            return 0
+        # Only count pending turns with lower IDs. Indexed search on (state, id).
+        return self.sudo().search_count([
+            ("state", "=", "pending"),
+            ("id", "<", turn.id),
+        ])
+
+    @staticmethod
+    def _heartbeat_is_due(last, now):
+        """True if the recorded heartbeat is old enough to be worth rewriting.
+
+        Written at most every 20 seconds: a poll happens every few seconds and
+        this would otherwise be a database write per poll, all day.
+
+        `last` is a datetime off the agent row, but strings are still accepted
+        so the check does not depend on where the value came from.
+        """
+        if not last:
+            return True
+        if isinstance(last, str):
+            try:
+                last = fields.Datetime.from_string(last)
+            except (TypeError, ValueError):
+                return True
+        if not last:
+            return True
+        return (now - last).total_seconds() >= 20
+
+    @api.model
+    def _record_heartbeat(self, agent_name=None):
+        """Note that a bridge just polled.
+
+        Runs in its own transaction. Several workers poll /claim at once, so
+        the old in-request write had every worker updating the same
+        ir_config_parameter row inside its request transaction: under
+        REPEATABLE READ that raises "could not serialize access due to
+        concurrent update", which poisons the request's transaction and makes
+        the whole /claim retry - for a write whose only purpose is an online
+        indicator. A heartbeat must never be able to fail a claim.
+        """
+        now = fields.Datetime.now()
+        name = (agent_name or "bridge")[:120]
+        # Cheap pre-check on the request's own cursor: skips opening a second
+        # connection on the ~95% of polls that are inside the debounce window.
+        existing = self.env["centric.claude.agent"].sudo().search(
+            [("name", "=", name)], limit=1
+        )
+        if existing and not self._heartbeat_is_due(existing.last_seen, now):
+            return
+        try:
+            with self.env.registry.cursor() as cr:
+                # If another worker is already writing the heartbeat, its write
+                # is as good as ours: drop this one rather than queue on the
+                # row and risk serialising against it.
+                cr.execute(
+                    "SELECT pg_try_advisory_xact_lock(%s)", (_HEARTBEAT_LOCK_KEY,)
+                )
+                if not cr.fetchone()[0]:
+                    return
+                env = api.Environment(cr, SUPERUSER_ID, {})
+                Agent = env["centric.claude.agent"].sudo()
+                # Re-read under the lock: the value may have moved on between
+                # the pre-check and here, and only this read is race-free.
+                agent = Agent.search([("name", "=", name)], limit=1)
+                if agent:
+                    if not self._heartbeat_is_due(agent.last_seen, now):
+                        return
+                    agent.last_seen = now
+                else:
+                    Agent.create({"name": name, "last_seen": now})
+        except psycopg2.Error:
+            # Losing a heartbeat costs an "offline" badge for a few seconds.
+            # Failing the poll costs the developer their turn.
+            _logger.debug("Claude heartbeat write skipped", exc_info=True)
+
+    @api.model
+    def _agent_online(self):
+        """(online, last_seen, name) for the local bridge.
+
+        Two independent signs of life, both read-only. The ping is the
+        deliberate one; a turn claimed moments ago is the incidental one, and
+        it covers a bridge whose ping thread has died or is too old to have
+        one. Claiming work is at least as good evidence of being alive as
+        saying so, and reading it costs nothing - which is the whole reason
+        the poll no longer writes a heartbeat of its own.
+        """
+        now = fields.Datetime.now()
+        agent = self.env["centric.claude.agent"].sudo().search(
+            [], order="last_seen desc", limit=1
+        )
+        name = agent.name if agent else ""
+        raw = fields.Datetime.to_string(agent.last_seen) if agent else ""
+        if agent and (now - agent.last_seen).total_seconds() <= self.HEARTBEAT_SECONDS:
+            return True, raw, name
+
+        recent = self.sudo().search(
+            [("claimed_at", "!=", False)], order="claimed_at desc", limit=1
+        )
+        if recent and (now - recent.claimed_at).total_seconds() <= self.HEARTBEAT_SECONDS:
+            return True, fields.Datetime.to_string(recent.claimed_at), (
+                recent.agent_name or name
+            )
+        return False, raw or "", name
+
+    @api.model
+    def _reclaim_stale(self):
+        """Return abandoned turns to the queue so a restarted bridge picks them up.
+
+        In its own transaction behind an advisory lock, for the same reason the
+        heartbeat is. Every worker runs this on every poll, so the moment one
+        stale turn exists all of them find it and all of them write the same
+        rows. Worse, the write is deferred in the ORM cache, so it did not fail
+        here - it failed at the next flush, which is `_claim_next` entering its
+        savepoint, and reported a traceback pointing at a line that had nothing
+        to do with the cause.
+
+        A sweep skipped because another worker holds the lock is not a loss:
+        that worker is doing the same work, and the next poll is seconds away.
+        """
+        try:
+            with self.env.registry.cursor() as cr:
+                cr.execute(
+                    "SELECT pg_try_advisory_xact_lock(%s)", (_RECLAIM_LOCK_KEY,)
+                )
+                if not cr.fetchone()[0]:
+                    return
+                env = api.Environment(cr, SUPERUSER_ID, {})
+                cutoff = fields.Datetime.subtract(
+                    fields.Datetime.now(), minutes=self.CLAIM_TIMEOUT_MINUTES
+                )
+                stale = env["centric.claude.turn"].sudo().search([
+                    ("state", "=", "running"),
+                    ("claimed_at", "<", cutoff),
+                ])
+                if stale:
+                    stale.write({
+                        "state": "pending", "agent_name": False,
+                        "claimed_at": False,
+                    })
+                    _logger.info(
+                        "Returned %s abandoned turn(s) to the queue.", len(stale)
+                    )
+        except psycopg2.Error:
+            # Same trade as the heartbeat: a missed sweep delays one abandoned
+            # turn, a failed poll costs a developer the turn they are waiting on.
+            _logger.debug("Claude stale-turn sweep skipped", exc_info=True)
+
+    def _payload_for_agent(self):
+        """Everything the bridge needs to run this turn, and nothing more.
+
+        Deliberately excludes every credential: the bridge authenticates with its
+        own token and uses its own Claude Code login.
+        """
+        self.ensure_one()
+        conversation = self.conversation_id
+        history = conversation.message_ids.filtered(
+            lambda msg: msg.role in {"user", "assistant"}
+        ).sorted("id")[-30:]
+        # The level travels with the turn: the tools the local agent may use
+        # depend on the person who asked, not on the bridge.
+        requester = conversation.user_id if conversation.screen_context else self.user_id
+        level = self.env['centric.claude.data'].with_user(
+            requester or self.env.user
+        )._data_access()
+        return {
+            "effort": self.effort or "high",
+            "data_level": level["level"],
+            "can_read_data": level["can_read"],
+            "can_propose_data": level["can_propose"],
+            "turn_id": self.id,
+            "conversation_id": conversation.id,
+            "conversation_name": conversation.name,
+            # A project's standing instructions belong to every turn in it, so
+            # the local agent gets the same context the hosted backend does.
+            "project_name": conversation.project_id.name or "",
+            "project_instructions": (conversation.project_id.instructions or "")[
+                : self.env["centric.claude.project"].MAX_INSTRUCTIONS
+            ],
+            "prompt": self.prompt,
+            "developer_mode": self.developer_mode,
+            "base_branch": self.base_branch or "",
+            "review_branch": self.review_branch or "",
+            "allowed_module_prefix": conversation._param(
+                "centric_claude.allowed_module_prefix", "centric_"
+            ),
+            # Metadata only: the bytes are fetched one at a time from
+            # /agent/attachment, so claiming a turn stays a small request.
+            "attachments": [
+                attachment._agent_summary()
+                for attachment in self.message_id.attachment_ids
+            ],
+            "history": [
+                {
+                    "role": message.role,
+                    "content": message.content,
+                    "attachments": [
+                        attachment._agent_summary()
+                        for attachment in message.attachment_ids
+                    ],
+                }
+                for message in history
+            ],
+        }
+
+    def _fail(self, message):
+        self.ensure_one()
+        self.write({
+            "state": "failed",
+            "error": (message or _("The local Claude agent reported no detail."))[:4000],
+            "finished_at": fields.Datetime.now(),
+        })

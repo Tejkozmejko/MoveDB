@@ -1,0 +1,994 @@
+import ast
+import base64
+from pathlib import Path
+from unittest.mock import patch
+
+import sass
+
+from odoo import fields
+from odoo.exceptions import AccessError, UserError, ValidationError
+from odoo.tests import TransactionCase, tagged
+
+
+@tagged("post_install", "-at_install")
+class TestClaudeWorkspace(TransactionCase):
+    """Offline tests: nothing here contacts Anthropic or GitHub."""
+
+    def setUp(self):
+        super().setUp()
+        self.Conversation = self.env["centric.claude.conversation"]
+        self.params = self.env["ir.config_parameter"].sudo()
+        self._configure()
+
+    def _configure(self, **overrides):
+        values = {
+            "centric_claude.enabled": "True",
+            "centric_claude.api_key": "sk-ant-test",
+            "centric_claude.model": "claude-opus-5",
+            "centric_claude.max_tokens": "16000",
+            "centric_claude.github_owner": "centricmt",
+            "centric_claude.github_repo": "odoo-addons",
+            "centric_claude.allowed_module_prefix": "centric_",
+            "centric_claude.code_read_enabled": "True",
+            "centric_claude.code_write_enabled": "True",
+            "centric_claude.pull_request_enabled": "True",
+        }
+        values.update(overrides)
+        for key, value in values.items():
+            self.params.set_param(key, value)
+
+    def _conversation(self, developer_mode=False):
+        return self.Conversation.create({
+            "name": "Fix Talexio Attendance",
+            "user_id": self.env.user.id,
+            "base_branch": "testing",
+            "developer_mode": developer_mode,
+        })
+
+    # -- helpers ----------------------------------------------------------
+    def test_backend_stylesheets_compile_with_odoo_sass(self):
+        """Compile the addon styles with the compiler used by Odoo's asset builder."""
+        addon = Path(__file__).resolve().parents[1]
+        manifest = ast.literal_eval((addon / "__manifest__.py").read_text(encoding="utf-8"))
+        sources = []
+        for asset in manifest["assets"]["web.assets_backend"]:
+            if asset.endswith(".scss"):
+                with self.subTest(asset=asset):
+                    source = (addon.parent / asset).read_text(encoding="utf-8")
+                    self.assertTrue(sass.compile(string=source))
+                    sources.append(source)
+        self.assertTrue(sources, "No addon stylesheets were checked")
+        self.assertTrue(sass.compile(string="\n".join(sources)))
+
+    def test_unified_diff_is_generated(self):
+        diff = self.Conversation._make_diff(
+            "models/example.py",
+            "value = 1\n",
+            "value = 2\n",
+        )
+        self.assertIn("-value = 1", diff)
+        self.assertIn("+value = 2", diff)
+
+    def test_review_branch_name_is_scoped_to_conversation(self):
+        conversation = self._conversation()
+        branch = conversation._new_review_branch_name()
+        self.assertTrue(branch.startswith(f"claude/odoo-{conversation.id}-fix-talexio-attendance-"))
+
+    def test_default_names_include_the_translated_placeholder(self):
+        """Auto-naming must still fire on a non-English UI."""
+        self.assertIn("New Claude Conversation", self.Conversation._default_names())
+
+    # -- settings ---------------------------------------------------------
+    def test_disabling_a_permission_actually_disables_it(self):
+        """`set_param(key, False)` deletes the row, so these must be stored as text.
+
+        Without the explicit write in res.config.settings.set_values, unticking a
+        permission that defaults to True silently leaves it enabled.
+        """
+        settings = self.env["res.config.settings"].create({
+            "centric_claude_enabled": True,
+            "centric_claude_code_write_enabled": True,
+            "centric_claude_code_read_enabled": False,
+            "centric_claude_pull_request_enabled": False,
+        })
+        settings.set_values()
+
+        self.assertEqual(self.params.get_param("centric_claude.code_read_enabled"), "False")
+        self.assertEqual(self.params.get_param("centric_claude.pull_request_enabled"), "False")
+        access = self.Conversation._workspace_access()
+        self.assertFalse(access["can_read_code"])
+        self.assertFalse(access["can_create_pr"])
+
+    def test_global_switches_close_every_gate(self):
+        self._configure(**{"centric_claude.enabled": "False"})
+        access = self.Conversation._workspace_access()
+        self.assertFalse(access["can_chat"])
+        self.assertFalse(access["can_read_code"])
+        self.assertFalse(access["can_develop"])
+        self.assertFalse(access["can_create_pr"])
+
+    # -- tool surface -----------------------------------------------------
+    def test_tool_schemas_satisfy_strict_tool_use(self):
+        """Strict schemas need `additionalProperties: false` and a `required` list."""
+        conversation = self._conversation(developer_mode=True)
+        tools = conversation._tool_definitions(self.Conversation._workspace_access())
+        self.assertTrue(tools)
+        for tool in tools:
+            schema = tool["input_schema"]
+            self.assertTrue(tool.get("strict"), tool["name"])
+            self.assertIs(schema["additionalProperties"], False, tool["name"])
+            self.assertIn("required", schema, tool["name"])
+            self.assertEqual(
+                set(schema["required"]) - set(schema["properties"]),
+                set(),
+                "%s requires a property it does not declare" % tool["name"],
+            )
+
+    def test_repository_tools_are_hidden_and_blocked_without_read_access(self):
+        self._configure(**{"centric_claude.code_read_enabled": "False"})
+        conversation = self._conversation()
+        access = self.Conversation._workspace_access()
+        names = [tool["name"] for tool in conversation._tool_definitions(access)]
+        self.assertNotIn("read_module_file", names)
+        self.assertNotIn("search_module_code", names)
+        with self.assertRaises(AccessError):
+            conversation._execute_tool(
+                "read_module_file",
+                {"module": "centric_demo", "path": "models/demo.py"},
+                access,
+            )
+
+    def test_stage_tool_requires_developer_mode(self):
+        conversation = self._conversation(developer_mode=False)
+        access = self.Conversation._workspace_access()
+        names = [tool["name"] for tool in conversation._tool_definitions(access)]
+        self.assertNotIn("stage_file_change", names)
+        with self.assertRaises(AccessError):
+            conversation._execute_tool(
+                "stage_file_change",
+                {
+                    "module": "centric_demo",
+                    "path": "models/demo.py",
+                    "new_content": "x",
+                    "summary": "y",
+                },
+                access,
+            )
+
+    def test_developer_mode_denial_is_audited(self):
+        self._configure(**{"centric_claude.code_write_enabled": "False"})
+        conversation = self._conversation()
+        with self.assertRaises(AccessError):
+            self.Conversation.set_workspace_developer_mode(conversation.id, True)
+        denied = self.env["centric.claude.audit.log"].sudo().search([
+            ("conversation_id", "=", conversation.id),
+            ("action", "=", "security_denied"),
+        ])
+        self.assertEqual(len(denied), 1)
+        self.assertFalse(denied.success)
+
+    def test_system_prompt_reflects_the_current_mode(self):
+        conversation = self._conversation(developer_mode=True)
+        access = self.Conversation._workspace_access()
+        self.assertIn("Developer Mode: ON", conversation._system_prompt(access))
+        self.assertIn("stage_file_change", conversation._system_prompt(access))
+        conversation.developer_mode = False
+        self.assertIn("read-only", conversation._system_prompt(access))
+
+    # -- repository sandbox ------------------------------------------------
+    def test_path_traversal_is_rejected(self):
+        """`root` is passed in, so this never touches the network."""
+        github = self.env["centric.claude.github.client"]
+        for path in ("../../other_module/secret.py",
+                     "models/../../other_module/secret.py",
+                     "/../other_module/secret.py",
+                     "..",
+                     "models/..",
+                     ""):
+            with self.assertRaises(Exception, msg="path %r was not rejected" % path):
+                github._validate_module_file("centric_demo", path, root="centric_demo")
+
+    def test_blocked_and_non_text_paths_are_rejected(self):
+        github = self.env["centric.claude.github.client"]
+        for path in (".env", "requirements.txt", "static/description/icon.png"):
+            with self.assertRaises(Exception, msg="path %r was not rejected" % path):
+                github._validate_module_file("centric_demo", path, root="centric_demo")
+        root, full_path = github._validate_module_file(
+            "centric_demo", "models/demo.py", root="centric_demo"
+        )
+        self.assertEqual(root, "centric_demo")
+        self.assertEqual(full_path, "centric_demo/models/demo.py")
+
+    def test_installed_module_filter_respects_the_prefix(self):
+        """`like 'centric_%'` is SQL LIKE, where `_` matches any single character."""
+        conversation = self._conversation()
+        access = self.Conversation._workspace_access()
+        modules = conversation._execute_tool("list_installed_custom_modules", {}, access)
+        prefix = access["allowed_module_prefix"]
+        for module in modules:
+            self.assertTrue(
+                module["name"].startswith(prefix),
+                "%s does not start with %s" % (module["name"], prefix),
+            )
+
+    def test_describe_odoo_model_returns_field_metadata(self):
+        conversation = self._conversation()
+        access = self.Conversation._workspace_access()
+        described = conversation._execute_tool(
+            "describe_odoo_model", {"model": "centric.claude.change"}, access
+        )
+        self.assertTrue(described["found"])
+        self.assertIn("proposed_content", [field["name"] for field in described["fields"]])
+        missing = conversation._execute_tool(
+            "describe_odoo_model", {"model": "no.such.model"}, access
+        )
+        self.assertFalse(missing["found"])
+
+    # -- API request shape -------------------------------------------------
+    def test_request_uses_adaptive_thinking_and_caching(self):
+        captured = {}
+
+        class Response:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"content": [{"type": "text", "text": "OK"}], "stop_reason": "end_turn"}
+
+        def fake_post(url, headers=None, json=None, timeout=None, **kwargs):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["body"] = json
+            return Response()
+
+        with patch("odoo.addons.centric_claude_integration.models.claude_client.requests.post",
+                   fake_post):
+            self.env["centric.claude.client"]._create_message(
+                [{"role": "user", "content": "hello"}],
+                system="be brief",
+                tools=[{
+                    "name": "noop",
+                    "description": "does nothing",
+                    "input_schema": {
+                        "type": "object", "properties": {},
+                        "required": [], "additionalProperties": False,
+                    },
+                    "strict": True,
+                }],
+            )
+
+        body = captured["body"]
+        self.assertEqual(captured["headers"]["anthropic-version"], "2023-06-01")
+        self.assertEqual(captured["headers"]["x-api-key"], "sk-ant-test")
+        self.assertEqual(body["model"], "claude-opus-5")
+        self.assertEqual(body["max_tokens"], 16000)
+        self.assertEqual(body["thinking"], {"type": "adaptive"})
+        self.assertEqual(body["output_config"], {"effort": "high"})
+        self.assertEqual(body["cache_control"], {"type": "ephemeral"})
+        # budget_tokens is rejected by every model this addon targets.
+        self.assertNotIn("budget_tokens", str(body))
+
+    def test_api_key_never_reaches_the_request_body(self):
+        conversation = self._conversation(developer_mode=True)
+        access = self.Conversation._workspace_access()
+        payload = str(conversation._tool_definitions(access)) + conversation._system_prompt(access)
+        self.assertNotIn("sk-ant-test", payload)
+        self.assertNotIn(self.params.get_param("centric_claude.github_token") or "!", payload)
+
+    # -- local agent backend ------------------------------------------------
+    def test_agent_backend_queues_instead_of_calling_anthropic(self):
+        self._configure(**{"centric_claude.backend": "agent"})
+        conversation = self._conversation(developer_mode=True)
+        self.Conversation.send_workspace_message(conversation.id, "fix the importer")
+        turn = self.env["centric.claude.turn"].search([
+            ("conversation_id", "=", conversation.id)
+        ])
+        self.assertEqual(len(turn), 1)
+        self.assertEqual(turn.state, "pending")
+        self.assertEqual(turn.prompt, "fix the importer")
+        self.assertTrue(turn.developer_mode)
+        # The user's message is stored; the reply arrives later from the bridge.
+        self.assertEqual(conversation.message_ids.mapped("role"), ["user"])
+
+    def test_agent_payload_carries_no_credentials(self):
+        self._configure(**{"centric_claude.backend": "agent"})
+        conversation = self._conversation()
+        self.Conversation.send_workspace_message(conversation.id, "hello")
+        turn = self.env["centric.claude.turn"].search([
+            ("conversation_id", "=", conversation.id)
+        ])
+        payload = str(turn._payload_for_agent())
+        for secret in ("sk-ant-test", self.params.get_param("centric_claude.github_token") or "!"):
+            self.assertNotIn(secret, payload)
+
+    def test_cancelling_a_queued_turn(self):
+        self._configure(**{"centric_claude.backend": "agent"})
+        conversation = self._conversation()
+        self.Conversation.send_workspace_message(conversation.id, "hello")
+        payload = self.Conversation.cancel_workspace_turn(conversation.id)
+        self.assertFalse(payload["agent"]["waiting"])
+        turn = self.env["centric.claude.turn"].search([
+            ("conversation_id", "=", conversation.id)
+        ])
+        self.assertEqual(turn.state, "cancelled")
+
+    def test_agent_token_is_generated_and_stored(self):
+        settings = self.env["res.config.settings"].create({})
+        settings.action_generate_agent_token()
+        token = self.params.get_param("centric_claude.agent_token")
+        self.assertTrue(token)
+        self.assertGreaterEqual(len(token), 32)
+
+    # -- creating modules -------------------------------------------------
+    def _github(self, modules):
+        """Patch the module listing so name rules can be tested without GitHub."""
+        return patch.object(
+            type(self.env["centric.claude.github.client"]),
+            "_list_allowed_modules",
+            lambda self, branch=None, tree=None: modules,
+        )
+
+    def test_a_new_module_root_sits_beside_the_existing_ones(self):
+        github = self.env["centric.claude.github.client"]
+        with self._github([
+            {"name": "centric_a", "root": "addons/centric_a"},
+            {"name": "centric_b", "root": "addons/centric_b"},
+            {"name": "centric_c", "root": "centric_c"},
+        ]):
+            self.assertEqual(
+                github._new_module_root("centric_new"), "addons/centric_new"
+            )
+
+    def test_a_new_module_root_defaults_to_the_repository_root(self):
+        github = self.env["centric.claude.github.client"]
+        with self._github([]):
+            self.assertEqual(github._new_module_root("centric_new"), "centric_new")
+
+    def test_a_new_module_must_use_the_approved_prefix(self):
+        github = self.env["centric.claude.github.client"]
+        with self._github([]):
+            with self.assertRaises(UserError):
+                github._new_module_root("other_module")
+
+    def test_a_new_module_name_must_be_a_valid_identifier(self):
+        github = self.env["centric.claude.github.client"]
+        with self._github([]):
+            for name in ("centric mod", "Centric_Mod", "../escape", "9centric", ""):
+                with self.assertRaises(UserError, msg=name):
+                    github._new_module_root(name)
+
+    def test_an_existing_module_cannot_be_recreated(self):
+        github = self.env["centric.claude.github.client"]
+        with self._github([{"name": "centric_a", "root": "centric_a"}]):
+            with self.assertRaises(UserError):
+                github._new_module_root("centric_a")
+
+    def test_creating_a_module_needs_a_manifest(self):
+        conversation = self._conversation(developer_mode=True)
+        with self._github([]):
+            with self.assertRaises(UserError):
+                self.Conversation.create_workspace_module(
+                    conversation.id, "centric_new",
+                    [{"path": "models/thing.py", "content": "X = 1\n"}],
+                )
+
+    def test_creating_a_module_needs_developer_mode(self):
+        conversation = self._conversation(developer_mode=False)
+        with self._github([]):
+            with self.assertRaises(AccessError):
+                self.Conversation.create_workspace_module(
+                    conversation.id, "centric_new",
+                    [{"path": "__manifest__.py", "content": "{}\n"}],
+                )
+
+    def test_creating_a_module_needs_the_write_permission(self):
+        self._configure(**{"centric_claude.code_write_enabled": "False"})
+        conversation = self._conversation(developer_mode=True)
+        with self._github([]):
+            with self.assertRaises(AccessError):
+                self.Conversation.create_workspace_module(
+                    conversation.id, "centric_new",
+                    [{"path": "__manifest__.py", "content": "{}\n"}],
+                )
+
+    def test_a_staged_change_records_its_full_repository_path(self):
+        conversation = self._conversation(developer_mode=True)
+        change = self.env["centric.claude.change"].create({
+            "conversation_id": conversation.id,
+            "module_name": "centric_a",
+            "file_path": "models/thing.py",
+            "full_path": "addons/centric_a/models/thing.py",
+            "is_new_module": True,
+            "proposed_content": "X = 1\n",
+        })
+        self.assertEqual(
+            conversation._pending_module_root("centric_a"), "addons/centric_a"
+        )
+        change.status = "committed"
+        # Once committed the module is real, so it is no longer pending.
+        self.assertIsNone(conversation._pending_module_root("centric_a"))
+
+    # -- odoo data access -------------------------------------------------
+    def _data(self):
+        return self.env["centric.claude.data"]
+
+    def _as_level(self, level):
+        """A fresh user holding exactly one Claude data level."""
+        group = {
+            "user": "centric_claude_integration.group_data_user",
+            "intermediate": "centric_claude_integration.group_data_intermediate",
+            "admin": "centric_claude_integration.group_data_admin",
+        }
+        user = self.env["res.users"].create({
+            "name": "Claude %s" % level,
+            "login": "claude_%s_%s" % (level, self.env.cr.dbname[-4:]),
+            "group_ids": [
+                (4, self.env.ref("base.group_user").id),
+                (4, self.env.ref("centric_claude_integration.group_claude_user").id),
+                (4, self.env.ref(group[level]).id),
+            ],
+        })
+        return self.env(user=user)
+
+    def test_the_three_levels_are_distinct(self):
+        for level in ("user", "intermediate", "admin"):
+            env = self._as_level(level)
+            self.assertEqual(env["centric.claude.data"]._level(), level)
+
+    def test_a_user_without_a_data_group_has_no_level(self):
+        user = self.env["res.users"].create({
+            "name": "Plain", "login": "claude_plain_%s" % self.env.cr.dbname[-4:],
+            "group_ids": [(4, self.env.ref("base.group_user").id)],
+        })
+        self.assertEqual(self.env(user=user)["centric.claude.data"]._level(), "none")
+
+    def test_group_implications_replace_rather_than_append(self):
+        """implied_ids must use (6, 0, ids), never (4, id).
+
+        (4, id) links a group and nothing ever unlinks it: an implication
+        deleted from claude_security.xml would survive every future upgrade,
+        silently granting access the file no longer describes. This bit once -
+        Claude Administrator kept implying Data Administrator after the line
+        was removed, which floored the data dropdown at Administrator.
+        """
+        import os
+        import re
+
+        # Resolve through the addon package rather than __file__, so this works
+        # wherever the test module itself happens to be loaded from.
+        import odoo.addons.centric_claude_integration as addon
+
+        path = os.path.join(
+            os.path.dirname(addon.__file__), "security", "claude_security.xml"
+        )
+        with open(path, encoding="utf-8") as handle:
+            source = handle.read()
+        implications = re.findall(
+            r'name="implied_ids"\s+eval="([^"]+)"', source
+        )
+        self.assertTrue(implications, "no implied_ids found to check")
+        for expression in implications:
+            self.assertNotIn("(4,", expression.replace(" ", ""),
+                             "implied_ids must replace, not append: %s" % expression)
+            self.assertIn("(6,0,", expression.replace(" ", ""),
+                          "implied_ids must use (6, 0, ids): %s" % expression)
+
+    def test_the_code_ladder_implies_no_data_level(self):
+        admin = self.env.ref("centric_claude_integration.group_claude_admin")
+        data_groups = {
+            self.env.ref("centric_claude_integration.group_data_user").id,
+            self.env.ref("centric_claude_integration.group_data_intermediate").id,
+            self.env.ref("centric_claude_integration.group_data_admin").id,
+        }
+        reachable = set(admin.trans_implied_ids.ids) | {admin.id}
+        self.assertFalse(
+            reachable & data_groups,
+            "Claude Administrator still implies a data level, which floors the "
+            "Centric Claude Data dropdown so no lower level can be chosen.",
+        )
+
+    def test_all_three_data_levels_exist(self):
+        for name in ("group_data_user", "group_data_intermediate", "group_data_admin"):
+            group = self.env.ref("centric_claude_integration.%s" % name, False)
+            self.assertTrue(group, "%s is missing" % name)
+            self.assertEqual(
+                group.privilege_id,
+                self.env.ref("centric_claude_integration.res_groups_privilege_claude_data"),
+            )
+
+    def test_the_two_ladders_are_independent(self):
+        """Code access confers no data level, and vice versa.
+
+        They were briefly chained, which had two costs: a developer silently
+        gained the right to read every record, and Odoo floors a privilege
+        dropdown at whatever another group implies, so Administrator became the
+        only选 selectable data level for anyone holding Claude Administrator.
+        """
+        code_admin = self.env["res.users"].create({
+            "name": "Code Only",
+            "login": "claude_codeonly_%s" % self.env.cr.dbname[-4:],
+            "group_ids": [
+                (4, self.env.ref("base.group_user").id),
+                (4, self.env.ref("centric_claude_integration.group_claude_admin").id),
+            ],
+        })
+        self.assertTrue(
+            code_admin.has_group("centric_claude_integration.group_claude_admin")
+        )
+        self.assertEqual(self.env(user=code_admin)["centric.claude.data"]._level(), "none")
+
+        data_admin = self._as_level("admin")
+        self.assertFalse(
+            data_admin["centric.claude.conversation"]._workspace_access()["can_develop"]
+        )
+
+    def test_only_intermediate_and_above_may_change_records(self):
+        self.assertFalse(
+            self._as_level("user")["centric.claude.data"]._data_access()["can_propose"]
+        )
+        for level in ("intermediate", "admin"):
+            self.assertTrue(
+                self._as_level(level)["centric.claude.data"]._data_access()["can_propose"],
+                level,
+            )
+
+    def test_reading_respects_the_users_own_permissions(self):
+        # res.partner is readable by any internal user; the point is that the
+        # query runs as that user rather than as superuser.
+        env = self._as_level("user")
+        result = env["centric.claude.data"].search_records("res.partner", limit=5)
+        self.assertEqual(result["model"], "res.partner")
+        self.assertLessEqual(result["returned"], 5)
+
+    def test_the_parameter_table_holding_our_keys_is_never_readable(self):
+        for level in ("user", "intermediate", "admin"):
+            env = self._as_level(level)
+            with self.assertRaises(AccessError, msg=level):
+                env["centric.claude.data"].search_records("ir.config_parameter")
+
+    def test_password_fields_are_filtered_out(self):
+        fields_seen = self._data()._readable_fields(self.env["res.users"])
+        for name in fields_seen:
+            self.assertNotIn("password", name.lower())
+
+    def test_intermediate_may_not_change_users_or_settings(self):
+        env = self._as_level("intermediate")
+        for model_name in ("res.users", "res.groups", "res.config.settings"):
+            with self.assertRaises(AccessError, msg=model_name):
+                env["centric.claude.data"]._require_write(model_name)
+
+    def test_nobody_may_change_claude_s_own_configuration(self):
+        for level in ("intermediate", "admin"):
+            env = self._as_level(level)
+            for model_name in ("ir.config_parameter", "ir.rule", "ir.model.access",
+                               "centric.claude.conversation"):
+                with self.assertRaises(AccessError, msg="%s/%s" % (level, model_name)):
+                    env["centric.claude.data"]._require_write(model_name)
+
+    def test_a_domain_is_never_evaluated_as_code(self):
+        with self.assertRaises(UserError):
+            self._data().search_records("res.partner", domain="__import__('os').listdir('.')")
+
+    def test_a_change_is_proposed_not_performed(self):
+        conversation = self._conversation()
+        before = self.env["res.partner"].search_count([("name", "=", "Claude Test Co")])
+        result = conversation._propose_change(
+            "create", "res.partner", "", '{"name": "Claude Test Co"}', "Add a contact"
+        )
+        self.assertTrue(result["awaiting_confirmation"])
+        self.assertEqual(
+            self.env["res.partner"].search_count([("name", "=", "Claude Test Co")]), before
+        )
+        operation = self.env["centric.claude.operation"].browse(result["operation_id"])
+        self.assertEqual(operation.state, "proposed")
+        self.assertIn("Claude Test Co", operation.preview)
+
+    def test_confirming_performs_it_and_declining_does_not(self):
+        conversation = self._conversation()
+        yes = conversation._propose_change(
+            "create", "res.partner", "", '{"name": "Claude Yes Co"}', "Add"
+        )
+        no = conversation._propose_change(
+            "create", "res.partner", "", '{"name": "Claude No Co"}', "Add"
+        )
+        self.Conversation.apply_workspace_operation(conversation.id, yes["operation_id"])
+        self.Conversation.reject_workspace_operation(conversation.id, no["operation_id"])
+        self.assertTrue(self.env["res.partner"].search([("name", "=", "Claude Yes Co")]))
+        self.assertFalse(self.env["res.partner"].search([("name", "=", "Claude No Co")]))
+
+    def test_a_confirmation_cannot_be_answered_twice(self):
+        conversation = self._conversation()
+        result = conversation._propose_change(
+            "create", "res.partner", "", '{"name": "Claude Once Co"}', "Add"
+        )
+        self.Conversation.apply_workspace_operation(conversation.id, result["operation_id"])
+        with self.assertRaises(UserError):
+            self.Conversation.apply_workspace_operation(
+                conversation.id, result["operation_id"]
+            )
+        self.assertEqual(
+            self.env["res.partner"].search_count([("name", "=", "Claude Once Co")]), 1
+        )
+
+    def test_yes_to_all_applies_every_waiting_change(self):
+        conversation = self._conversation()
+        for name in ("Claude All One", "Claude All Two", "Claude All Three"):
+            conversation._propose_change(
+                "create", "res.partner", "", '{"name": "%s"}' % name, "Add"
+            )
+        self.Conversation.apply_all_workspace_operations(conversation.id)
+        self.assertEqual(
+            self.env["res.partner"].search_count([("name", "like", "Claude All ")]), 3
+        )
+        self.assertEqual(set(conversation.operation_ids.mapped("state")), {"applied"})
+
+    def test_yes_to_all_stops_at_a_failure_and_keeps_what_worked(self):
+        conversation = self._conversation()
+        doomed = self.env["res.partner"].create({"name": "Claude Doomed Co"})
+        first = conversation._propose_change(
+            "create", "res.partner", "", '{"name": "Claude Before Co"}', "Add"
+        )
+        broken = conversation._propose_change(
+            "write", "res.partner", str(doomed.id), '{"name": "Renamed"}', "Rename"
+        )
+        after = conversation._propose_change(
+            "create", "res.partner", "", '{"name": "Claude After Co"}', "Add"
+        )
+        # Gone by the time the user answers, so the rename fails at apply time.
+        doomed.unlink()
+
+        self.Conversation.apply_all_workspace_operations(conversation.id)
+
+        Operation = self.env["centric.claude.operation"]
+        self.assertEqual(Operation.browse(first["operation_id"]).state, "applied")
+        self.assertEqual(Operation.browse(broken["operation_id"]).state, "failed")
+        self.assertEqual(Operation.browse(after["operation_id"]).state, "proposed")
+        self.assertTrue(self.env["res.partner"].search([("name", "=", "Claude Before Co")]))
+        self.assertFalse(self.env["res.partner"].search([("name", "=", "Claude After Co")]))
+
+    def test_a_credential_field_can_never_be_set(self):
+        conversation = self._conversation()
+        with self.assertRaises(AccessError):
+            conversation._propose_change(
+                "create", "res.users", "", '{"password": "hunted"}', "nope"
+            )
+
+    def test_data_tools_are_offered_by_level(self):
+        conversation = self._conversation()
+        readonly = self._as_level("user")["centric.claude.conversation"]
+        names = {
+            tool["name"]
+            for tool in readonly._data_tool_definitions(readonly._workspace_access())
+        }
+        self.assertIn("search_odoo_records", names)
+        self.assertNotIn("propose_odoo_change", names)
+
+        writer = self._as_level("intermediate")["centric.claude.conversation"]
+        names = {
+            tool["name"]
+            for tool in writer._data_tool_definitions(writer._workspace_access())
+        }
+        self.assertIn("propose_odoo_change", names)
+
+    def test_data_tool_schemas_satisfy_strict_tool_use(self):
+        conversation = self._conversation()
+        access = self.Conversation._workspace_access()
+        for tool in conversation._data_tool_definitions(access):
+            schema = tool["input_schema"]
+            self.assertIs(schema["additionalProperties"], False, tool["name"])
+            self.assertEqual(sorted(schema["required"]), sorted(schema["properties"]),
+                             tool["name"])
+
+    def test_no_tool_is_declared_twice(self):
+        """The Messages API rejects a tool list with duplicate names."""
+        conversation = self._conversation(developer_mode=True)
+        access = self.Conversation._workspace_access()
+        names = [tool["name"] for tool in conversation._tool_definitions(access)]
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_turning_the_global_switch_off_closes_the_gate(self):
+        self._configure(**{"centric_claude.data_enabled": "False"})
+        access = self._data()._data_access()
+        self.assertEqual(access["level"], "none")
+        with self.assertRaises(AccessError):
+            self._data().search_records("res.partner")
+
+    # -- projects, renaming and deletion -----------------------------------
+    def test_bootstrap_carries_projects_and_chats(self):
+        self._conversation()
+        self.env["centric.claude.project"].create_workspace_project("Website")
+        data = self.Conversation.workspace_bootstrap()
+        self.assertIn("projects", data)
+        self.assertIn("conversations", data)
+        self.assertEqual([p["name"] for p in data["projects"]], ["Website"])
+
+    def test_a_chat_can_be_filed_and_unfiled(self):
+        conversation = self._conversation()
+        created = self.env["centric.claude.project"].create_workspace_project("Website")
+        project_id = created["project_id"]
+
+        payload = self.Conversation.set_workspace_conversation_project(
+            conversation.id, project_id
+        )
+        self.assertEqual(payload["conversation"]["project_id"], project_id)
+        self.assertEqual(
+            [p["conversation_count"] for p in payload["projects"]], [1]
+        )
+
+        payload = self.Conversation.set_workspace_conversation_project(
+            conversation.id, False
+        )
+        self.assertFalse(payload["conversation"]["project_id"])
+
+    def test_project_instructions_reach_the_system_prompt(self):
+        conversation = self._conversation()
+        created = self.env["centric.claude.project"].create_workspace_project("Website")
+        self.env["centric.claude.project"].set_workspace_project_instructions(
+            created["project_id"], "Always check the POS session first."
+        )
+        self.Conversation.set_workspace_conversation_project(
+            conversation.id, created["project_id"]
+        )
+        access = self.Conversation._workspace_access()
+        prompt = conversation._system_prompt(access)
+        self.assertIn("Always check the POS session first.", prompt)
+        self.assertIn("Project: Website", prompt)
+
+    def test_a_chat_without_a_project_gets_no_project_prompt(self):
+        conversation = self._conversation()
+        self.assertEqual(conversation._project_prompt(), "")
+
+    def test_project_instructions_travel_with_a_queued_turn(self):
+        self._configure(**{"centric_claude.backend": "agent"})
+        conversation = self._conversation()
+        created = self.env["centric.claude.project"].create_workspace_project("Website")
+        self.env["centric.claude.project"].set_workspace_project_instructions(
+            created["project_id"], "Prefer the smallest change."
+        )
+        self.Conversation.set_workspace_conversation_project(
+            conversation.id, created["project_id"]
+        )
+        self.Conversation.send_workspace_message(conversation.id, "hello")
+        turn = self.env["centric.claude.turn"].search([
+            ("conversation_id", "=", conversation.id)
+        ])
+        payload = turn._payload_for_agent()
+        self.assertEqual(payload["project_name"], "Website")
+        self.assertEqual(payload["project_instructions"], "Prefer the smallest change.")
+
+    def test_deleting_a_project_keeps_its_chats(self):
+        conversation = self._conversation()
+        created = self.env["centric.claude.project"].create_workspace_project("Website")
+        self.Conversation.set_workspace_conversation_project(
+            conversation.id, created["project_id"]
+        )
+        self.env["centric.claude.project"].delete_workspace_project(
+            created["project_id"]
+        )
+        self.assertTrue(conversation.exists())
+        self.assertFalse(conversation.project_id)
+
+    def test_deleting_a_chat_removes_its_messages(self):
+        conversation = self._conversation()
+        self.env["centric.claude.message"].create({
+            "conversation_id": conversation.id,
+            "role": "user",
+            "content": "hello",
+        })
+        conversation_id = conversation.id
+        data = self.Conversation.delete_workspace_conversation(conversation_id)
+        self.assertFalse(conversation.exists())
+        self.assertNotIn(
+            conversation_id, [c["id"] for c in data["conversations"]]
+        )
+        self.assertFalse(self.env["centric.claude.message"].search([
+            ("conversation_id", "=", conversation_id)
+        ]))
+
+    def test_deleting_a_chat_cancels_a_queued_turn(self):
+        """The bridge must not be left holding a turn with no conversation."""
+        self._configure(**{"centric_claude.backend": "agent"})
+        conversation = self._conversation()
+        self.Conversation.send_workspace_message(conversation.id, "hello")
+        turn = self.env["centric.claude.turn"].search([
+            ("conversation_id", "=", conversation.id)
+        ])
+        self.assertEqual(turn.state, "pending")
+        self.Conversation.delete_workspace_conversation(conversation.id)
+        self.assertFalse(turn.exists())
+
+    def test_deleting_a_chat_twice_is_not_an_error(self):
+        conversation = self._conversation()
+        conversation_id = conversation.id
+        self.Conversation.delete_workspace_conversation(conversation_id)
+        self.Conversation.delete_workspace_conversation(conversation_id)
+
+    def test_a_chat_can_be_renamed(self):
+        conversation = self._conversation()
+        self.Conversation.rename_workspace_conversation(conversation.id, "  Payroll  ")
+        self.assertEqual(conversation.name, "Payroll")
+        with self.assertRaises(Exception):
+            self.Conversation.rename_workspace_conversation(conversation.id, "   ")
+
+    def test_a_new_chat_can_start_inside_a_project(self):
+        created = self.env["centric.claude.project"].create_workspace_project("Website")
+        payload = self.Conversation.create_workspace_conversation(
+            None, created["project_id"]
+        )
+        self.assertEqual(payload["conversation"]["project_id"], created["project_id"])
+
+    def test_project_instructions_are_length_limited(self):
+        created = self.env["centric.claude.project"].create_workspace_project("Website")
+        Project = self.env["centric.claude.project"]
+        with self.assertRaises(Exception):
+            Project.set_workspace_project_instructions(
+                created["project_id"], "x" * (Project.MAX_INSTRUCTIONS + 1)
+            )
+
+    # -- image attachments -------------------------------------------------
+    PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+    JPEG_BYTES = b"\xff\xd8\xff\xe0" + b"\x00" * 32
+
+    def _b64(self, raw):
+        return base64.b64encode(raw).decode()
+
+    def _attach(self, conversation, raw=None, name="shot.png"):
+        return self.env["centric.claude.attachment"].upload_workspace_attachment(
+            conversation.id, name, self._b64(self.PNG_BYTES if raw is None else raw)
+        )
+
+    def test_an_image_can_be_attached_and_sent(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        self.assertEqual(summary["mimetype"], "image/png")
+        self.assertIn("/web/image/centric.claude.attachment/", summary["url"])
+
+        payload = self.Conversation.send_workspace_message(
+            conversation.id, "what is this?", [summary["id"]]
+        )
+        message = payload["messages"][-1]
+        self.assertEqual(message["role"], "user")
+        self.assertEqual([a["id"] for a in message["attachments"]], [summary["id"]])
+        # Nothing is left waiting once it has been sent.
+        self.assertFalse(payload["pending_attachments"])
+
+    def test_the_claimed_file_type_is_ignored(self):
+        """A disguised file must not reach a developer's disk as an image."""
+        conversation = self._conversation()
+        with self.assertRaises(ValidationError):
+            self._attach(conversation, raw=b"#!/bin/sh\nrm -rf /\n", name="shot.png")
+
+    def test_a_jpeg_is_recognised_from_its_bytes(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation, raw=self.JPEG_BYTES, name="photo")
+        self.assertEqual(summary["mimetype"], "image/jpeg")
+        # The extension follows the sniffed type, not the supplied name.
+        self.assertTrue(summary["name"].endswith(".jpg"))
+
+    def test_an_oversized_image_is_refused(self):
+        conversation = self._conversation()
+        self.params.set_param("centric_claude.attachment_max_mb", "0.1")
+        with self.assertRaises(ValidationError):
+            self._attach(conversation, raw=self.PNG_BYTES + b"\x00" * (200 * 1024))
+
+    def test_attachments_can_be_switched_off(self):
+        conversation = self._conversation()
+        self.params.set_param("centric_claude.attachments_enabled", "False")
+        with self.assertRaises(UserError):
+            self._attach(conversation)
+
+    def test_an_image_only_message_is_allowed_and_names_the_chat(self):
+        conversation = self.Conversation.create({
+            "name": "New Claude Conversation",
+            "user_id": self.env.user.id,
+            "base_branch": "testing",
+        })
+        summary = self._attach(conversation, name="traceback.png")
+        self.Conversation.send_workspace_message(conversation.id, "", [summary["id"]])
+        self.assertEqual(conversation.name, "traceback.png")
+        self.assertTrue(conversation.message_ids[0].content)
+
+    def test_an_empty_message_with_no_image_is_still_refused(self):
+        conversation = self._conversation()
+        with self.assertRaises(ValidationError):
+            self.Conversation.send_workspace_message(conversation.id, "   ")
+
+    def test_an_already_sent_image_cannot_be_reattached(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        self.Conversation.send_workspace_message(conversation.id, "one", [summary["id"]])
+        payload = self.Conversation.send_workspace_message(
+            conversation.id, "two", [summary["id"]]
+        )
+        self.assertFalse(payload["messages"][-1]["attachments"])
+
+    def test_an_unsent_image_can_be_discarded(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        Attachment = self.env["centric.claude.attachment"]
+        Attachment.discard_workspace_attachment(summary["id"])
+        self.assertFalse(Attachment.browse(summary["id"]).exists())
+
+    def test_a_sent_image_cannot_be_discarded(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        self.Conversation.send_workspace_message(conversation.id, "hi", [summary["id"]])
+        with self.assertRaises(UserError):
+            self.env["centric.claude.attachment"].discard_workspace_attachment(
+                summary["id"]
+            )
+
+    def test_images_travel_with_a_queued_turn(self):
+        self._configure(**{"centric_claude.backend": "agent"})
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        self.Conversation.send_workspace_message(
+            conversation.id, "what is this?", [summary["id"]]
+        )
+        turn = self.env["centric.claude.turn"].search([
+            ("conversation_id", "=", conversation.id)
+        ])
+        payload = turn._payload_for_agent()
+        self.assertEqual([a["id"] for a in payload["attachments"]], [summary["id"]])
+        # Metadata only: the bytes are fetched one at a time instead, so
+        # claiming a turn does not drag every screenshot down with it.
+        self.assertNotIn("data", payload["attachments"][0])
+
+    def test_the_api_backend_sends_an_image_block(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        self.Conversation.send_workspace_message(conversation.id, "look", [summary["id"]])
+        history = conversation.message_ids.filtered(
+            lambda msg: msg.role in {"user", "assistant"}
+        ).sorted("id")
+        blocks = conversation._api_messages(history)[-1]["content"]
+        self.assertIsInstance(blocks, list)
+        self.assertEqual(blocks[0]["type"], "image")
+        self.assertEqual(blocks[0]["source"]["media_type"], "image/png")
+        self.assertEqual(blocks[-1]["type"], "text")
+
+    def test_a_message_without_images_stays_plain_text(self):
+        conversation = self._conversation()
+        self.Conversation.send_workspace_message(conversation.id, "no pictures")
+        history = conversation.message_ids.sorted("id")
+        self.assertEqual(conversation._api_messages(history)[-1]["content"], "no pictures")
+
+    def test_old_images_are_deleted_and_the_transcript_is_kept(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        self.Conversation.send_workspace_message(conversation.id, "hi", [summary["id"]])
+        Attachment = self.env["centric.claude.attachment"]
+        self.params.set_param("centric_claude.attachment_retention_days", "30")
+        Attachment.browse(summary["id"]).sudo().write({
+            "create_date": fields.Datetime.subtract(fields.Datetime.now(), days=60),
+        })
+        Attachment._gc_workspace_attachments()
+        self.assertFalse(Attachment.browse(summary["id"]).exists())
+        self.assertTrue(conversation.message_ids)
+
+    def test_retention_of_zero_keeps_images_forever(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        Attachment = self.env["centric.claude.attachment"]
+        self.params.set_param("centric_claude.attachment_retention_days", "0")
+        Attachment.browse(summary["id"]).sudo().write({
+            "create_date": fields.Datetime.subtract(fields.Datetime.now(), days=900),
+        })
+        Attachment._gc_workspace_attachments()
+        self.assertTrue(Attachment.browse(summary["id"]).exists())
+
+    def test_the_stored_bytes_survive_a_round_trip(self):
+        """What the bridge downloads has to be the file that was uploaded."""
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        attachment = self.env["centric.claude.attachment"].browse(summary["id"])
+        self.assertEqual(base64.b64decode(attachment.datas), self.PNG_BYTES)
+        self.assertEqual(attachment.file_size, len(self.PNG_BYTES))
+
+    def test_deleting_a_chat_removes_its_images(self):
+        conversation = self._conversation()
+        summary = self._attach(conversation)
+        self.Conversation.delete_workspace_conversation(conversation.id)
+        self.assertFalse(
+            self.env["centric.claude.attachment"].browse(summary["id"]).exists()
+        )

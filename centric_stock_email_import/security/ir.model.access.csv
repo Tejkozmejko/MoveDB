@@ -1,0 +1,9 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_stock_email_import_user,stock.email.import user,model_stock_email_import,stock.group_stock_user,1,0,0,0
+access_stock_email_import_manager,stock.email.import manager,model_stock_email_import,stock.group_stock_manager,1,1,1,1
+access_stock_email_import_line_user,stock.email.import.line user,model_stock_email_import_line,stock.group_stock_user,1,0,0,0
+access_stock_email_import_line_manager,stock.email.import.line manager,model_stock_email_import_line,stock.group_stock_manager,1,1,1,1
+access_stock_email_import_config_user,stock.email.import.config user,model_stock_email_import_config,stock.group_stock_user,1,0,0,0
+access_stock_email_import_config_manager,stock.email.import.config manager,model_stock_email_import_config,stock.group_stock_manager,1,1,1,1
+access_stock_email_import_column_user,stock.email.import.column user,model_stock_email_import_column,stock.group_stock_user,1,0,0,0
+access_stock_email_import_column_manager,stock.email.import.column manager,model_stock_email_import_column,stock.group_stock_manager,1,1,1,1

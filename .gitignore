@@ -1,0 +1,24 @@
+# Python build artefacts. These were committed once, which made every turn
+# report them as changed and then refuse to stage them as "not readable as
+# UTF-8 text" - once per file, in the console and in Claude's reply.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Local virtualenvs
+.venv/
+venv/
+
+# Editor and OS noise
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Packaged copies of the modules. A zip of a module inside that module's own
+# repository goes stale the moment anyone edits the source.
+*.zip
+
+# Attachment scratch space used by the Claude bridge while a turn runs.
+.centric_claude_files/

@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="centric_claude_integration.ClaudeScreenPanel">
+        <aside t-if="screenState.open" class="o_cc_screen_panel" role="complementary"
+               aria-label="Ask Claude about this screen">
+            <header class="o_cc_screen_header">
+                <span class="o_cc_screen_brand">
+                    <t t-call="centric_claude_integration.ClaudeMark"/>
+                    <strong>Ask Claude</strong>
+                </span>
+                <button type="button" class="o_cc_screen_icon" title="Open full workspace"
+                        aria-label="Open full workspace" t-on-click="openWorkspace">
+                    <i class="fa fa-expand" aria-hidden="true"/>
+                </button>
+                <button type="button" class="o_cc_screen_icon" title="Close Claude"
+                        aria-label="Close Claude" t-on-click="close">
+                    <i class="fa fa-times" aria-hidden="true"/>
+                </button>
+            </header>
+
+            <div class="o_cc_screen_context">
+                <span class="o_cc_screen_eyebrow">Context</span>
+                <t t-if="state.context">
+                    <strong t-esc="state.context.label"/>
+                    <span t-esc="state.context.scope_label"/>
+                    <small>Uses saved records with your Odoo permissions.</small>
+                </t>
+                <span t-elif="state.loading">Reading current screen…</span>
+                <span t-else="">No screen selected</span>
+                <div t-if="screenChanged &amp;&amp; state.context" class="o_cc_screen_changed">
+                    You moved to another screen or changed the selection. This chat keeps its original context.
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary mt-2 align-self-start"
+                        t-att-disabled="state.loading || state.sending || state.answering"
+                        t-on-click="useCurrentScreen">
+                    <i class="fa fa-crosshairs me-1" aria-hidden="true"/>
+                    Use current screen
+                </button>
+            </div>
+
+            <div class="o_cc_screen_messages" t-ref="messages" role="log" aria-label="Conversation">
+                <div t-if="state.loading" class="o_cc_screen_empty" role="status">
+                    <i class="fa fa-spinner fa-spin me-2" aria-hidden="true"/>Preparing your context…
+                </div>
+                <div t-elif="!state.messages.length &amp;&amp; state.context" class="o_cc_screen_empty">
+                    <h5>How can I help?</h5>
+                    <p>Ask about the record or selection above. You can keep working in Odoo while we talk.</p>
+                    <div class="o_cc_screen_suggestions">
+                        <t t-foreach="suggestions" t-as="suggestion" t-key="suggestion">
+                            <button type="button" t-esc="suggestion" t-att-disabled="waiting"
+                                    t-on-click="() => this.useSuggestion(suggestion)"/>
+                        </t>
+                    </div>
+                </div>
+                <t t-foreach="state.messages" t-as="message" t-key="message.id">
+                    <article class="o_cc_screen_message"
+                             t-att-class="{'o_cc_screen_message_user': message.role === 'user'}">
+                        <strong class="o_cc_screen_author" t-esc="message.role === 'user' ? 'You' : 'Claude'"/>
+                        <div class="o_cc_screen_message_body" t-out="messageHtml(message)"/>
+                    </article>
+                </t>
+                <t t-foreach="state.operations" t-as="operation" t-key="operation.id">
+                    <div class="o_cc_screen_operation">
+                        <strong t-esc="operation.summary"/>
+                        <pre t-esc="operation.preview"/>
+                        <t t-if="operation.state === 'proposed'">
+                            <small>Nothing has changed yet.</small>
+                            <div class="d-flex gap-2 mt-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary"
+                                        t-att-disabled="waiting"
+                                        t-on-click="() => this.answerOperation(operation, false)">Decline</button>
+                                <button type="button" class="btn btn-sm btn-primary"
+                                        t-att-disabled="waiting"
+                                        t-on-click="() => this.answerOperation(operation, true)">Confirm change</button>
+                            </div>
+                        </t>
+                        <span t-elif="operation.state === 'applied'" class="text-success" t-esc="operation.result"/>
+                        <span t-elif="operation.state === 'failed'" class="text-danger" t-esc="operation.error"/>
+                        <span t-else="">Declined</span>
+                    </div>
+                </t>
+                <div t-if="state.sending || state.agent.waiting" class="o_cc_screen_progress" role="status">
+                    <i class="fa fa-spinner fa-spin me-2" aria-hidden="true"/>
+                    <span t-if="state.agent.waiting &amp;&amp; !state.agent.online">Waiting for the local Claude bridge to connect…</span>
+                    <span t-elif="state.agent.progress" t-esc="state.agent.progress"/>
+                    <span t-elif="state.agent.state === 'pending'">Queued for Claude…</span>
+                    <span t-else="">Claude is working…</span>
+                </div>
+                <div t-if="state.pollError" class="o_cc_screen_notice" role="status" t-esc="state.pollError"/>
+                <div t-if="state.error" class="alert alert-danger mt-3 mb-0" role="alert" t-esc="state.error"/>
+            </div>
+
+            <form class="o_cc_screen_composer" t-on-submit="sendMessage">
+                <label for="o_cc_screen_question" class="visually-hidden">Ask about this screen</label>
+                <div class="o_cc_screen_input_row">
+                    <textarea id="o_cc_screen_question" t-ref="composer" rows="3"
+                              t-model="state.draft" t-on-keydown="onKeydown"
+                              t-att-disabled="!state.context || state.loading || state.sending"
+                              placeholder="Ask about this screen…"/>
+                    <button type="submit" class="o_cc_screen_send" t-att-disabled="!canSend"
+                            title="Send question" aria-label="Send question">
+                        <i class="fa fa-arrow-up" aria-hidden="true"/>
+                    </button>
+                </div>
+                <small>Replies are drafts. Changes need your confirmation.</small>
+            </form>
+        </aside>
+    </t>
+</templates>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_stock_email_import_column_list" model="ir.ui.view">
+        <field name="name">stock.email.import.column.list</field>
+        <field name="model">stock.email.import.column</field>
+        <field name="arch" type="xml">
+            <list editable="bottom">
+                <field name="sequence" widget="handle"/>
+                <field name="target"/>
+                <field name="header_names"/>
+                <field name="active" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_stock_email_import_column" model="ir.actions.act_window">
+        <field name="name">Column Mapping</field>
+        <field name="res_model">stock.email.import.column</field>
+        <field name="view_mode">list</field>
+        <field name="help" type="html">
+            <p>Map the header texts used in stocktake sheets to import fields.</p>
+        </field>
+    </record>
+</odoo>
