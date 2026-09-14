@@ -229,7 +229,7 @@
         <field name="name">stock.email.import.graph</field>
         <field name="model">stock.email.import</field>
         <field name="arch" type="xml">
-            <graph string="Stock Value Change" type="bar" sample="1">
+            <graph string="Stock Value Change" type="bar" sample="1" class="o_sei_view">
                 <field name="received_date" interval="day"/>
                 <field name="value_change" type="measure"/>
             </graph>
@@ -240,7 +240,7 @@
         <field name="name">stock.email.import.pivot</field>
         <field name="model">stock.email.import</field>
         <field name="arch" type="xml">
-            <pivot string="Stocktakes" sample="1">
+            <pivot string="Stocktakes" sample="1" class="o_sei_view">
                 <field name="received_date" interval="month" type="row"/>
                 <field name="state" type="col"/>
                 <field name="changed_count" type="measure"/>
