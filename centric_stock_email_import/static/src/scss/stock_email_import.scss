@@ -1,18 +1,21 @@
-// Stocktake screens: a dark warehouse scene behind the kanban and the forms.
+// Stocktake screens: a warehouse scene behind every kanban, list and form of
+// this module.
 //
-// The image is a wide banner, so it spans the top of the view and fades into
-// its own darkest blue below; it stays put while the cards scroll over it.
-// The list view is left alone - its rows would otherwise sit on the picture.
-$sei-base: #0f1623;
-$sei-image: url("/centric_stock_email_import/static/src/img/stocktake_bg.jpg");
+// The image is a wide banner (3:1). It is pinned to the viewport, spans its
+// width and fades into the floor colour below, so it stays put while cards and
+// rows scroll over it. Lists keep a solid table so rows remain readable.
+$sei-base: #161b20;
+$sei-image: url("/centric_stock_email_import/static/src/img/stocktake_warehouse.jpg");
 
 @mixin sei-backdrop {
     background-color: $sei-base;
     background-image:
-        linear-gradient(180deg, rgba(15, 22, 35, 0) 45%, rgba(15, 22, 35, .75) 75%, $sei-base 100%),
+        linear-gradient(180deg, rgba(22, 27, 32, 0) 60%, rgba(22, 27, 32, .75) 85%, $sei-base 100%),
         $sei-image;
-    background-size: 100% auto, 100% auto;
-    background-position: center top, center top;
+    // Both layers share the image's own box (full width, a third as tall), so
+    // the fade ends exactly where the picture does.
+    background-size: 100vw 33.34vw, 100vw 33.34vw;
+    background-position: left top, left top;
     background-repeat: no-repeat, no-repeat;
     background-attachment: fixed, fixed;
 }
@@ -20,51 +23,58 @@ $sei-image: url("/centric_stock_email_import/static/src/img/stocktake_bg.jpg");
 // The arch class can land on the renderer or on a wrapper around it.
 .o_sei_view.o_kanban_renderer,
 .o_sei_view .o_kanban_renderer,
+.o_sei_view.o_list_renderer,
+.o_sei_view .o_list_renderer,
 .o_sei_view .o_form_sheet_bg,
 .o_sei_view.o_form_sheet_bg {
     @include sei-backdrop;
 }
 
-// Text drawn straight onto the backdrop must stay light, even in Odoo's
-// light theme: the empty-state helper and kanban group titles.
+// Text drawn straight onto the scene stays light, even in Odoo's light theme.
 .o_sei_view .o_view_nocontent,
+.o_sei_view .o_view_nocontent p,
+.o_sei_view .o_view_nocontent .o_view_nocontent_smiling_face,
 .o_sei_view .o_kanban_group .o_column_title,
 .o_sei_view .o_kanban_group .o_kanban_counter {
-    color: #e6eaf2;
-}
-
-.o_sei_view .o_view_nocontent .o_view_nocontent_smiling_face,
-.o_sei_view .o_view_nocontent p {
     color: #e6eaf2;
 }
 
 // Cards float on the scene and lift on hover.
 .o_sei_view .o_kanban_record {
     border-radius: 12px;
-    border: 1px solid rgba(120, 200, 220, .14);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+    border: 1px solid rgba(255, 190, 120, .14);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .4);
     transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
 
     &:hover {
         transform: translateY(-2px);
-        border-color: rgba(64, 224, 208, .45);
-        box-shadow: 0 16px 40px rgba(0, 0, 0, .45), 0 0 0 1px rgba(64, 224, 208, .15);
+        border-color: rgba(255, 170, 90, .5);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, .5), 0 0 0 1px rgba(255, 170, 90, .18);
     }
+}
+
+// Lists: the table is a solid panel on the scene.
+.o_sei_view .o_list_table {
+    background-color: var(--bs-body-bg, #fff);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, .4);
 }
 
 // Form sheets become a rounded panel on the scene.
 .o_sei_view .o_form_sheet {
     border-radius: 14px;
-    box-shadow: 0 18px 50px rgba(0, 0, 0, .45);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, .5);
 }
 
-// On narrow screens a 100%-wide banner would be a thin strip; fill the height.
+// On narrow screens a full-width banner is a thin strip; use a taller crop.
 @media (max-width: 991.98px) {
     .o_sei_view.o_kanban_renderer,
     .o_sei_view .o_kanban_renderer,
+    .o_sei_view.o_list_renderer,
+    .o_sei_view .o_list_renderer,
     .o_sei_view .o_form_sheet_bg,
     .o_sei_view.o_form_sheet_bg {
-        background-size: 100% 420px, auto 420px;
+        background-size: 1260px 420px, 1260px 420px;
+        background-position: 35% top, 35% top;
         background-attachment: scroll, scroll;
     }
 }
