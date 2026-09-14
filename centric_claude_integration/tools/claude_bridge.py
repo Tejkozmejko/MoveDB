@@ -57,6 +57,9 @@ import argparse
 import atexit
 import base64
 import binascii
+import glob
+import gzip
+import hashlib
 import json
 import os
 import re
@@ -68,6 +71,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 DEFAULT_POLL_SECONDS = 3
 DEFAULT_TIMEOUT_SECONDS = 900
@@ -251,6 +255,10 @@ def say(message, error=False):
 
 class BridgeError(RuntimeError):
     pass
+
+
+class SessionNotFound(BridgeError):
+    """Claude Code has no saved session under the id it was asked to resume."""
 
 
 # ------------------------------------------------------ stored settings ---
@@ -910,18 +918,32 @@ def revert(repo, base=None):
 
 
 # ----------------------------------------------------------------- claude ---
-def build_prompt(turn, images=()):
-    lines = []
+def project_instructions(turn):
+    """A project's standing instructions, as a system prompt section.
+
+    In the system prompt rather than the message: a resumed session already
+    holds every earlier message, so instructions sent as a message would pile
+    up one copy per turn - and an edit to them would sit behind the stale copy.
+    The system prompt is supplied afresh on every run, resumed or not.
+    """
     instructions = (turn.get("project_instructions") or "").strip()
-    if instructions:
-        # Standing project context, ahead of the transcript: it frames every
-        # question in the project rather than answering this one.
-        lines.append("Standing instructions for project %s:"
-                     % (turn.get("project_name") or "this project"))
-        lines.append(instructions)
-        lines.append("")
+    if not instructions:
+        return ""
+    return "\nStanding instructions for project %s:\n%s\n" % (
+        turn.get("project_name") or "this project", instructions,
+    )
+
+
+def build_prompt(turn, images=(), resume=False):
+    """The message for this turn.
+
+    Resuming a saved session, Claude already has the conversation, so only the
+    new question goes. Starting fresh, the recent transcript goes in front of it
+    - which is also the fallback whenever there is no session to resume.
+    """
+    lines = []
     history = turn.get("history") or []
-    if len(history) > 1:
+    if not resume and len(history) > 1:
         lines.append("Earlier in this conversation:")
         for message in history[:-1][-10:]:
             who = "Developer" if message["role"] == "user" else "You"
@@ -941,7 +963,16 @@ def build_prompt(turn, images=()):
     return "\n".join(lines)
 
 
-def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None, images=()):
+def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None, images=(),
+               session_id=None, resume=False):
+    """Run one turn. Returns (answer, id of the session the turn ran in).
+
+    With `resume`, the saved session `session_id` is continued. Otherwise a new
+    session is started under that id (or a fresh one), so the bridge knows
+    exactly which file to keep afterwards. A saved session that turns out not to
+    exist falls back to a fresh session with the transcript, rather than
+    failing the developer's question over lost memory.
+    """
     developer_mode = bool(turn.get("developer_mode"))
     system = SYSTEM_PROMPT.format(
         prefix=turn.get("allowed_module_prefix") or "centric_",
@@ -953,7 +984,7 @@ def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None, images=
             else "Developer Mode is OFF: answer and investigate only, do not edit any file."
         ),
         data=data_prompt(turn),
-    )
+    ) + project_instructions(turn)
     # Neither the question nor the system prompt goes on the command line.
     # Windows caps a command line at about 32k characters, and the question
     # alone can beat that on its own: a project's standing instructions run to
@@ -962,7 +993,6 @@ def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None, images=
     # which says nothing about the real cause. The prompt is piped to stdin
     # and the system prompt handed over as a file, so argv stays a short list
     # of flags no matter how long the conversation gets.
-    prompt = build_prompt(turn, images)
     command = [
         claude_bin, "-p",
         # Streaming, not the single blob: `json` returns nothing at all until
@@ -996,12 +1026,27 @@ def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None, images=
             # Claude Code launches the server itself, so it must inherit these.
             environment.update(mcp_env)
         command += ["--allowedTools", ",".join(allowed)]
-        command += extra_args
-        text, denials = _invoke_claude(
-            command, repo, timeout, claude_bin, environment,
-            on_progress=progress_reporter(config, turn), stdin_text=prompt,
-        )
-        return text + explain_denials(denials, turn)
+
+        def attempt(sid, resuming):
+            session_args = ["--resume", sid] if resuming else ["--session-id", sid]
+            return _invoke_claude(
+                command + session_args + list(extra_args),
+                repo, timeout, claude_bin, environment,
+                on_progress=progress_reporter(config, turn),
+                stdin_text=build_prompt(turn, images, resume=resuming),
+            )
+
+        session_id = session_id or str(uuid.uuid4())
+        try:
+            text, denials = attempt(session_id, resume)
+        except SessionNotFound:
+            if not resume:
+                raise
+            say("    saved session %s could not be resumed; starting a fresh one "
+                "from the transcript" % session_id)
+            session_id = str(uuid.uuid4())
+            text, denials = attempt(session_id, False)
+        return text + explain_denials(denials, turn), session_id
 
 
 # A floor, not a heartbeat: progress is posted when Claude moves on to
@@ -1243,6 +1288,12 @@ def _invoke_claude(command, repo, timeout, claude_bin, environment,
 
     if expired.is_set():
         raise BridgeError("Claude did not finish within %s seconds." % timeout)
+    # A session that cannot be resumed is its own case: the caller starts a
+    # fresh session from the transcript instead of failing the developer's
+    # question. Claude Code reports it both on stderr and in the final event.
+    reported = "".join(errors) + " ".join(str(item) for item in (final or {}).get("errors") or [])
+    if process.returncode != 0 and "No conversation found with session ID" in reported:
+        raise SessionNotFound(reported.strip()[:300])
     if process.returncode != 0 or final is None or final.get("is_error"):
         raise BridgeError(claude_failure(final, "".join(errors),
                                          process.returncode))
@@ -1282,6 +1333,126 @@ def _start_logging(path):
 
 
 # ------------------------------------------------------------------- loop ---
+# ------------------------------------------------------ saved chat sessions ---
+SESSION_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+# Odoo applies its own, configurable, cap. This one only stops a runaway file
+# from being pushed through a single HTTP request at all.
+SESSION_UPLOAD_CEILING = 20 * 1024 * 1024
+
+
+def claude_projects_dir():
+    """Where Claude Code keeps its sessions: <config dir>/projects/<folder>/<id>.jsonl."""
+    root = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    return os.path.join(root, "projects")
+
+
+def session_folder(cwd):
+    """Claude Code's folder name for a working directory: non-alphanumerics become '-'."""
+    return os.path.join(claude_projects_dir(), re.sub(r"[^A-Za-z0-9]", "-", os.path.abspath(cwd)))
+
+
+def find_session_file(session_id):
+    """The local file for a session, whichever working directory made it.
+
+    `--resume` finds a session by its id from any folder, so a turn that lands
+    on a different worker than the last one still continues the same chat.
+    """
+    if not SESSION_ID_RE.match(session_id or ""):
+        return None
+    matches = glob.glob(os.path.join(claude_projects_dir(), "*", session_id + ".jsonl"))
+    return max(matches, key=os.path.getmtime) if matches else None
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def prepare_session(config, turn, repo, label=""):
+    """Choose the session this turn runs in. Returns (session_id, resume).
+
+    Odoo holds the saved copy; this machine keeps a working copy. The saved one
+    is downloaded only when the local copy is missing or no longer matches its
+    checksum - after this PC was cleaned, on a colleague's bridge, or when a
+    failed turn left the local file ahead of what Odoo kept. Anything that goes
+    wrong starts a fresh session, which carries the transcript instead: losing
+    memory is recoverable, failing the question is not.
+    """
+    stored = (turn.get("session_id") or "").strip().lower()
+    if config is None or not SESSION_ID_RE.match(stored):
+        return str(uuid.uuid4()), False
+    wanted = (turn.get("session_sha") or "").strip().lower()
+    local = find_session_file(stored)
+    if local and wanted and file_sha256(local) == wanted:
+        say("%s    resuming saved session" % label)
+        return stored, True
+
+    try:
+        result = call_odoo(config.url, config.token, "/centric_claude/agent/session",
+                           {"turn_id": turn["turn_id"]})
+        if result.get("session_id") != stored:
+            raise BridgeError("Odoo no longer holds that session")
+        raw = gzip.decompress(base64.b64decode(result.get("data") or ""))
+        if hashlib.sha256(raw).hexdigest() != (result.get("sha") or wanted):
+            raise BridgeError("the downloaded session does not match its checksum")
+        target = local or os.path.join(session_folder(repo), stored + ".jsonl")
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        partial = target + ".download"
+        with open(partial, "wb") as handle:
+            handle.write(raw)
+        os.replace(partial, target)
+    except (BridgeError, OSError, ValueError, TypeError, EOFError, binascii.Error) as exc:
+        say("%s    could not load the saved session (%s); starting a fresh one"
+            % (label, exc), error=True)
+        return str(uuid.uuid4()), False
+    say("%s    resuming saved session (downloaded %d KB)" % (label, len(raw) // 1024))
+    return stored, True
+
+
+def save_session(config, turn, session_id, label=""):
+    """Hand the session this turn ran in back to Odoo, compressed.
+
+    Never raises: the answer is still to be delivered, and a session that fails
+    to save only means the next turn starts fresh from the transcript.
+    """
+    if config is None or not SESSION_ID_RE.match(session_id or ""):
+        return
+    path = find_session_file(session_id)
+    if not path:
+        say("%s    no session file for %s; nothing to save" % (label, session_id), error=True)
+        return
+    try:
+        with open(path, "rb") as handle:
+            raw = handle.read()
+    except OSError as exc:
+        say("%s    could not read the session file (%s)" % (label, exc), error=True)
+        return
+    sha = hashlib.sha256(raw).hexdigest()
+    if session_id == turn.get("session_id") and sha == turn.get("session_sha"):
+        return
+    data = gzip.compress(raw, 6)
+    if len(data) > SESSION_UPLOAD_CEILING:
+        say("%s    session is %d MB compressed; not saving it"
+            % (label, len(data) // (1024 * 1024)), error=True)
+        return
+    try:
+        result = call_odoo(config.url, config.token, "/centric_claude/agent/session/save", {
+            "turn_id": turn["turn_id"], "session_id": session_id, "sha": sha,
+            "data": base64.b64encode(data).decode(),
+        })
+    except BridgeError as exc:
+        say("%s    could not save the session (%s)" % (label, exc), error=True)
+        return
+    if result.get("stored"):
+        say("%s    session saved (%d KB)" % (label, len(data) // 1024))
+    else:
+        say("%s    session not kept by Odoo (%s)"
+            % (label, result.get("reason") or result.get("error") or "unknown"))
+
+
 def handle_turn(config, turn, repo=None, label=""):
     repo = repo or config.repo
     prefix = turn.get("allowed_module_prefix") or "centric_"
@@ -1306,14 +1477,21 @@ def handle_turn(config, turn, repo=None, label=""):
 
     # Somebody else's screenshot must not outlive the question it came with, so
     # the download is wrapped in a finally rather than deleted on the way out.
+    session_id, resume = prepare_session(config, turn, repo, label)
     images = fetch_attachments(config, turn, repo)
     try:
         if images:
             say("%s    %d image(s) attached" % (label, len(images)))
-        text = run_claude(repo, turn, config.timeout, config.claude_bin,
-                          config.claude_args, config=config, images=images)
+        text, session_id = run_claude(
+            repo, turn, config.timeout, config.claude_bin, config.claude_args,
+            config=config, images=images, session_id=session_id, resume=resume,
+        )
     finally:
         purge_attachments(repo, turn["turn_id"])
+    # Before /complete: the save endpoint only accepts a turn that is still
+    # running, and a failed turn never gets here, so Odoo keeps the last
+    # session that finished cleanly rather than one a crash left half-written.
+    save_session(config, turn, session_id, label)
 
     changes, skipped = [], []
     if turn.get("developer_mode"):

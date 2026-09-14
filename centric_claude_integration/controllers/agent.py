@@ -380,6 +380,56 @@ class CentricClaudeAgentController(http.Controller):
             "data": data.decode() if isinstance(data, bytes) else data,
         }
 
+    def _running_turn(self, turn_id):
+        """(turn, None) for a turn the bridge is working on, else (None, error)."""
+        turn = request.env["centric.claude.turn"].sudo().browse(int(turn_id or 0)).exists()
+        if not turn:
+            return None, {"error": "Unknown turn."}
+        if turn.state != "running":
+            return None, {"error": "Turn %s is %s, not running." % (turn.id, turn.state)}
+        return turn, None
+
+    @http.route(
+        "/centric_claude/agent/session",
+        type="jsonrpc", auth="public", methods=["POST"], csrf=False,
+    )
+    def session(self, turn_id=None, **kwargs):
+        """Hand the bridge the saved Claude Code session for this turn's chat.
+
+        Scoped like the image endpoint: only while the turn is running, and
+        only that turn's own conversation, so a leaked token cannot be used to
+        read every saved session in the database.
+        """
+        agent_user, reason = self._agent_check()
+        if not agent_user:
+            return self._denied(reason)
+        turn, error = self._running_turn(turn_id)
+        if error:
+            return error
+        return turn.conversation_id._agent_session_payload()
+
+    @http.route(
+        "/centric_claude/agent/session/save",
+        type="jsonrpc", auth="public", methods=["POST"], csrf=False,
+    )
+    def session_save(self, turn_id=None, session_id=None, sha=None, data=None, **kwargs):
+        """Keep the session the bridge just finished a turn on.
+
+        Called before /complete, while the turn is still running. A refusal is
+        returned rather than raised: failing to save a session must never cost
+        the developer the answer, which is on its way in the next request.
+        """
+        agent_user, reason = self._agent_check()
+        if not agent_user:
+            return self._denied(reason)
+        turn, error = self._running_turn(turn_id)
+        if error:
+            return error
+        try:
+            return turn.conversation_id._store_agent_session(session_id, data, sha)
+        except UserError as exc:
+            return {"stored": False, "error": str(exc)}
+
     @http.route(
         "/centric_claude/agent/ping",
         type="jsonrpc", auth="public", methods=["POST"], csrf=False,

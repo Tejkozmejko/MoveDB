@@ -14,4 +14,17 @@
         <field name="active" eval="True"/>
     </record>
 
+    <!-- Same reasoning for Claude's saved sessions: megabytes each, and only
+         useful while a chat is in use. The session is dropped once the chat
+         goes quiet; the messages stay, and the chat resumes from them. -->
+    <record id="ir_cron_claude_session_gc" model="ir.cron">
+        <field name="name">Centric Claude: forget inactive chat memory</field>
+        <field name="model_id" ref="model_centric_claude_conversation"/>
+        <field name="state">code</field>
+        <field name="code">model._gc_agent_sessions()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+    </record>
+
 </odoo>
