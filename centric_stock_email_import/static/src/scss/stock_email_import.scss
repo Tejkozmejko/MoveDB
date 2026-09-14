@@ -12,12 +12,13 @@
 //
 // Each image already fades into its own page colour (baked into the JPG), so
 // the colour below simply continues it.
-$sei-img: "/centric_stock_email_import/static/src/img/";
+// Image URLs are written out in full on purpose: Odoo rewrites image URLs in the
+// SCSS source before compiling it, and a URL built from a variable is not seen
+// as absolute - it gets prefixed with this file's folder and breaks.
 $sei-panel: if(variable-exists(o-view-background-color), $o-view-background-color, #ffffff);
 
-@mixin sei-scene($file, $base, $anchor: top) {
+@mixin sei-scene($base, $anchor: top) {
     background-color: $base !important;
-    background-image: url("#{$sei-img}#{$file}") !important;
     background-size: 100% auto !important;
     background-position: center $anchor !important;
     background-repeat: no-repeat !important;
@@ -25,19 +26,22 @@ $sei-panel: if(variable-exists(o-view-background-color), $o-view-background-colo
 
 .o_web_client .o_sei_view > .o_content,
 .o_web_client .o_sei_view .o_content {
-    @include sei-scene("sei_warehouse.jpg", #181d23);
+    @include sei-scene(#181d23);
+    background-image: url("/centric_stock_email_import/static/src/img/sei_warehouse.jpg") !important;
 }
 
 .o_web_client .o_sei_view.o_sei_mailbox > .o_content,
 .o_web_client .o_sei_view.o_sei_mailbox .o_content {
-    @include sei-scene("sei_mailbox.jpg", #131517);
+    @include sei-scene(#131517);
+    background-image: url("/centric_stock_email_import/static/src/img/sei_mailbox.jpg") !important;
 }
 
 // The mapping list is short and sits at the top: this scene is pinned to the
 // bottom so its floating spreadsheets stay visible below the rows.
 .o_web_client .o_sei_view.o_sei_mapping > .o_content,
 .o_web_client .o_sei_view.o_sei_mapping .o_content {
-    @include sei-scene("sei_mapping.jpg", #0d1828, bottom);
+    @include sei-scene(#0d1828, bottom);
+    background-image: url("/centric_stock_email_import/static/src/img/sei_mapping.jpg") !important;
 }
 
 // Let the scene show through the layers Odoo paints above the content area.
