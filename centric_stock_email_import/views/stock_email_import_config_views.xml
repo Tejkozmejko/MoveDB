@@ -19,7 +19,7 @@
         <field name="name">stock.email.import.config.form</field>
         <field name="model">stock.email.import.config</field>
         <field name="arch" type="xml">
-            <form string="Stocktake Mailbox">
+            <form string="Stocktake Mailbox" class="o_sei_view">
                 <header>
                     <button name="action_download_template" type="object"
                             string="Download Excel Template" icon="fa-file-excel-o"

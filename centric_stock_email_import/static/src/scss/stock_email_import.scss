@@ -1,0 +1,54 @@
+// Stocktake screens: a soft aurora in Odoo's teal, amber and plum over a faint
+// pattern of stock crates, behind the kanban, list and form sheets.
+//
+// Colours are low-alpha overlays rather than fixed surfaces, so the same rules
+// read well in both the light and the dark Odoo theme.
+
+// Two staggered isometric crates per tile, drawn in mid grey.
+$sei-crates: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'%3E%3Cg fill='none' stroke='%23808080' stroke-opacity='.16' stroke-width='1.1' stroke-linejoin='round'%3E%3Cpath d='M24 10l13 7.5v15L24 40l-13-7.5v-15z'/%3E%3Cpath d='M11 17.5l13 7.5 13-7.5M24 25v15'/%3E%3Cpath d='M72 58l13 7.5v15L72 88l-13-7.5v-15z'/%3E%3Cpath d='M59 65.5l13 7.5 13-7.5M72 73v15'/%3E%3C/g%3E%3C/svg%3E");
+
+$sei-aurora:
+    radial-gradient(900px 440px at 0% 0%, rgba(1, 126, 132, .22), rgba(1, 126, 132, 0) 62%),
+    radial-gradient(820px 440px at 100% 0%, rgba(230, 145, 56, .18), rgba(230, 145, 56, 0) 60%),
+    radial-gradient(960px 560px at 50% 115%, rgba(113, 75, 103, .18), rgba(113, 75, 103, 0) 62%);
+
+@mixin sei-backdrop {
+    background-image: $sei-aurora, $sei-crates;
+    background-repeat: no-repeat, no-repeat, no-repeat, repeat;
+    background-attachment: local;
+}
+
+// The view's arch class can land on the renderer itself or on a wrapper,
+// depending on the view type, so both are covered.
+.o_sei_view.o_kanban_renderer,
+.o_sei_view .o_kanban_renderer,
+.o_sei_view.o_list_renderer,
+.o_sei_view .o_list_renderer,
+.o_sei_view .o_form_sheet_bg,
+.o_sei_view.o_form_sheet_bg {
+    @include sei-backdrop;
+}
+
+// Cards float on the backdrop and lift on hover.
+.o_sei_view .o_kanban_record,
+.o_sei_view.o_kanban_renderer .o_kanban_record {
+    border-radius: 12px;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, .08);
+    transition: transform .15s ease, box-shadow .15s ease;
+
+    &:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, .14);
+    }
+}
+
+// Form sheets become a rounded panel on the backdrop.
+.o_sei_view .o_form_sheet_bg > .o_form_sheet,
+.o_sei_view .o_form_sheet {
+    border-radius: 14px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, .10);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .o_sei_view .o_kanban_record { transition: none; }
+}

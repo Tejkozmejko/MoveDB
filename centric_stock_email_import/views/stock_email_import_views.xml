@@ -7,7 +7,7 @@
         <field name="name">stock.email.import.kanban</field>
         <field name="model">stock.email.import</field>
         <field name="arch" type="xml">
-            <kanban highlight_color="color" sample="1" default_order="id desc">
+            <kanban class="o_sei_view" highlight_color="color" sample="1" default_order="id desc">
                 <field name="color"/>
                 <field name="currency_id"/>
                 <templates>
@@ -64,7 +64,7 @@
         <field name="name">stock.email.import.list</field>
         <field name="model">stock.email.import</field>
         <field name="arch" type="xml">
-            <list decoration-danger="state in ('failed', 'rejected')"
+            <list class="o_sei_view" decoration-danger="state in ('failed', 'rejected')"
                   decoration-muted="state == 'draft'"
                   sample="1">
                 <field name="received_date" string="Received"/>
@@ -93,7 +93,7 @@
         <field name="name">stock.email.import.form</field>
         <field name="model">stock.email.import</field>
         <field name="arch" type="xml">
-            <form string="Stock Email Import">
+            <form string="Stock Email Import" class="o_sei_view">
                 <header>
                     <button name="action_process" type="object" string="Apply Stocktake"
                             class="btn-primary" icon="fa-check" groups="stock.group_stock_manager"

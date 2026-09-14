@@ -13,7 +13,7 @@
                    "journal entries follow.\n\n"
                    "Columns are matched by header name through an editable "
                    "column mapping, so sheets are not tied to one fixed layout.",
-    "version": "19.0.1.1.0",
+    "version": "19.0.1.2.0",
     "category": "Inventory/Inventory",
     "author": "Centric",
     "license": "LGPL-3",
@@ -35,6 +35,11 @@
         "views/stock_email_import_column_views.xml",
         "views/menus.xml",
     ],
+    "assets": {
+        "web.assets_backend": [
+            "centric_stock_email_import/static/src/scss/stock_email_import.scss",
+        ],
+    },
     "installable": True,
     "application": False,
     "auto_install": False,
