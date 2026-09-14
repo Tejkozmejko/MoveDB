@@ -4,7 +4,7 @@
         <field name="name">stock.email.import.column.list</field>
         <field name="model">stock.email.import.column</field>
         <field name="arch" type="xml">
-            <list class="o_sei_view" editable="bottom">
+            <list class="o_sei_view o_sei_mapping" editable="bottom">
                 <field name="sequence" widget="handle"/>
                 <field name="target"/>
                 <field name="header_names"/>
