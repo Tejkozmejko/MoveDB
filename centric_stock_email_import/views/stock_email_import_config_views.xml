@@ -6,8 +6,10 @@
         <field name="arch" type="xml">
             <list>
                 <field name="name"/>
-                <field name="alias_full_name" string="Email Address"/>
-                <field name="user_id"/>
+                <field name="alias_full_name" string="Email Address" widget="CopyClipboardChar"/>
+                <field name="user_id" widget="many2one_avatar_user"/>
+                <field name="location_id"/>
+                <field name="import_count" string="Imports"/>
                 <field name="company_id" groups="base.group_multi_company"/>
             </list>
         </field>
@@ -17,55 +19,137 @@
         <field name="name">stock.email.import.config.form</field>
         <field name="model">stock.email.import.config</field>
         <field name="arch" type="xml">
-            <form string="Stock Email Import Configuration">
+            <form string="Stocktake Mailbox">
                 <header>
                     <button name="action_download_template" type="object"
-                            string="Download Excel Template" icon="fa-download"/>
+                            string="Download Excel Template" icon="fa-file-excel-o"
+                            class="btn-secondary"/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
-                        <button name="action_view_imports" type="object" icon="fa-envelope-o"
+                        <button name="action_view_imports" type="object" icon="fa-inbox"
                                 class="oe_stat_button">
                             <field name="import_count" widget="statinfo" string="Imports"/>
                         </button>
+                        <button name="action_view_imports" type="object" icon="fa-check-circle"
+                                class="oe_stat_button" context="{'import_filter': 'filter_done'}">
+                            <field name="done_count" widget="statinfo" string="Applied"/>
+                        </button>
+                        <button name="action_view_imports" type="object" icon="fa-exclamation-triangle"
+                                class="oe_stat_button" context="{'import_filter': 'filter_attention'}"
+                                invisible="not attention_count">
+                            <field name="attention_count" widget="statinfo" string="Need Attention"/>
+                        </button>
                     </div>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+
                     <div class="oe_title">
-                        <h1><field name="name"/></h1>
+                        <label for="name" string="Mailbox"/>
+                        <h1><field name="name" placeholder="e.g. Daily Stocktake"/></h1>
                     </div>
+
+                    <div class="alert alert-light border d-flex flex-wrap align-items-center gap-3 py-3 my-3"
+                         role="status" invisible="not alias_full_name">
+                        <i class="fa fa-envelope-o fa-3x text-primary" title="Email address"/>
+                        <div class="flex-grow-1">
+                            <div class="text-muted small text-uppercase fw-bold">Send stocktake sheets to</div>
+                            <field name="alias_full_name" widget="CopyClipboardChar" class="fs-4 fw-bold" readonly="1"/>
+                        </div>
+                    </div>
+                    <div class="alert alert-warning d-flex align-items-center gap-2 my-3" role="alert"
+                         invisible="alias_full_name">
+                        <i class="fa fa-info-circle fa-lg" title="No address yet"/>
+                        <span>Choose an <strong>alias</strong> below to create the email address for stocktake sheets.</span>
+                    </div>
+
                     <group>
                         <group string="Mailbox">
-                            <field name="alias_name" string="Alias" placeholder="e.g. stocktake"/>
-                            <field name="alias_domain_id" string="Domain"
-                                   options="{'no_create': True, 'no_open': True}"/>
-                            <field name="alias_full_name" string="Email Address" readonly="1"/>
-                            <field name="allowed_emails"
-                                   placeholder="administrator@yourcompany.com"/>
+                            <label for="alias_name" string="Email Alias"/>
+                            <div class="d-flex align-items-baseline gap-1">
+                                <field name="alias_name" placeholder="stocktake" class="oe_inline"/>
+                                <span>@</span>
+                                <field name="alias_domain_id" class="oe_inline"
+                                       options="{'no_create': True, 'no_open': True}"
+                                       placeholder="yourcompany.odoo.com"/>
+                            </div>
+                            <field name="allowed_emails" string="Allowed Senders"
+                                   placeholder="administrator@yourcompany.com&#10;one address per line"/>
+                            <field name="notify_sender" widget="boolean_toggle" string="Email Result to Sender"/>
                         </group>
-                        <group string="Applying">
+                        <group string="Applying Stock">
+                            <field name="user_id" widget="many2one_avatar_user"/>
+                            <field name="location_id" options="{'no_create': True}"/>
                             <field name="company_id" groups="base.group_multi_company"/>
-                            <field name="user_id"/>
-                            <field name="location_id"/>
-                            <field name="price_update"/>
-                            <field name="create_missing_products"/>
-                            <field name="create_missing_lots"/>
-                            <field name="notify_sender"/>
+                            <field name="price_update" widget="radio"/>
+                            <field name="create_missing_products" widget="boolean_toggle"/>
+                            <field name="create_missing_lots" widget="boolean_toggle"/>
                             <field name="active" invisible="1"/>
                         </group>
                     </group>
-                    <div class="text-muted">
-                        Each emailed sheet holds <strong>counted</strong> quantities: on-hand
-                        stock for every listed product, location and lot is set to the number
-                        in the sheet. Products not in the sheet are left unchanged. The whole
-                        sheet is applied only when every row is valid.
-                    </div>
+
+                    <notebook>
+                        <page string="How It Works" name="how_it_works">
+                            <div class="row g-3 py-2">
+                                <div class="col-lg-3 col-sm-6">
+                                    <div class="border rounded-3 p-3 h-100">
+                                        <div class="d-flex align-items-center gap-2 mb-2">
+                                            <span class="badge rounded-pill text-bg-primary">1</span>
+                                            <strong>Email the sheet</strong>
+                                        </div>
+                                        <div class="text-muted small">An allowed sender emails an Excel
+                                            (.xlsx) or CSV stocktake to the address above.</div>
+                                    </div>
+                                </div>
+                                <div class="col-lg-3 col-sm-6">
+                                    <div class="border rounded-3 p-3 h-100">
+                                        <div class="d-flex align-items-center gap-2 mb-2">
+                                            <span class="badge rounded-pill text-bg-primary">2</span>
+                                            <strong>Every row is checked</strong>
+                                        </div>
+                                        <div class="text-muted small">Product, location, lot and counted
+                                            quantity. Columns are matched by their header name.</div>
+                                    </div>
+                                </div>
+                                <div class="col-lg-3 col-sm-6">
+                                    <div class="border rounded-3 p-3 h-100">
+                                        <div class="d-flex align-items-center gap-2 mb-2">
+                                            <span class="badge rounded-pill text-bg-primary">3</span>
+                                            <strong>All or nothing</strong>
+                                        </div>
+                                        <div class="text-muted small">If any row is wrong nothing changes;
+                                            otherwise on-hand stock is set to the counted quantities.</div>
+                                    </div>
+                                </div>
+                                <div class="col-lg-3 col-sm-6">
+                                    <div class="border rounded-3 p-3 h-100">
+                                        <div class="d-flex align-items-center gap-2 mb-2">
+                                            <span class="badge rounded-pill text-bg-primary">4</span>
+                                            <strong>Result by email</strong>
+                                        </div>
+                                        <div class="text-muted small">The sender gets a summary of the
+                                            changes and stock value, or the rows to fix.</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <p class="text-muted small mb-0 mt-2">
+                                <i class="fa fa-lightbulb-o me-1" title="Tip"/>
+                                Products missing from a sheet are left unchanged. Add header names for
+                                new sheet layouts under <strong>Stock Email Import &gt; Column Mapping</strong>.
+                            </p>
+                        </page>
+                    </notebook>
                 </sheet>
             </form>
         </field>
     </record>
 
     <record id="action_stock_email_import_config" model="ir.actions.act_window">
-        <field name="name">Stock Email Import Configuration</field>
+        <field name="name">Stocktake Mailboxes</field>
         <field name="res_model">stock.email.import.config</field>
         <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Create your stocktake mailbox</p>
+            <p>Choose an email alias, the senders allowed to use it, and where counted stock goes.</p>
+        </field>
     </record>
 </odoo>

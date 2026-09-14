@@ -95,13 +95,16 @@ class StockEmailImport(models.Model):
     applied_date = fields.Datetime(readonly=True)
     line_ids = fields.One2many("stock.email.import.line", "import_id")
     move_ids = fields.Many2many("stock.move", string="Inventory Moves", readonly=True)
-    line_count = fields.Integer(compute="_compute_totals")
-    error_count = fields.Integer(compute="_compute_totals")
-    changed_count = fields.Integer(compute="_compute_totals")
+    # Stored so the list, kanban, graph and pivot views can group and sum them.
+    line_count = fields.Integer(string="Rows", compute="_compute_totals", store=True)
+    error_count = fields.Integer(string="Errors", compute="_compute_totals", store=True)
+    changed_count = fields.Integer(string="Changes", compute="_compute_totals", store=True)
     value_change = fields.Monetary(
-        compute="_compute_totals",
+        compute="_compute_totals", store=True,
         help="Estimated at product cost: sum of (counted - previous) x cost.",
     )
+    move_count = fields.Integer(compute="_compute_move_count")
+    color = fields.Integer(compute="_compute_color")
 
     @api.depends("file")
     def _compute_checksum(self):
@@ -119,6 +122,18 @@ class StockEmailImport(models.Model):
             record.error_count = len(lines.filtered(lambda l: l.status == "error"))
             record.changed_count = len(lines.filtered(lambda l: l.difference_qty))
             record.value_change = sum(lines.mapped("value_change"))
+
+    @api.depends("move_ids")
+    def _compute_move_count(self):
+        for record in self:
+            record.move_count = len(record.move_ids)
+
+    @api.depends("state")
+    def _compute_color(self):
+        # Odoo's kanban colour indexes: 10 green, 1 red, 2 orange, 4 blue.
+        colors = {"done": 10, "failed": 1, "rejected": 2, "pending": 4}
+        for record in self:
+            record.color = colors.get(record.state, 0)
 
     # ------------------------------------------------------------------
     # Mail gateway
@@ -217,6 +232,21 @@ class StockEmailImport(models.Model):
         self.filtered(lambda r: r.state in ("failed", "rejected")).write({
             "state": "draft", "error_message": False,
         })
+
+    def action_view_lines(self):
+        self.ensure_one()
+        context = {}
+        filter_name = self.env.context.get("line_filter")
+        if filter_name:
+            context["search_default_%s" % filter_name] = 1
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("Rows of %(name)s", name=self.name),
+            "res_model": "stock.email.import.line",
+            "view_mode": "list",
+            "domain": [("import_id", "=", self.id)],
+            "context": context,
+        }
 
     def action_view_moves(self):
         self.ensure_one()
@@ -465,7 +495,7 @@ class StockEmailImport(models.Model):
                     product=product.display_name)
             return product, None, None
         if config.create_missing_products and row["product_name"]:
-            return "new", "info", _("New product will be created.")
+            return "new", "new_product", _("New product will be created.")
         return Product, "error", _("Product '%(product)s' not found.", product=label)
 
     def _resolve_location(self, row, config, cache):
@@ -530,7 +560,7 @@ class StockEmailImport(models.Model):
             row["lot"] = cache[key]
         elif config.create_missing_lots:
             row["new_lot"] = lot_name
-            self._add(row, "info", _("New lot '%(lot)s' will be created.", lot=lot_name))
+            self._add(row, "new_lot", _("New lot '%(lot)s' will be created.", lot=lot_name))
         else:
             self._add(row, "error", _("Lot '%(lot)s' not found.", lot=lot_name))
 
@@ -641,6 +671,7 @@ class StockEmailImport(models.Model):
                 new_products[key] = self.env["product.product"].create(values)
             row["product"] = new_products[key]
             row["new_product"] = False
+            self._replace_message(row, "new_product", _("Product created."))
 
     def _find_or_create_category(self, name):
         Category = self.env["product.category"]
@@ -673,13 +704,27 @@ class StockEmailImport(models.Model):
                     "product_id": row["product"].id,
                     "company_id": config.company_id.id,
                 })
+            lot_name = row["new_lot"]
             row["lot"] = created[key]
             row["new_lot"] = False
+            self._replace_message(row, "new_lot", _("Lot '%(lot)s' created.", lot=lot_name))
+
+    @staticmethod
+    def _replace_message(row, level, text):
+        row["messages"] = [
+            ("info", text) if message_level == level else (message_level, message)
+            for message_level, message in row["messages"]
+        ]
 
     # -- reporting -----------------------------------------------------
 
     def _line_values(self, row):
         levels = [level for level, _message in row["messages"]]
+        is_error = "error" in levels
+        # A failed row only lists what is wrong; notes such as "will be
+        # created" would read as more problems.
+        messages = [message for level, message in row["messages"]
+                    if level == "error" or not is_error]
         return {
             "import_id": self.id,
             "row_number": row["row_number"],
@@ -697,8 +742,8 @@ class StockEmailImport(models.Model):
             "difference_qty": row.get("difference_qty", 0.0),
             "value_change": row.get("value_change", 0.0),
             "price": row["price"] or 0.0,
-            "status": "error" if "error" in levels else row["status"],
-            "message": "\n".join(message for _level, message in row["messages"]),
+            "status": "error" if is_error else row["status"],
+            "message": "\n".join(messages),
         }
 
     def _summary_text(self):
@@ -733,8 +778,112 @@ class StockEmailImport(models.Model):
             return
         self.env["mail.mail"].sudo().create({
             "subject": "%s: %s" % (title, record.name),
-            "body_html": body,
+            "body_html": record._email_html(title, text),
             "email_to": record.email_from,
             "email_from": config.company_id.email_formatted or config.user_id.email_formatted,
             "auto_delete": True,
         })
+
+    def _email_html(self, title, text):
+        """The result email: inline styles only, as mail clients drop <style>."""
+        self.ensure_one()
+        ok = self.state == "done"
+        accent = "#1e7b4f" if ok else "#b3372b"
+        tint = "#e9f6ef" if ok else "#fbecea"
+        font = "font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;"
+        cell = Markup("padding:8px 10px;border-bottom:1px solid #eceae8;font-size:13px;color:#2b2a29;")
+        head = Markup("padding:8px 10px;background:#f6f5f4;font-size:11px;color:#6b6763;"
+                      "text-transform:uppercase;letter-spacing:.04em;text-align:left;")
+
+        def kpi(label, value, color="#2b2a29"):
+            return Markup(
+                '<td style="padding:12px 8px;text-align:center;%s">'
+                '<div style="font-size:20px;font-weight:700;color:%s;">%s</div>'
+                '<div style="font-size:11px;color:#6b6763;text-transform:uppercase;'
+                'letter-spacing:.05em;">%s</div></td>'
+            ) % (Markup(font), color, value, label)
+
+        value = "%s %s" % (
+            "{:+,.2f}".format(self.value_change or 0.0), self.currency_id.symbol or "")
+        kpis = Markup("").join([
+            kpi(_("Rows"), self.line_count),
+            kpi(_("Changes"), self.changed_count),
+            kpi(_("Errors"), self.error_count, "#b3372b" if self.error_count else "#2b2a29"),
+            kpi(_("Value change"), value),
+        ])
+
+        if ok:
+            lines = self.line_ids.filtered(lambda l: l.difference_qty)[:40]
+            header = Markup("").join(
+                Markup('<th style="%s">%s</th>') % (head, label)
+                for label in (_("Product"), _("Location"), _("Before"), _("Counted"), _("Change"))
+            )
+            rows = Markup("").join(
+                Markup(
+                    '<tr><td style="%s">%s</td><td style="%s">%s</td>'
+                    '<td style="%s text-align:right;">%s</td><td style="%s text-align:right;">%s</td>'
+                    '<td style="%s text-align:right;font-weight:600;color:%s;">%s</td></tr>'
+                ) % (
+                    cell, line.product_id.display_name or line.product_code,
+                    cell, line.location_id.complete_name or "",
+                    cell, "{:,.2f}".format(line.previous_qty),
+                    cell, "{:,.2f}".format(line.counted_qty),
+                    cell, "#1e7b4f" if line.difference_qty > 0 else "#b3372b",
+                    "{:+,.2f}".format(line.difference_qty),
+                )
+                for line in lines
+            )
+            empty = _("No quantities changed: the counts matched the stock in Odoo.")
+        else:
+            lines = self.line_ids.filtered(lambda l: l.status == "error")[:40]
+            header = Markup("").join(
+                Markup('<th style="%s">%s</th>') % (head, label)
+                for label in (_("Row"), _("Product"), _("Problem"))
+            )
+            rows = Markup("").join(
+                Markup(
+                    '<tr><td style="%s">%s</td><td style="%s">%s</td>'
+                    '<td style="%s color:#b3372b;">%s</td></tr>'
+                ) % (
+                    cell, line.row_number,
+                    cell, line.product_code or line.barcode or line.product_name or "",
+                    cell, line.message or "",
+                )
+                for line in lines
+            )
+            empty = self.error_message or ""
+
+        table = (
+            Markup('<table width="100%%" cellpadding="0" cellspacing="0" '
+                   'style="border-collapse:collapse;border:1px solid #eceae8;%s">'
+                   '<tr>%s</tr>%s</table>') % (Markup(font), header, rows)
+            if lines else Markup('<p style="%s font-size:13px;color:#6b6763;">%s</p>') % (Markup(font), empty)
+        )
+
+        return Markup(
+            '<div style="background:#f4f2f0;padding:24px 12px;%(font)s">'
+            '<table width="100%%" cellpadding="0" cellspacing="0" align="center" '
+            'style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:10px;'
+            'overflow:hidden;border:1px solid #e4e1de;">'
+            '<tr><td style="background:%(accent)s;padding:20px 24px;color:#ffffff;">'
+            '<div style="font-size:12px;opacity:.85;text-transform:uppercase;letter-spacing:.08em;">%(company)s</div>'
+            '<div style="font-size:22px;font-weight:700;margin-top:4px;">%(title)s</div>'
+            '<div style="font-size:13px;opacity:.9;margin-top:4px;">%(name)s · %(file)s</div>'
+            '</td></tr>'
+            '<tr><td style="background:%(tint)s;padding:4px 12px;">'
+            '<table width="100%%" cellpadding="0" cellspacing="0"><tr>%(kpis)s</tr></table>'
+            '</td></tr>'
+            '<tr><td style="padding:20px 24px;">'
+            '<p style="margin:0 0 16px;font-size:14px;color:#2b2a29;line-height:1.5;">%(text)s</p>'
+            '%(table)s'
+            '</td></tr>'
+            '<tr><td style="padding:14px 24px;border-top:1px solid #eceae8;font-size:11px;color:#8a8580;">'
+            '%(footer)s</td></tr>'
+            '</table></div>'
+        ) % {
+            "font": Markup(font), "accent": accent, "tint": tint,
+            "company": self.company_id.name, "title": title,
+            "name": self.name, "file": self.file_name or "",
+            "kpis": kpis, "text": text, "table": table,
+            "footer": _("Sent automatically by the Odoo stocktake import. Reply to your administrator with any questions."),
+        }
