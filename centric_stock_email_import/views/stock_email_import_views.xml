@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_stock_email_import_list" model="ir.ui.view">
+        <field name="name">stock.email.import.list</field>
+        <field name="model">stock.email.import</field>
+        <field name="arch" type="xml">
+            <list decoration-danger="state in ('failed', 'rejected')"
+                  decoration-muted="state == 'draft'"
+                  decoration-success="state == 'done'">
+                <field name="received_date"/>
+                <field name="name"/>
+                <field name="email_from"/>
+                <field name="file_name"/>
+                <field name="line_count" string="Rows"/>
+                <field name="changed_count" string="Changes"/>
+                <field name="currency_id" column_invisible="True"/>
+                <field name="value_change" sum="Total"/>
+                <field name="company_id" groups="base.group_multi_company" optional="hide"/>
+                <field name="state" widget="badge"
+                       decoration-danger="state in ('failed', 'rejected')"
+                       decoration-info="state == 'pending'"
+                       decoration-success="state == 'done'"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_stock_email_import_form" model="ir.ui.view">
+        <field name="name">stock.email.import.form</field>
+        <field name="model">stock.email.import</field>
+        <field name="arch" type="xml">
+            <form string="Stock Email Import">
+                <header>
+                    <button name="action_process" type="object" string="Apply Stocktake"
+                            class="btn-primary" groups="stock.group_stock_manager"
+                            invisible="state not in ('draft', 'pending', 'failed')"
+                            confirm="Apply the counted quantities of this sheet to inventory?"/>
+                    <button name="action_reset_to_draft" type="object" string="Reset to Draft"
+                            groups="stock.group_stock_manager" invisible="state not in ('failed', 'rejected')"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,pending,done"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_moves" type="object" icon="fa-exchange"
+                                class="oe_stat_button" invisible="not move_ids">
+                            <div class="o_stat_info">
+                                <span class="o_stat_text">Inventory Moves</span>
+                            </div>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="state == 'done'"/></h1>
+                    </div>
+                    <div class="alert alert-danger" role="alert" invisible="not error_message">
+                        <field name="error_message"/>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="config_id" readonly="state != 'draft'"/>
+                            <field name="file" filename="file_name" readonly="state not in ('draft', 'failed')"/>
+                            <field name="file_name" invisible="1"/>
+                            <field name="allow_duplicate" readonly="state == 'done'"/>
+                        </group>
+                        <group>
+                            <field name="email_from" invisible="not email_from"/>
+                            <field name="received_date"/>
+                            <field name="applied_date" invisible="not applied_date"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                            <field name="currency_id" invisible="1"/>
+                            <field name="value_change"/>
+                            <field name="move_ids" invisible="1"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Rows" name="rows">
+                            <field name="line_ids" readonly="1">
+                                <list decoration-danger="status == 'error'"
+                                      decoration-muted="status == 'skipped'">
+                                    <field name="row_number"/>
+                                    <field name="product_code" optional="show"/>
+                                    <field name="barcode" optional="hide"/>
+                                    <field name="product_name" optional="hide"/>
+                                    <field name="product_id"/>
+                                    <field name="location_id" optional="show"/>
+                                    <field name="lot_id" optional="show"/>
+                                    <field name="previous_qty"/>
+                                    <field name="counted_qty"/>
+                                    <field name="difference_qty"
+                                           decoration-danger="difference_qty &lt; 0"
+                                           decoration-success="difference_qty &gt; 0"/>
+                                    <field name="currency_id" column_invisible="True"/>
+                                    <field name="value_change" sum="Total"/>
+                                    <field name="status" widget="badge"
+                                           decoration-danger="status == 'error'"
+                                           decoration-success="status == 'ok'"/>
+                                    <field name="message"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_stock_email_import_search" model="ir.ui.view">
+        <field name="name">stock.email.import.search</field>
+        <field name="model">stock.email.import</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="email_from"/>
+                <field name="file_name"/>
+                <filter name="filter_failed" string="Needs Attention"
+                        domain="[('state', 'in', ('failed', 'rejected'))]"/>
+                <filter name="filter_done" string="Applied" domain="[('state', '=', 'done')]"/>
+                <separator/>
+                <filter name="filter_received" string="Received" date="received_date"/>
+                <group>
+                    <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                    <filter name="group_day" string="Day" context="{'group_by': 'received_date:day'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_stock_email_import" model="ir.actions.act_window">
+        <field name="name">Stock Email Imports</field>
+        <field name="res_model">stock.email.import</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No stocktake received yet</p>
+            <p>Email an Excel stocktake sheet to the alias set in
+               Stock Email Import &gt; Configuration, or create an import here
+               and upload the sheet yourself.</p>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_stock_email_import_config_list" model="ir.ui.view">
+        <field name="name">stock.email.import.config.list</field>
+        <field name="model">stock.email.import.config</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="alias_full_name" string="Email Address"/>
+                <field name="user_id"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_stock_email_import_config_form" model="ir.ui.view">
+        <field name="name">stock.email.import.config.form</field>
+        <field name="model">stock.email.import.config</field>
+        <field name="arch" type="xml">
+            <form string="Stock Email Import Configuration">
+                <header>
+                    <button name="action_download_template" type="object"
+                            string="Download Excel Template" icon="fa-download"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_imports" type="object" icon="fa-envelope-o"
+                                class="oe_stat_button">
+                            <field name="import_count" widget="statinfo" string="Imports"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group>
+                        <group string="Mailbox">
+                            <field name="alias_name" string="Alias" placeholder="e.g. stocktake"/>
+                            <field name="alias_domain_id" string="Domain"
+                                   options="{'no_create': True, 'no_open': True}"/>
+                            <field name="alias_full_name" string="Email Address" readonly="1"/>
+                            <field name="allowed_emails"
+                                   placeholder="administrator@yourcompany.com"/>
+                        </group>
+                        <group string="Applying">
+                            <field name="company_id" groups="base.group_multi_company"/>
+                            <field name="user_id"/>
+                            <field name="location_id"/>
+                            <field name="price_update"/>
+                            <field name="create_missing_products"/>
+                            <field name="create_missing_lots"/>
+                            <field name="notify_sender"/>
+                            <field name="active" invisible="1"/>
+                        </group>
+                    </group>
+                    <div class="text-muted">
+                        Each emailed sheet holds <strong>counted</strong> quantities: on-hand
+                        stock for every listed product, location and lot is set to the number
+                        in the sheet. Products not in the sheet are left unchanged. The whole
+                        sheet is applied only when every row is valid.
+                    </div>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_stock_email_import_config" model="ir.actions.act_window">
+        <field name="name">Stock Email Import Configuration</field>
+        <field name="res_model">stock.email.import.config</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>
