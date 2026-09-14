@@ -4,7 +4,7 @@
         <field name="name">stock.email.import.config.list</field>
         <field name="model">stock.email.import.config</field>
         <field name="arch" type="xml">
-            <list class="o_sei_view">
+            <list class="o_sei_view o_sei_mailbox">
                 <field name="name"/>
                 <field name="alias_full_name" string="Email Address" widget="CopyClipboardChar"/>
                 <field name="user_id" widget="many2one_avatar_user"/>
@@ -19,7 +19,7 @@
         <field name="name">stock.email.import.config.form</field>
         <field name="model">stock.email.import.config</field>
         <field name="arch" type="xml">
-            <form string="Stocktake Mailbox" class="o_sei_view">
+            <form string="Stocktake Mailbox" class="o_sei_view o_sei_mailbox">
                 <header>
                     <button name="action_download_template" type="object"
                             string="Download Excel Template" icon="fa-file-excel-o"

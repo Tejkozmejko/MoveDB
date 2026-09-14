@@ -1,23 +1,19 @@
-// Stocktake screens: a warehouse scene behind every kanban, list and form of
-// this module.
+// Stocktake screens: a scene behind every kanban, list and form of this module.
 //
-// The image is a wide banner (3:1). It is pinned to the viewport, spans its
-// width and fades into the floor colour below, so it stays put while cards and
+//   .o_sei_view                 warehouse aisle (stocktakes, rows)
+//   .o_sei_view.o_sei_mailbox   loading bay with the incoming email (mailboxes)
+//   .o_sei_view.o_sei_mapping   spreadsheet columns mapped to stock (column mapping)
+//
+// Each image is a wide 3:1 banner, pinned to the viewport, spanning its width
+// and fading into its own floor colour below, so it stays put while cards and
 // rows scroll over it. Lists keep a solid table so rows remain readable.
-$sei-base: #161b20;
-$sei-image: url("/centric_stock_email_import/static/src/img/stocktake_warehouse.jpg");
+$sei-img: "/centric_stock_email_import/static/src/img/";
 
-@mixin sei-backdrop {
-    background-color: $sei-base;
+@mixin sei-scene($file, $base) {
+    background-color: $base;
     background-image:
-        linear-gradient(180deg, rgba(22, 27, 32, 0) 60%, rgba(22, 27, 32, .75) 85%, $sei-base 100%),
-        $sei-image;
-    // Both layers share the image's own box (full width, a third as tall), so
-    // the fade ends exactly where the picture does.
-    background-size: 100vw 33.34vw, 100vw 33.34vw;
-    background-position: left top, left top;
-    background-repeat: no-repeat, no-repeat;
-    background-attachment: fixed, fixed;
+        linear-gradient(180deg, rgba($base, 0) 60%, rgba($base, .75) 85%, $base 100%),
+        url("#{$sei-img}#{$file}");
 }
 
 // The arch class can land on the renderer or on a wrapper around it.
@@ -27,7 +23,38 @@ $sei-image: url("/centric_stock_email_import/static/src/img/stocktake_warehouse.
 .o_sei_view .o_list_renderer,
 .o_sei_view .o_form_sheet_bg,
 .o_sei_view.o_form_sheet_bg {
-    @include sei-backdrop;
+    @include sei-scene("stocktake_warehouse.jpg", #161b20);
+    // Both layers share the image's own box (full width, a third as tall), so
+    // the fade ends exactly where the picture does.
+    background-size: 100vw 33.34vw, 100vw 33.34vw;
+    background-position: left top, left top;
+    background-repeat: no-repeat, no-repeat;
+    background-attachment: fixed, fixed;
+}
+
+.o_sei_mailbox.o_kanban_renderer,
+.o_sei_mailbox .o_kanban_renderer,
+.o_sei_mailbox.o_list_renderer,
+.o_sei_mailbox .o_list_renderer,
+.o_sei_mailbox .o_form_sheet_bg,
+.o_sei_mailbox.o_form_sheet_bg {
+    @include sei-scene("stocktake_mailbox.jpg", #131517);
+}
+
+.o_sei_mapping.o_kanban_renderer,
+.o_sei_mapping .o_kanban_renderer,
+.o_sei_mapping.o_list_renderer,
+.o_sei_mapping .o_list_renderer,
+.o_sei_mapping .o_form_sheet_bg,
+.o_sei_mapping.o_form_sheet_bg {
+    // The mapping list is short and sits at the top, so this scene is pinned to
+    // the bottom of the screen and fades upwards instead - its floating
+    // spreadsheets stay visible below the rows.
+    background-color: #09111f;
+    background-image:
+        linear-gradient(0deg, rgba(#09111f, 0) 60%, rgba(#09111f, .75) 85%, #09111f 100%),
+        url("#{$sei-img}stocktake_mapping.jpg");
+    background-position: left bottom, left bottom;
 }
 
 // Text drawn straight onto the scene stays light, even in Odoo's light theme.
