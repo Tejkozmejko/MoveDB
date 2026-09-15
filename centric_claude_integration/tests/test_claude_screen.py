@@ -184,3 +184,57 @@ class TestClaudeScreen(TransactionCase):
             "values_json": '{"comment": "Reviewed"}', "summary": "Review customer",
         })
         self.assertEqual(operation._check_can_apply().env.companies.ids, company.ids)
+
+    def test_screen_chat_starts_with_the_picked_model_and_effort(self):
+        Conversation = self._conversation_model()
+        payload = Conversation.create_screen_conversation(
+            self._screen(), {"model": "claude-sonnet-5", "effort": "low"}
+        )
+        conversation = Conversation.browse(payload["conversation"]["id"])
+        self.assertEqual((conversation.model, conversation.effort), ("claude-sonnet-5", "low"))
+        Conversation.send_workspace_message(conversation.id, "Summarize this")
+        turn = self.env["centric.claude.turn"].search([("conversation_id", "=", conversation.id)])
+        self.assertEqual(turn._payload_for_agent()["model"], "claude-sonnet-5")
+
+    def test_unknown_model_and_effort_options_are_ignored(self):
+        Conversation = self._conversation_model()
+        payload = Conversation.create_screen_conversation(
+            self._screen(), {"model": "--dangerously-skip-permissions", "effort": "infinite"}
+        )
+        conversation = Conversation.browse(payload["conversation"]["id"])
+        self.assertEqual(conversation.model, "claude-opus-5")
+        self.assertIn(conversation.effort, Conversation.EFFORT_LEVELS)
+
+    def test_previous_chats_are_listed_per_record_and_per_app(self):
+        Conversation = self._conversation_model()
+        first = Conversation.create_screen_conversation(self._screen())["conversation"]["id"]
+        second = Conversation.create_screen_conversation(
+            self._screen(record_ids=self.partners[1].ids)
+        )["conversation"]["id"]
+        Conversation.send_workspace_message(first, "About customer one")
+        Conversation.send_workspace_message(second, "About customer two")
+        # Opened but never used: not worth listing.
+        Conversation.create_screen_conversation(self._screen())
+
+        on_record = Conversation.list_screen_conversations(self._screen())
+        self.assertEqual([item["id"] for item in on_record], [first])
+        self.assertEqual(on_record[0]["question"], "About customer one")
+        self.assertEqual(on_record[0]["message_count"], 1)
+
+        in_app = Conversation.list_screen_conversations(
+            self._screen(scope="filter", record_ids=[], domain=[])
+        )
+        self.assertEqual({item["id"] for item in in_app}, {first, second})
+
+    def test_previous_chats_are_private_to_their_owner(self):
+        Conversation = self._conversation_model()
+        mine = Conversation.create_screen_conversation(self._screen())["conversation"]["id"]
+        Conversation.send_workspace_message(mine, "Mine")
+        colleague = self.env["res.users"].create({
+            "name": "Claude screen colleague", "login": "claude_screen_colleague",
+            "company_id": self.env.company.id,
+            "company_ids": [(6, 0, [self.env.company.id])],
+            "group_ids": [(6, 0, self.reader.group_ids.ids)],
+        })
+        theirs = self.env["centric.claude.conversation"].with_user(colleague)
+        self.assertFalse(theirs.list_screen_conversations(self._screen()))

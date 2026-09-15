@@ -101,6 +101,8 @@ ATTACHMENT_EXTENSIONS = {
     "image/jpeg": ".jpg",
     "image/gif": ".gif",
     "image/webp": ".webp",
+    "application/pdf": ".pdf",
+    "text/plain": ".txt",
 }
 # How many images from earlier in the conversation to bring down as well.
 MAX_HISTORY_IMAGES = 8
@@ -192,6 +194,17 @@ def effort_for(turn):
     return level if level in EFFORT_LEVELS else ""
 
 
+# A model id goes onto the command line, so only the shape of a real one is let
+# through - never a flag or anything with spaces in it.
+MODEL_RE = re.compile(r"^claude-[a-z0-9][a-z0-9.-]{0,60}$")
+
+
+def model_for(turn):
+    """The model chosen for this chat, or "" for Claude Code's own default."""
+    model = (turn.get("model") or "").strip().lower()
+    return model if MODEL_RE.match(model) else ""
+
+
 ODOO_READ_TOOLS = (
     "mcp__odoo__odoo_find_models",
     "mcp__odoo__odoo_describe_model",
@@ -259,6 +272,10 @@ class BridgeError(RuntimeError):
 
 class SessionNotFound(BridgeError):
     """Claude Code has no saved session under the id it was asked to resume."""
+
+
+class ModelNotAvailable(BridgeError):
+    """The chosen model does not exist, or this subscription cannot use it."""
 
 
 # ------------------------------------------------------ stored settings ---
@@ -765,7 +782,7 @@ def safe_attachment_name(item, index):
     kept, and only from the sniffed content type.
     """
     extension = ATTACHMENT_EXTENSIONS.get(item.get("mimetype") or "", ".img")
-    return "image-%d%s" % (index, extension)
+    return "attachment-%d%s" % (index, extension)
 
 
 def fetch_attachments(config, turn, repo):
@@ -955,8 +972,8 @@ def build_prompt(turn, images=(), resume=False):
         # not handed over. Saying it plainly, with the paths, is what gets the
         # Read tool pointed at them.
         lines.append("")
-        lines.append("The user attached %d image(s) to this conversation. "
-                     "Read each one with the Read tool before answering:"
+        lines.append("The user attached %d file(s) to this conversation - images, "
+                     "PDFs or text. Read each one with the Read tool before answering:"
                      % len(images))
         for path, name in images:
             lines.append("- %s (sent as %s)" % (path, name))
@@ -1004,6 +1021,7 @@ def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None, images=
     level = effort_for(turn)
     if level:
         command += ["--effort", level]
+    model = model_for(turn)
     # Without Developer Mode, deny the editing tools outright rather than relying
     # on the prompt alone.
     allowed = ["Read", "Grep", "Glob"]
@@ -1027,25 +1045,39 @@ def run_claude(repo, turn, timeout, claude_bin, extra_args, config=None, images=
             environment.update(mcp_env)
         command += ["--allowedTools", ",".join(allowed)]
 
-        def attempt(sid, resuming):
+        def invoke(sid, resuming, model_args):
             session_args = ["--resume", sid] if resuming else ["--session-id", sid]
             return _invoke_claude(
-                command + session_args + list(extra_args),
+                command + session_args + model_args + list(extra_args),
                 repo, timeout, claude_bin, environment,
                 on_progress=progress_reporter(config, turn),
                 stdin_text=build_prompt(turn, images, resume=resuming),
             )
 
+        def attempt(sid, resuming):
+            """(answer, denials, session id actually used)."""
+            if not model:
+                return invoke(sid, resuming, []) + (sid,)
+            try:
+                return invoke(sid, resuming, ["--model", model]) + (sid,)
+            except ModelNotAvailable:
+                say("    model %s is not available to this Claude account; "
+                    "answering with the default model" % model)
+                if not resuming:
+                    # The refused run may already have claimed that id.
+                    sid = str(uuid.uuid4())
+                return invoke(sid, resuming, []) + (sid,)
+
         session_id = session_id or str(uuid.uuid4())
         try:
-            text, denials = attempt(session_id, resume)
+            text, denials, session_id = attempt(session_id, resume)
         except SessionNotFound:
             if not resume:
                 raise
             say("    saved session %s could not be resumed; starting a fresh one "
                 "from the transcript" % session_id)
             session_id = str(uuid.uuid4())
-            text, denials = attempt(session_id, False)
+            text, denials, session_id = attempt(session_id, False)
         return text + explain_denials(denials, turn), session_id
 
 
@@ -1294,6 +1326,10 @@ def _invoke_claude(command, repo, timeout, claude_bin, environment,
     reported = "".join(errors) + " ".join(str(item) for item in (final or {}).get("errors") or [])
     if process.returncode != 0 and "No conversation found with session ID" in reported:
         raise SessionNotFound(reported.strip()[:300])
+    # Same idea for a model this subscription cannot use: answer with the
+    # default model rather than fail the question over a dropdown choice.
+    if (final or {}).get("is_error") and final.get("api_error_status") == 404             and "selected model" in (final.get("result") or ""):
+        raise ModelNotAvailable((final.get("result") or "").strip()[:300])
     if process.returncode != 0 or final is None or final.get("is_error"):
         raise BridgeError(claude_failure(final, "".join(errors),
                                          process.returncode))
@@ -1481,7 +1517,7 @@ def handle_turn(config, turn, repo=None, label=""):
     images = fetch_attachments(config, turn, repo)
     try:
         if images:
-            say("%s    %d image(s) attached" % (label, len(images)))
+            say("%s    %d file(s) attached" % (label, len(images)))
         text, session_id = run_claude(
             repo, turn, config.timeout, config.claude_bin, config.claude_args,
             config=config, images=images, session_id=session_id, resume=resume,

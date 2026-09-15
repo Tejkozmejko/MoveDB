@@ -6,16 +6,16 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 
 
 class CentricClaudeAttachment(models.Model):
-    """An image a user attached to one chat message.
+    """An image, PDF or text file a user attached to one chat message.
 
-    Images only, on purpose: a screenshot of an error is what people actually
-    want to send, and it is the one format both backends handle well. Documents
-    would mean a second delivery path for a much smaller gain.
+    Those three because both backends read them natively: Claude Code's Read
+    tool opens images, PDFs and text, and the Messages API takes them as image
+    and document blocks. Office files and archives would need converting first.
 
     The bytes end up on a developer's workstation - the local agent can only
     read a file that is really on its disk - so the claimed content type is
-    never trusted. `_sniff` decides what a file is from its own leading bytes,
-    and anything that is not a recognised image is refused outright.
+    never trusted. `_sniff` decides what a file is from its own bytes, and
+    anything it does not recognise is refused outright.
     """
 
     _name = "centric.claude.attachment"
@@ -29,7 +29,9 @@ class CentricClaudeAttachment(models.Model):
         (b"\xff\xd8\xff", "image/jpeg", "jpg"),
         (b"GIF87a", "image/gif", "gif"),
         (b"GIF89a", "image/gif", "gif"),
+        (b"%PDF-", "application/pdf", "pdf"),
     )
+    IMAGE_TYPES = ("image/png", "image/jpeg", "image/gif", "image/webp")
 
     DEFAULT_MAX_MB = 5
     MAX_PER_MESSAGE = 5
@@ -108,7 +110,16 @@ class CentricClaudeAttachment(models.Model):
                 return mimetype, extension
         if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
             return "image/webp", "webp"
-        return False, False
+        # Text has no magic bytes. Valid UTF-8 without NUL or other binary
+        # control characters is treated as text - and always lands as .txt,
+        # so a script can be read but never ends up executable by its name.
+        try:
+            decoded = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return False, False
+        if any(ord(char) < 32 and char not in "\t\n\r\f" for char in decoded):
+            return False, False
+        return "text/plain", "txt"
 
     def _check_owner(self):
         self.ensure_one()
@@ -117,16 +128,29 @@ class CentricClaudeAttachment(models.Model):
         ):
             raise AccessError(_("You can only use your own attachments."))
 
+    def _is_image(self):
+        self.ensure_one()
+        return self.mimetype in self.IMAGE_TYPES
+
     def _summary(self):
         self.ensure_one()
+        is_image = self._is_image()
         return {
             "id": self.id,
             "name": self.name,
             "mimetype": self.mimetype,
             "file_size": self.file_size,
-            # Odoo's own binary route, so the record rules decide who sees it.
-            "url": "/web/image/centric.claude.attachment/%s/datas" % self.id,
+            "is_image": is_image,
+            # Odoo's own binary routes, so the record rules decide who sees it.
+            "url": (
+                "/web/image/centric.claude.attachment/%s/datas" % self.id if is_image
+                else "/web/content/centric.claude.attachment/%s/datas?download=true" % self.id
+            ),
         }
+
+    def _base64_data(self):
+        self.ensure_one()
+        return (self.datas or b"").decode() if isinstance(self.datas, bytes) else (self.datas or "")
 
     def _image_block(self):
         """One Anthropic image content block, for the hosted API backend."""
@@ -136,10 +160,22 @@ class CentricClaudeAttachment(models.Model):
             "source": {
                 "type": "base64",
                 "media_type": self.mimetype,
-                "data": (self.datas or b"").decode() if isinstance(self.datas, bytes)
-                        else (self.datas or ""),
+                "data": self._base64_data(),
             },
         }
+
+    def _content_block(self):
+        """The Messages API block for this file: an image, or a document."""
+        self.ensure_one()
+        if self._is_image():
+            return self._image_block()
+        if self.mimetype == "application/pdf":
+            source = {"type": "base64", "media_type": "application/pdf",
+                      "data": self._base64_data()}
+        else:
+            text = base64.b64decode(self._base64_data()).decode("utf-8-sig", "replace")
+            source = {"type": "text", "media_type": "text/plain", "data": text}
+        return {"type": "document", "source": source, "title": self.name[:200]}
 
     def _agent_summary(self):
         """What the bridge needs to decide whether to download this one."""
@@ -154,7 +190,7 @@ class CentricClaudeAttachment(models.Model):
     # ------------------------------------------------------------ workspace
     @api.model
     def upload_workspace_attachment(self, conversation_id, name, data):
-        """Store one pasted or picked image, unattached to a message yet."""
+        """Store one pasted or picked file, unattached to a message yet."""
         conversation = self.env["centric.claude.conversation"].browse(
             int(conversation_id)
         ).exists()
@@ -174,7 +210,7 @@ class CentricClaudeAttachment(models.Model):
         limit = self._max_bytes()
         if len(raw) > limit:
             raise ValidationError(_(
-                "Images are limited to %(limit)s MB. That one is %(size)s MB."
+                "Attachments are limited to %(limit)s MB. That one is %(size)s MB."
             ) % {
                 "limit": round(limit / 1024 / 1024, 1),
                 "size": round(len(raw) / 1024 / 1024, 1),
@@ -183,7 +219,7 @@ class CentricClaudeAttachment(models.Model):
         mimetype, extension = self._sniff(raw)
         if not mimetype:
             raise ValidationError(_(
-                "Only PNG, JPEG, GIF and WebP images can be attached."
+                "Only images (PNG, JPEG, GIF, WebP), PDFs and plain text files can be attached."
             ))
 
         # Already waiting to be sent, plus this one.
@@ -194,10 +230,12 @@ class CentricClaudeAttachment(models.Model):
         ])
         if pending >= self.MAX_PER_MESSAGE:
             raise ValidationError(_(
-                "Up to %s images can be sent with one message."
+                "Up to %s files can be sent with one message."
             ) % self.MAX_PER_MESSAGE)
 
-        clean_name = (name or "").strip()[:self.MAX_NAME] or _("pasted image")
+        clean_name = (name or "").strip()[:self.MAX_NAME] or (
+            _("pasted image") if mimetype in self.IMAGE_TYPES else _("pasted file")
+        )
         if "." not in clean_name.rsplit("/", 1)[-1]:
             clean_name = "%s.%s" % (clean_name, extension)
 
@@ -213,14 +251,14 @@ class CentricClaudeAttachment(models.Model):
 
     @api.model
     def discard_workspace_attachment(self, attachment_id):
-        """Remove one image that has not been sent yet."""
+        """Remove one file that has not been sent yet."""
         attachment = self.browse(int(attachment_id)).exists()
         if not attachment:
             return True
         attachment._check_owner()
         if attachment.message_id:
             raise UserError(_(
-                "That image has already been sent and cannot be removed."
+                "That file has already been sent and cannot be removed."
             ))
         attachment.unlink()
         return True

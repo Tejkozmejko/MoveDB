@@ -1153,6 +1153,11 @@ $cc-brand-active: #c96540;
 
     .o_cc_attach {
         position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        > .fa { font-size: 24px; color: var(--cc-brand); }
         width: 56px;
         height: 56px;
         border-radius: 8px;
@@ -1214,6 +1219,8 @@ $cc-brand-active: #c96540;
         max-width: 220px;
         line-height: 0;
         transition: border-color .13s ease;
+
+        > .fa { font-size: 28px; line-height: 1; padding: 12px 16px; color: var(--cc-brand); }
 
         img {
             max-width: 100%;

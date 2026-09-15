@@ -142,6 +142,9 @@ class CentricClaudeConversation(models.Model):
             "default_branch": self._default_branch(),
             "allowed_module_prefix": self._param("centric_claude.allowed_module_prefix", "centric_"),
             "effort_choices": self._effort_choices(),
+            "model_choices": self._model_choices(),
+            "default_model": self._fields["model"].default(self),
+            "default_effort": self._default_effort(),
             "attachments_enabled": self.env["centric.claude.attachment"]._enabled(),
             "attachment_max_mb": round(
                 self.env["centric.claude.attachment"]._max_bytes() / 1024 / 1024, 1
@@ -320,10 +323,13 @@ class CentricClaudeConversation(models.Model):
 
         # `content` is required, and an image on its own still has to say
         # something to Claude, so an image-only message carries the obvious ask.
-        text = typed or (
-            _("Please look at the attached image.") if len(attachments) == 1
-            else _("Please look at the attached images.")
-        )
+        if all(attachment._is_image() for attachment in attachments):
+            fallback = (_("Please look at the attached image.") if len(attachments) == 1
+                        else _("Please look at the attached images."))
+        else:
+            fallback = (_("Please look at the attached file.") if len(attachments) == 1
+                        else _("Please look at the attached files."))
+        text = typed or fallback
         message = self.env["centric.claude.message"].create({
             "conversation_id": conv.id,
             "role": "user",
@@ -493,7 +499,7 @@ class CentricClaudeConversation(models.Model):
                 for attachment in msg.attachment_ids:
                     if budget <= 0:
                         break
-                    blocks.append(attachment._image_block())
+                    blocks.append(attachment._content_block())
                     budget -= 1
             if blocks:
                 blocks.append({"type": "text", "text": msg.content})
@@ -1542,6 +1548,11 @@ Rules:
         if callable(selection):
             selection = selection(self)
         return [{"value": value, "label": label} for value, label in selection]
+
+    @api.model
+    def _model_choices(self):
+        """The models and their labels, for the picker."""
+        return [{"value": value, "label": label} for value, label in self._fields["model"].selection]
 
     @api.model
     def _conversation_summary(self, conv):

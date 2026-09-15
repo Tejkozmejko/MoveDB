@@ -8,6 +8,19 @@
                     <t t-call="centric_claude_integration.ClaudeMark"/>
                     <strong>Ask Claude</strong>
                 </span>
+                <button type="button" class="o_cc_screen_icon" title="New chat about this screen"
+                        aria-label="New chat" t-att-disabled="!state.context || state.sending || state.answering"
+                        t-on-click="newChat">
+                    <i class="fa fa-pencil-square-o" aria-hidden="true"/>
+                </button>
+                <button type="button" class="o_cc_screen_icon o_cc_screen_history_btn"
+                        t-att-class="{'o_cc_active': state.historyOpen}"
+                        title="Previous chats on this screen" aria-label="Previous chats"
+                        t-att-aria-expanded="state.historyOpen ? 'true' : 'false'"
+                        t-att-disabled="!state.context" t-on-click="toggleHistory">
+                    <i class="fa fa-history" aria-hidden="true"/>
+                    <span t-if="state.history.length" class="o_cc_screen_badge" t-esc="state.history.length"/>
+                </button>
                 <button type="button" class="o_cc_screen_icon" title="Open full workspace"
                         aria-label="Open full workspace" t-on-click="openWorkspace">
                     <i class="fa fa-expand" aria-hidden="true"/>
@@ -38,7 +51,29 @@
                 </button>
             </div>
 
-            <div class="o_cc_screen_messages" t-ref="messages" role="log" aria-label="Conversation">
+            <div t-if="state.historyOpen" class="o_cc_screen_messages o_cc_screen_history" role="region"
+                 aria-label="Previous chats">
+                <div class="o_cc_screen_history_head">
+                    <strong>Previous chats</strong>
+                    <span t-if="state.context" class="o_cc_screen_history_scope"
+                          t-esc="state.context.scope === 'record' ? 'On this record' : 'In this app'"/>
+                </div>
+                <button type="button" class="o_cc_screen_history_new"
+                        t-att-disabled="state.sending || state.answering" t-on-click="newChat">
+                    <i class="fa fa-plus me-2" aria-hidden="true"/>New chat
+                </button>
+                <div t-if="state.historyLoading &amp;&amp; !state.history.length" class="o_cc_screen_empty" role="status">
+                    <i class="fa fa-spinner fa-spin me-2" aria-hidden="true"/>Loading chats…
+                </div>
+                <p t-elif="!state.history.length" class="o_cc_screen_empty">
+                    No earlier chats here yet. Questions you ask on this screen will be listed here.
+                </p>
+                <t t-call="centric_claude_integration.ClaudeScreenChatList">
+                    <t t-set="chats" t-value="state.history"/>
+                </t>
+            </div>
+
+            <div t-else="" class="o_cc_screen_messages" t-ref="messages" role="log" aria-label="Conversation">
                 <div t-if="state.loading" class="o_cc_screen_empty" role="status">
                     <i class="fa fa-spinner fa-spin me-2" aria-hidden="true"/>Preparing your context…
                 </div>
@@ -51,11 +86,28 @@
                                     t-on-click="() => this.useSuggestion(suggestion)"/>
                         </t>
                     </div>
+                    <div t-if="recentChats.length" class="o_cc_screen_recent">
+                        <div class="o_cc_screen_history_head">
+                            <strong>Continue a previous chat</strong>
+                            <button t-if="state.history.length > recentChats.length" type="button"
+                                    class="btn btn-link btn-sm p-0" t-on-click="toggleHistory">
+                                View all (<t t-esc="state.history.length"/>)
+                            </button>
+                        </div>
+                        <t t-call="centric_claude_integration.ClaudeScreenChatList">
+                            <t t-set="chats" t-value="recentChats"/>
+                        </t>
+                    </div>
                 </div>
                 <t t-foreach="state.messages" t-as="message" t-key="message.id">
                     <article class="o_cc_screen_message"
                              t-att-class="{'o_cc_screen_message_user': message.role === 'user'}">
                         <strong class="o_cc_screen_author" t-esc="message.role === 'user' ? 'You' : 'Claude'"/>
+                        <div t-if="message.attachments and message.attachments.length" class="o_cc_screen_files">
+                            <t t-foreach="message.attachments" t-as="file" t-key="file.id">
+                                <t t-call="centric_claude_integration.ClaudeScreenFile"/>
+                            </t>
+                        </div>
                         <div class="o_cc_screen_message_body" t-out="messageHtml(message)"/>
                     </article>
                 </t>
@@ -92,18 +144,102 @@
 
             <form class="o_cc_screen_composer" t-on-submit="sendMessage">
                 <label for="o_cc_screen_question" class="visually-hidden">Ask about this screen</label>
-                <div class="o_cc_screen_input_row">
-                    <textarea id="o_cc_screen_question" t-ref="composer" rows="3"
-                              t-model="state.draft" t-on-keydown="onKeydown"
+                <div class="o_cc_screen_input_box"
+                     t-att-class="{'o_cc_dropping': state.dragging}"
+                     t-on-dragover="onDragOver" t-on-dragleave="onDragLeave" t-on-drop="onDrop">
+                    <div t-if="pending.length || state.uploading" class="o_cc_screen_files o_cc_screen_pending">
+                        <t t-foreach="pending" t-as="file" t-key="file.id">
+                            <t t-call="centric_claude_integration.ClaudeScreenFile">
+                                <t t-set="removable" t-value="true"/>
+                            </t>
+                        </t>
+                        <span t-if="state.uploading" class="o_cc_screen_file o_cc_screen_file_busy" role="status">
+                            <i class="fa fa-spinner fa-spin" aria-hidden="true"/>
+                            <span>Uploading…</span>
+                        </span>
+                    </div>
+                    <textarea id="o_cc_screen_question" t-ref="composer" rows="2"
+                              t-model="state.draft" t-on-keydown="onKeydown" t-on-paste="onPaste"
                               t-att-disabled="!state.context || state.loading || state.sending"
                               placeholder="Ask about this screen…"/>
-                    <button type="submit" class="o_cc_screen_send" t-att-disabled="!canSend"
-                            title="Send question" aria-label="Send question">
-                        <i class="fa fa-arrow-up" aria-hidden="true"/>
-                    </button>
+                    <div class="o_cc_screen_toolbar">
+                        <button t-if="attachmentsEnabled" type="button" class="o_cc_screen_tool"
+                                title="Attach photos or files (images, PDF, text)" aria-label="Attach files"
+                                t-att-disabled="!state.context || state.loading || state.sending"
+                                t-on-click="pickFiles">
+                            <i class="fa fa-paperclip" aria-hidden="true"/>
+                        </button>
+                        <span class="flex-grow-1"/>
+                        <select t-if="modelChoices.length" class="o_cc_screen_select" aria-label="Model"
+                                title="Which Claude model answers this chat"
+                                t-att-disabled="state.loading || state.sending"
+                                t-on-change="setModel">
+                            <t t-foreach="modelChoices" t-as="choice" t-key="choice.value">
+                                <option t-att-value="choice.value" t-att-selected="choice.value === state.model"
+                                        t-esc="choice.label.replace('Claude ', '')"/>
+                            </t>
+                        </select>
+                        <select t-if="effortChoices.length" class="o_cc_screen_select" aria-label="Effort"
+                                title="Effort: how much thinking - and subscription usage - each answer may use"
+                                t-att-disabled="state.loading || state.sending"
+                                t-on-change="setEffort">
+                            <t t-foreach="effortChoices" t-as="choice" t-key="choice.value">
+                                <option t-att-value="choice.value" t-att-selected="choice.value === state.effort"
+                                        t-att-title="choice.label" t-esc="shortLabel(choice.label)"/>
+                            </t>
+                        </select>
+                        <button type="submit" class="o_cc_screen_send" t-att-disabled="!canSend"
+                                title="Send question" aria-label="Send question">
+                            <i class="fa fa-arrow-up" aria-hidden="true"/>
+                        </button>
+                    </div>
                 </div>
+                <input type="file" class="d-none" t-ref="fileInput" multiple="multiple"
+                       t-att-accept="attachAccept" t-on-change="onFilesPicked"/>
                 <small>Replies are drafts. Changes need your confirmation.</small>
             </form>
         </aside>
+    </t>
+
+    <t t-name="centric_claude_integration.ClaudeScreenChatList">
+        <ul class="o_cc_screen_chats">
+            <t t-foreach="chats" t-as="chat" t-key="chat.id">
+                <li>
+                    <button type="button" class="o_cc_screen_chat"
+                            t-att-class="{'o_cc_active': state.conversation and state.conversation.id === chat.id}"
+                            t-att-disabled="state.sending || state.answering || state.uploading"
+                            t-on-click="() => this.openChat(chat)">
+                        <span class="o_cc_screen_chat_title" t-esc="chat.question || chat.name"/>
+                        <span class="o_cc_screen_chat_meta">
+                            <t t-if="state.context and state.context.scope !== 'record' and chat.record_id">
+                                <t t-esc="chat.scope_label"/> ·
+                            </t>
+                            <t t-esc="chat.message_count"/> messages · <t t-esc="relativeTime(chat.updated)"/>
+                        </span>
+                    </button>
+                </li>
+            </t>
+        </ul>
+    </t>
+
+    <t t-name="centric_claude_integration.ClaudeScreenFile">
+        <span class="o_cc_screen_file" t-att-class="{'o_cc_screen_file_image': file.is_image !== false}"
+              t-att-title="file.name">
+            <button type="button" class="o_cc_screen_file_open" t-on-click="() => this.openAttachment(file)"
+                    t-att-aria-label="'Open ' + file.name">
+                <img t-if="file.is_image !== false" t-att-src="file.url" t-att-alt="file.name"/>
+                <t t-else="">
+                    <i t-att-class="file.mimetype === 'application/pdf' ? 'fa fa-file-pdf-o' : 'fa fa-file-text-o'"
+                       aria-hidden="true"/>
+                    <span class="o_cc_screen_file_name" t-esc="file.name"/>
+                    <span class="o_cc_screen_file_size" t-esc="fileSize(file.file_size)"/>
+                </t>
+            </button>
+            <button t-if="removable" type="button" class="o_cc_screen_file_remove"
+                    t-att-aria-label="'Remove ' + file.name" title="Remove"
+                    t-on-click="() => this.removeAttachment(file)">
+                <i class="fa fa-times" aria-hidden="true"/>
+            </button>
+        </span>
     </t>
 </templates>

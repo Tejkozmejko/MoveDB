@@ -857,8 +857,30 @@ class TestClaudeWorkspace(TransactionCase):
     def test_the_claimed_file_type_is_ignored(self):
         """A disguised file must not reach a developer's disk as an image."""
         conversation = self._conversation()
+        summary = self._attach(conversation, raw=b"#!/bin/sh\nrm -rf /\n", name="shot.png")
+        # Readable as text, never as an image - and the bridge names it .txt.
+        self.assertEqual(summary["mimetype"], "text/plain")
+        self.assertFalse(summary["is_image"])
         with self.assertRaises(ValidationError):
-            self._attach(conversation, raw=b"#!/bin/sh\nrm -rf /\n", name="shot.png")
+            self._attach(conversation, raw=b"MZ\x90\x00\x03\x00\x00\x00\xff\xfe", name="shot.png")
+
+    def test_pdf_and_text_files_can_be_attached(self):
+        conversation = self._conversation()
+        pdf = self._attach(conversation, raw=b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n", name="invoice")
+        self.assertEqual(pdf["mimetype"], "application/pdf")
+        self.assertTrue(pdf["name"].endswith(".pdf"))
+        self.assertIn("/web/content/", pdf["url"])
+        text = self._attach(conversation, raw="name;qty\nbolt;12\n".encode(), name="stock.csv")
+        self.assertEqual(text["mimetype"], "text/plain")
+        self.Conversation.send_workspace_message(conversation.id, "", [pdf["id"], text["id"]])
+        message = conversation.message_ids.sorted("id")[-1]
+        self.assertEqual(message.content, "Please look at the attached files.")
+        blocks = conversation._api_messages(message)[-1]["content"]
+        self.assertEqual(blocks[0]["type"], "document")
+        self.assertEqual(blocks[0]["source"]["media_type"], "application/pdf")
+        self.assertEqual(blocks[1]["source"], {
+            "type": "text", "media_type": "text/plain", "data": "name;qty\nbolt;12\n",
+        })
 
     def test_a_jpeg_is_recognised_from_its_bytes(self):
         conversation = self._conversation()
