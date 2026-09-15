@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <!-- Seeded at install so the Field Service override is live before anyone
+         opens the settings page. noupdate keeps a later module upgrade from
+         overwriting whatever the administrator has since chosen. -->
+    <record id="fsm_min_duration" model="ir.config_parameter">
+        <field name="key">centric_timesheet_rounding.fsm_min_duration</field>
+        <field name="value">30</field>
+    </record>
+    <record id="fsm_rounding" model="ir.config_parameter">
+        <field name="key">centric_timesheet_rounding.fsm_rounding</field>
+        <field name="value">15</field>
+    </record>
+</odoo>
