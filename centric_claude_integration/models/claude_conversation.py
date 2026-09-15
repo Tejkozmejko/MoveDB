@@ -188,9 +188,19 @@ class CentricClaudeConversation(models.Model):
 
     @api.model
     def _conversation_options(self, options):
-        """The model and effort a chat was started with; anything unknown is dropped."""
+        """The model, effort and Developer Mode a chat was started with.
+
+        Unknown model or effort values are dropped. Developer Mode is checked
+        exactly like the toggle, so starting a chat is no way around it.
+        """
         options = options if isinstance(options, dict) else {}
         values = {}
+        if options.get("developer_mode"):
+            if not self._workspace_access()["can_develop"]:
+                raise AccessError(_(
+                    "Developer Mode requires the Claude Developer security group and the global Allow Code Modifications setting."
+                ))
+            values["developer_mode"] = True
         if options.get("model") in dict(self._fields["model"].selection):
             values["model"] = options["model"]
         if options.get("effort") in self.EFFORT_LEVELS:

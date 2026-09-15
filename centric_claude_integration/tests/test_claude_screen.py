@@ -196,6 +196,19 @@ class TestClaudeScreen(TransactionCase):
         turn = self.env["centric.claude.turn"].search([("conversation_id", "=", conversation.id)])
         self.assertEqual(turn._payload_for_agent()["model"], "claude-sonnet-5")
 
+    def test_developer_mode_option_needs_developer_rights(self):
+        Conversation = self._conversation_model()
+        with self.assertRaises(AccessError):
+            Conversation.create_screen_conversation(self._screen(), {"developer_mode": True})
+        self.env["ir.config_parameter"].sudo().set_param("centric_claude.code_write_enabled", "True")
+        self.reader.group_ids = [(4, self.env.ref("centric_claude_integration.group_claude_developer").id)]
+        payload = Conversation.create_screen_conversation(self._screen(), {"developer_mode": True})
+        conversation = Conversation.browse(payload["conversation"]["id"])
+        self.assertTrue(conversation.developer_mode)
+        Conversation.send_workspace_message(conversation.id, "Fix the partner view")
+        turn = self.env["centric.claude.turn"].search([("conversation_id", "=", conversation.id)])
+        self.assertTrue(turn._payload_for_agent()["developer_mode"])
+
     def test_unknown_model_and_effort_options_are_ignored(self):
         Conversation = self._conversation_model()
         payload = Conversation.create_screen_conversation(

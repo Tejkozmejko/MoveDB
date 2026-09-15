@@ -146,6 +146,13 @@
                     <span t-elif="state.agent.state === 'pending'">Queued for Claude…</span>
                     <span t-else="">Claude is working…</span>
                 </div>
+                <div t-if="stagedChanges.length" class="o_cc_screen_staged">
+                    <i class="fa fa-code-fork me-2" aria-hidden="true"/>
+                    <span>Claude staged <t t-esc="stagedChanges.length"/> code change<t t-if="stagedChanges.length !== 1">s</t>. Nothing is committed yet.</span>
+                    <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" t-on-click="openWorkspace">
+                        Review in workspace
+                    </button>
+                </div>
                 <div t-if="state.pollError" class="o_cc_screen_notice" role="status" t-esc="state.pollError"/>
                 <div t-if="state.error" class="alert alert-danger mt-3 mb-0" role="alert" t-esc="state.error"/>
             </div>
@@ -177,6 +184,15 @@
                                 t-on-click="pickFiles">
                             <i class="fa fa-paperclip" aria-hidden="true"/>
                         </button>
+                        <button t-if="canDevelop" type="button" class="o_cc_screen_dev"
+                                t-att-class="{'o_cc_on': state.developerMode}"
+                                t-att-aria-pressed="state.developerMode ? 'true' : 'false'"
+                                t-att-title="state.developerMode ? 'Developer Mode is ON: Claude may stage code changes in approved modules. Click to turn off.' : 'Developer Mode is OFF: Claude only answers. Click to let it stage code changes.'"
+                                t-att-disabled="!ready || state.loading || state.sending"
+                                t-on-click="toggleDeveloperMode">
+                            <i class="fa fa-code" aria-hidden="true"/>
+                            <span>Dev</span>
+                        </button>
                         <span class="flex-grow-1"/>
                         <select t-if="modelChoices.length" class="o_cc_screen_select" aria-label="Model"
                                 title="Which Claude model answers this chat"
@@ -204,7 +220,10 @@
                 </div>
                 <input type="file" class="d-none" t-ref="fileInput" multiple="multiple"
                        t-att-accept="attachAccept" t-on-change="onFilesPicked"/>
-                <small>Replies are drafts. Changes need your confirmation.</small>
+                <small t-if="state.developerMode" class="o_cc_screen_dev_hint">
+                    Developer Mode is ON. Claude may stage code changes, but cannot commit them.
+                </small>
+                <small t-else="">Replies are drafts. Changes need your confirmation.</small>
             </form>
         </aside>
     </t>

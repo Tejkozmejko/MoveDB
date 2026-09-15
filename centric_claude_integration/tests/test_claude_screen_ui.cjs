@@ -211,7 +211,7 @@ test("the first message creates the chat with the picked model and effort", asyn
     instance.applyPayload = (payload) => { instance.state.conversation = payload.conversation; };
     await instance.sendMessage();
     assert.equal(calls[0].method, "create_screen_conversation");
-    assert.deepEqual(calls[0].args[1], { model: "claude-sonnet-5", effort: "low" });
+    assert.deepEqual(calls[0].args[1], { model: "claude-sonnet-5", effort: "low", developer_mode: false });
     assert.equal(calls[1].method, "send_workspace_message");
     assert.equal(calls[1].args[0], 11);
 });
@@ -340,6 +340,38 @@ test("a general chat is created without screen context", async () => {
     instance.applyPayload = (payload) => { instance.state.conversation = payload.conversation; };
     await instance.sendMessage();
     assert.equal(calls[0].method, "create_workspace_conversation");
-    assert.deepEqual(calls[0].args, [false, false, { model: "claude-opus-5", effort: "high" }]);
+    assert.deepEqual(calls[0].args, [false, false, { model: "claude-opus-5", effort: "high", developer_mode: false }]);
     assert.deepEqual(calls.find((c) => c.method === "list_screen_conversations").args, [false]);
+});
+
+test("developer mode picked before the chat exists is sent when it starts", async () => {
+    const instance = panel();
+    Object.assign(instance.state, { agent: {}, conversation: null, draft: "Fix this view",
+        rawContext: { model: "res.partner" }, access: { can_develop: true } });
+    await instance.toggleDeveloperMode();
+    assert.equal(instance.state.developerMode, true);
+    const calls = [];
+    instance.call = async (method, args) => {
+        calls.push({ method, args: plain(args) });
+        return { conversation: { id: 13, developer_mode: true }, messages: [], agent: {} };
+    };
+    await instance.sendMessage();
+    assert.equal(calls[0].method, "create_screen_conversation");
+    assert.equal(calls[0].args[1].developer_mode, true);
+});
+
+test("developer mode is never requested without developer access", async () => {
+    const instance = panel();
+    Object.assign(instance.state, { access: { can_develop: false }, conversation: null, developerMode: false });
+    await instance.toggleDeveloperMode();
+    assert.equal(instance.state.developerMode, false);
+});
+
+test("a refused developer mode toggle is rolled back", async () => {
+    const instance = panel();
+    instance.state.access = { can_develop: true };
+    instance.call = async () => { throw new Error("Developer Mode requires the Claude Developer security group"); };
+    await instance.toggleDeveloperMode();
+    assert.equal(instance.state.developerMode, false);
+    assert.match(instance.state.error, /Claude Developer/);
 });
