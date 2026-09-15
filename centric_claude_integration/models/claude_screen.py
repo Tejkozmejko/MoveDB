@@ -176,16 +176,11 @@ class CentricClaudeScreenConversation(models.Model):
     def create_screen_conversation(self, screen, options=None):
         """Start a chat about `screen`, with the model and effort picked before it existed."""
         context = self._normalise_screen_context(screen)
-        values = {
+        conversation = self.create({
             "name": context["label"][:120],
             "screen_context": context,
-        }
-        options = options if isinstance(options, dict) else {}
-        if options.get("model") in dict(self._fields["model"].selection):
-            values["model"] = options["model"]
-        if options.get("effort") in self.EFFORT_LEVELS:
-            values["effort"] = options["effort"]
-        conversation = self.create(values)
+            **self._conversation_options(options),
+        })
         return self._conversation_payload(conversation)
 
     @api.model
@@ -193,17 +188,23 @@ class CentricClaudeScreenConversation(models.Model):
         """This user's earlier chats about the same screen, newest first.
 
         On a record: the chats about that record. On a list or kanban: every
-        chat in that app's model, record chats included. Chats nobody wrote in
-        (a file picked, then abandoned) are left out.
+        chat in that app's model, record chats included. With no screen (the
+        home menu, a settings page): the general chats, not tied to any screen.
+        Chats nobody wrote in (a file picked, then abandoned) are left out.
         """
-        context = self._normalise_screen_context(screen)
         domain = [
             ("user_id", "=", self.env.user.id),
-            ("screen_model", "=", context["model"]),
             ("message_ids", "!=", False),
         ]
-        if context["scope"] == "record":
-            domain.append(("screen_res_id", "=", context["record_ids"][0]))
+        if not screen:
+            if not self._workspace_access()["can_chat"]:
+                raise AccessError(_("Claude is disabled or you do not have workspace access."))
+            domain.append(("screen_model", "=", False))
+        else:
+            context = self._normalise_screen_context(screen)
+            domain.append(("screen_model", "=", context["model"]))
+            if context["scope"] == "record":
+                domain.append(("screen_res_id", "=", context["record_ids"][0]))
         conversations = self.search(domain, order="write_date desc, id desc", limit=self.HISTORY_LIMIT)
         Message = self.env["centric.claude.message"]
         items = []

@@ -168,7 +168,7 @@ class CentricClaudeConversation(models.Model):
         return {"access": self._workspace_access()} | self._workspace_sidebar()
 
     @api.model
-    def create_workspace_conversation(self, name=None, project_id=None):
+    def create_workspace_conversation(self, name=None, project_id=None, options=None):
         access = self._workspace_access()
         if not access["can_chat"]:
             raise AccessError(_("You do not have access to the Claude workspace."))
@@ -182,8 +182,20 @@ class CentricClaudeConversation(models.Model):
             "user_id": self.env.user.id,
             "base_branch": access["default_branch"],
             "project_id": project.id or False,
+            **self._conversation_options(options),
         })
         return self._conversation_payload(conv)
+
+    @api.model
+    def _conversation_options(self, options):
+        """The model and effort a chat was started with; anything unknown is dropped."""
+        options = options if isinstance(options, dict) else {}
+        values = {}
+        if options.get("model") in dict(self._fields["model"].selection):
+            values["model"] = options["model"]
+        if options.get("effort") in self.EFFORT_LEVELS:
+            values["effort"] = options["effort"]
+        return values
 
     @api.model
     def rename_workspace_conversation(self, conversation_id, name):
