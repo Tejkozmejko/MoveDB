@@ -9,7 +9,7 @@
                     <strong>Ask Claude</strong>
                 </span>
                 <button type="button" class="o_cc_screen_icon" title="New chat about this screen"
-                        aria-label="New chat" t-att-disabled="!state.context || state.sending || state.answering"
+                        aria-label="New chat" t-att-disabled="!ready || state.sending || state.answering"
                         t-on-click="newChat">
                     <i class="fa fa-pencil-square-o" aria-hidden="true"/>
                 </button>
@@ -17,7 +17,7 @@
                         t-att-class="{'o_cc_active': state.historyOpen}"
                         title="Previous chats on this screen" aria-label="Previous chats"
                         t-att-aria-expanded="state.historyOpen ? 'true' : 'false'"
-                        t-att-disabled="!state.context" t-on-click="toggleHistory">
+                        t-att-disabled="!ready" t-on-click="toggleHistory">
                     <i class="fa fa-history" aria-hidden="true"/>
                     <span t-if="state.history.length" class="o_cc_screen_badge" t-esc="state.history.length"/>
                 </button>
@@ -32,31 +32,38 @@
             </header>
 
             <div class="o_cc_screen_context">
-                <span class="o_cc_screen_eyebrow">Context</span>
-                <t t-if="state.context">
+                <span class="o_cc_screen_eyebrow">
+                    Context <i t-if="ready" class="fa fa-crosshairs ms-1" title="Follows the screen you are on"
+                               aria-hidden="true"/>
+                </span>
+                <span t-if="state.loading" role="status">Reading current screen…</span>
+                <t t-elif="state.context">
                     <strong t-esc="state.context.label"/>
                     <span t-esc="state.context.scope_label"/>
                     <small>Uses saved records with your Odoo permissions.</small>
                 </t>
-                <span t-elif="state.loading">Reading current screen…</span>
+                <t t-elif="state.general">
+                    <strong>General chat</strong>
+                    <small t-esc="state.screenNote"/>
+                </t>
                 <span t-else="">No screen selected</span>
-                <div t-if="screenChanged &amp;&amp; state.context" class="o_cc_screen_changed">
-                    You moved to another screen or changed the selection. This chat keeps its original context.
+                <div t-if="state.moveDeferred" class="o_cc_screen_changed" role="status">
+                    <span t-if="pending.length">You moved to another screen. This chat stays until your files are sent.</span>
+                    <span t-elif="waiting">You moved to another screen. This chat stays while Claude answers.</span>
+                    <span t-else="">You moved to another screen.</span>
+                    <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline"
+                            t-att-disabled="state.sending || state.uploading || state.answering" t-on-click="switchNow">
+                        Switch now
+                    </button>
                 </div>
-                <button type="button" class="btn btn-sm btn-outline-secondary mt-2 align-self-start"
-                        t-att-disabled="state.loading || state.sending || state.answering"
-                        t-on-click="useCurrentScreen">
-                    <i class="fa fa-crosshairs me-1" aria-hidden="true"/>
-                    Use current screen
-                </button>
             </div>
 
             <div t-if="state.historyOpen" class="o_cc_screen_messages o_cc_screen_history" role="region"
                  aria-label="Previous chats">
                 <div class="o_cc_screen_history_head">
                     <strong>Previous chats</strong>
-                    <span t-if="state.context" class="o_cc_screen_history_scope"
-                          t-esc="state.context.scope === 'record' ? 'On this record' : 'In this app'"/>
+                    <span class="o_cc_screen_history_scope"
+                          t-esc="state.general ? 'General chats' : state.context and state.context.scope === 'record' ? 'On this record' : 'In this app'"/>
                 </div>
                 <button type="button" class="o_cc_screen_history_new"
                         t-att-disabled="state.sending || state.answering" t-on-click="newChat">
@@ -77,9 +84,10 @@
                 <div t-if="state.loading" class="o_cc_screen_empty" role="status">
                     <i class="fa fa-spinner fa-spin me-2" aria-hidden="true"/>Preparing your context…
                 </div>
-                <div t-elif="!state.messages.length &amp;&amp; state.context" class="o_cc_screen_empty">
+                <div t-elif="!state.messages.length &amp;&amp; ready" class="o_cc_screen_empty">
                     <h5>How can I help?</h5>
-                    <p>Ask about the record or selection above. You can keep working in Odoo while we talk.</p>
+                    <p t-if="state.general">Ask anything. Open a record or a list and I will follow along.</p>
+                    <p t-else="">Ask about the record or selection above. Move to another screen and I follow.</p>
                     <div class="o_cc_screen_suggestions">
                         <t t-foreach="suggestions" t-as="suggestion" t-key="suggestion">
                             <button type="button" t-esc="suggestion" t-att-disabled="waiting"
@@ -160,12 +168,12 @@
                     </div>
                     <textarea id="o_cc_screen_question" t-ref="composer" rows="2"
                               t-model="state.draft" t-on-keydown="onKeydown" t-on-paste="onPaste"
-                              t-att-disabled="!state.context || state.loading || state.sending"
-                              placeholder="Ask about this screen…"/>
+                              t-att-disabled="!ready || state.loading || state.sending"
+                              t-att-placeholder="state.general ? 'Ask Claude anything…' : 'Ask about this screen…'"/>
                     <div class="o_cc_screen_toolbar">
                         <button t-if="attachmentsEnabled" type="button" class="o_cc_screen_tool"
                                 title="Attach photos or files (images, PDF, text)" aria-label="Attach files"
-                                t-att-disabled="!state.context || state.loading || state.sending"
+                                t-att-disabled="!ready || state.loading || state.sending"
                                 t-on-click="pickFiles">
                             <i class="fa fa-paperclip" aria-hidden="true"/>
                         </button>
@@ -211,8 +219,10 @@
                             t-on-click="() => this.openChat(chat)">
                         <span class="o_cc_screen_chat_title" t-esc="chat.question || chat.name"/>
                         <span class="o_cc_screen_chat_meta">
-                            <t t-if="state.context and state.context.scope !== 'record' and chat.record_id">
-                                <t t-esc="chat.scope_label"/> ·
+                            <t t-if="!state.context or state.context.scope !== 'record'">
+                                <t t-if="chat.record_id">
+                                    <t t-esc="chat.scope_label"/> ·
+                                </t>
                             </t>
                             <t t-esc="chat.message_count"/> messages · <t t-esc="relativeTime(chat.updated)"/>
                         </span>

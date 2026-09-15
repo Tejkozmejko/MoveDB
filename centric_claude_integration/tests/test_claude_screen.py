@@ -226,6 +226,17 @@ class TestClaudeScreen(TransactionCase):
         )
         self.assertEqual({item["id"] for item in in_app}, {first, second})
 
+    def test_general_chats_are_listed_when_no_screen_is_open(self):
+        Conversation = self._conversation_model()
+        general = Conversation.create_workspace_conversation(
+            False, False, {"model": "claude-haiku-4-5-20251001", "effort": "low"}
+        )["conversation"]["id"]
+        screen = Conversation.create_screen_conversation(self._screen())["conversation"]["id"]
+        Conversation.send_workspace_message(general, "Anything")
+        Conversation.send_workspace_message(screen, "About customer one")
+        self.assertEqual(Conversation.browse(general).model, "claude-haiku-4-5-20251001")
+        self.assertEqual([item["id"] for item in Conversation.list_screen_conversations(False)], [general])
+
     def test_previous_chats_are_private_to_their_owner(self):
         Conversation = self._conversation_model()
         mine = Conversation.create_screen_conversation(self._screen())["conversation"]["id"]

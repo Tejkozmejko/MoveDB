@@ -40,6 +40,7 @@ export class ClaudeScreenPanel extends Component {
             pendingAttachments: [], uploading: 0, dragging: false,
             model: "", effort: "",
             history: [], historyOpen: false, historyLoading: false,
+            general: false, screenNote: "", moveDeferred: false,
         });
         this.attachAccept = ATTACH_ACCEPT;
         this.scroll = useRef("messages");
@@ -49,16 +50,23 @@ export class ClaudeScreenPanel extends Component {
         this.revision = 0;
         this.pollTimer = null;
         this.polling = false;
+        this.followTimer = null;
+        this.candidateKey = null;
+        this.deferredKey = null;
+        this.accessLoaded = false;
         useEffect(() => {
             if (this.screenState.open) {
                 if (!this.state.initialized) {
                     this.useCurrentScreen();
                 } else {
+                    this.followTick(true);
                     this.schedulePoll();
                 }
+                this.startFollowing();
                 this.composer.el?.focus();
             } else {
                 this.stopPolling();
+                this.stopFollowing();
             }
         }, () => [this.screenState.open]);
         useEffect(() => {
@@ -69,6 +77,7 @@ export class ClaudeScreenPanel extends Component {
         onWillUnmount(() => {
             this.revision++;
             this.stopPolling();
+            this.stopFollowing();
         });
     }
 
@@ -91,40 +100,65 @@ export class ClaudeScreenPanel extends Component {
         });
     }
 
-    async useCurrentScreen() {
+    async useCurrentScreen({ keepDraft = false } = {}) {
         if (this.state.sending || this.state.answering) {
             return;
         }
         const raw = this.screen.refresh();
         const revision = ++this.revision;
+        const draft = keepDraft ? this.state.draft : "";
         this.discardPending();
         this.resetChat();
+        this.candidateKey = screenContextKey(raw);
+        this.deferredKey = null;
         Object.assign(this.state, {
-            initialized: true, loading: true, context: null, history: [],
+            initialized: true, loading: true, context: null, history: [], draft,
+            general: false, screenNote: "", moveDeferred: false,
             rawContext: raw ? JSON.parse(JSON.stringify(raw)) : null,
         });
         try {
-            const bootstrap = await this.call("workspace_bootstrap");
+            // Access rarely changes, and the bootstrap also carries the whole
+            // sidebar - too heavy to repeat on every screen the user opens.
+            if (!this.accessLoaded) {
+                const bootstrap = await this.call("workspace_bootstrap");
+                if (revision !== this.revision) {
+                    return;
+                }
+                this.state.access = bootstrap.access || {};
+                this.accessLoaded = true;
+                this.state.model = this.state.access.default_model || "";
+                this.state.effort = this.state.access.default_effort || "";
+            }
+            if (!this.state.access.can_chat) {
+                this.accessLoaded = false;
+                throw new Error(_t("Claude is disabled or your account does not have workspace access."));
+            }
+            let note = "";
+            if (!raw) {
+                note = _t("No record or list is open, so Claude sees no records. Open one and the chat follows you.");
+            } else if (!this.state.access.can_read_data) {
+                note = _t("Your account has no Centric Claude Data level, so Claude cannot see this screen.");
+            } else {
+                try {
+                    const context = await this.call("prepare_screen_context", [raw]);
+                    if (revision !== this.revision) {
+                        return;
+                    }
+                    this.state.context = context;
+                } catch (error) {
+                    // An unsaved record, a wizard, a model Claude may not read:
+                    // say why, and still let the user ask a general question.
+                    note = this.errorMessage(error);
+                }
+            }
             if (revision !== this.revision) {
                 return;
             }
-            this.state.access = bootstrap.access || {};
-            this.state.model = this.state.access.default_model || "";
-            this.state.effort = this.state.access.default_effort || "";
-            if (!this.state.access.can_chat) {
-                throw new Error(_t("Claude is disabled or your account does not have workspace access."));
+            if (!this.state.context) {
+                this.state.general = true;
+                this.state.screenNote = note;
             }
-            if (!this.state.access.can_read_data) {
-                throw new Error(_t("Ask an administrator to give your account a Centric Claude Data level to use screen context."));
-            }
-            if (!raw) {
-                throw new Error(_t("Open a saved record, list, or kanban view, then choose Use current screen."));
-            }
-            const context = await this.call("prepare_screen_context", [raw]);
-            if (revision === this.revision) {
-                this.state.context = context;
-                this.loadHistory();
-            }
+            this.loadHistory();
         } catch (error) {
             if (revision === this.revision) {
                 this.state.error = this.errorMessage(error);
@@ -136,8 +170,64 @@ export class ClaudeScreenPanel extends Component {
         }
     }
 
-    get screenChanged() {
-        return screenContextKey(this.state.rawContext) !== screenContextKey(this.screenState.current);
+    // ------------------------------------------------------ following the screen
+    // Views only report changes when they render, and the home menu does not
+    // report at all, so the panel looks for itself while it is open. Reading the
+    // screen is a few property reads; nothing reaches the server unless it moved.
+    startFollowing() {
+        this.stopFollowing();
+        this.followTimer = setInterval(() => this.followTick(), 500);
+    }
+
+    stopFollowing() {
+        clearInterval(this.followTimer);
+        this.followTimer = null;
+    }
+
+    get busy() {
+        return Boolean(
+            this.state.sending || this.state.answering || this.state.uploading
+            || this.state.agent.waiting || this.pending.length
+        );
+    }
+
+    followTick(immediate = false) {
+        if (!this.screenState.open || !this.state.initialized || this.state.loading) {
+            return;
+        }
+        const key = screenContextKey(this.screen.refresh());
+        if (key === screenContextKey(this.state.rawContext)) {
+            this.candidateKey = key;
+            this.state.moveDeferred = false;
+            return;
+        }
+        // The same screen on two looks in a row: a view that is still loading,
+        // or a quick run of checkbox clicks, does not reset the chat each step.
+        if (!immediate && key !== this.candidateKey) {
+            this.candidateKey = key;
+            return;
+        }
+        // Moved while Claude was answering: the answer must stay readable, so
+        // that screen is only offered, never switched to on its own later.
+        if (key === this.deferredKey) {
+            this.state.moveDeferred = true;
+            return;
+        }
+        if (this.busy) {
+            this.deferredKey = key;
+            this.state.moveDeferred = true;
+            return;
+        }
+        this.useCurrentScreen({ keepDraft: true });
+    }
+
+    switchNow() {
+        if (this.state.sending || this.state.uploading || this.state.answering) {
+            return;
+        }
+        // An answer still being written is not lost: it lands in that chat,
+        // which stays in the screen's history.
+        this.useCurrentScreen({ keepDraft: true });
     }
 
     get waiting() {
@@ -148,9 +238,13 @@ export class ClaudeScreenPanel extends Component {
         return this.state.pendingAttachments || [];
     }
 
+    get ready() {
+        return Boolean(this.state.context || this.state.general);
+    }
+
     get canSend() {
         return Boolean(
-            this.state.context && !this.state.uploading && !this.waiting && !this.state.loading
+            this.ready && !this.state.uploading && !this.waiting && !this.state.loading
             && (this.state.draft.trim() || this.pending.length)
         );
     }
@@ -172,6 +266,12 @@ export class ClaudeScreenPanel extends Component {
     }
 
     get suggestions() {
+        if (this.state.general) {
+            return [
+                _t("What can you help me with in Odoo?"),
+                _t("Which of my tasks or tickets need attention today?"),
+            ];
+        }
         if (this.state.context?.model === "helpdesk.ticket") {
             return this.state.context.scope === "record" ? [
                 _t("Summarize this ticket and what has been tried."),
@@ -215,9 +315,10 @@ export class ClaudeScreenPanel extends Component {
         if (this.state.conversation) {
             return this.state.conversation.id;
         }
-        const payload = await this.call("create_screen_conversation", [
-            this.state.rawContext, { model: this.state.model, effort: this.state.effort },
-        ]);
+        const options = { model: this.state.model, effort: this.state.effort };
+        const payload = this.state.general
+            ? await this.call("create_workspace_conversation", [false, false, options])
+            : await this.call("create_screen_conversation", [this.state.rawContext, options]);
         if (revision !== this.revision) {
             return false;
         }
@@ -324,7 +425,7 @@ export class ClaudeScreenPanel extends Component {
     }
 
     onDragOver(event) {
-        if (this.attachmentsEnabled && this.state.context
+        if (this.attachmentsEnabled && this.ready
                 && [...(event.dataTransfer?.types || [])].includes("Files")) {
             event.preventDefault();
             this.state.dragging = true;
@@ -346,7 +447,7 @@ export class ClaudeScreenPanel extends Component {
     }
 
     async uploadFiles(files) {
-        if (!this.attachmentsEnabled || !files.length || !this.state.context || this.state.sending) {
+        if (!this.attachmentsEnabled || !files.length || !this.ready || this.state.sending) {
             return;
         }
         const revision = this.revision;
@@ -420,13 +521,15 @@ export class ClaudeScreenPanel extends Component {
 
     // ------------------------------------------------------------- history
     async loadHistory() {
-        if (!this.state.rawContext || !this.state.context) {
+        if (!this.ready) {
             return;
         }
         const revision = this.revision;
         this.state.historyLoading = true;
         try {
-            const history = await this.call("list_screen_conversations", [this.state.rawContext]);
+            const history = await this.call("list_screen_conversations", [
+                this.state.general ? false : this.state.rawContext,
+            ]);
             if (revision === this.revision) {
                 this.state.history = history || [];
             }
