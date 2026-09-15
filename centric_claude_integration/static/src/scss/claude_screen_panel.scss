@@ -182,6 +182,38 @@
         &:disabled { opacity: .35; }
     }
 
+    .o_cc_screen_dev {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 28px;
+        padding: 0 9px;
+        border: 1px solid var(--border-color, #ccc);
+        border-radius: 14px;
+        background: transparent;
+        color: inherit;
+        font-size: 12px;
+        opacity: .75;
+        &:hover:not(:disabled) { opacity: 1; }
+        &:disabled { opacity: .35; }
+        &.o_cc_on {
+            opacity: 1;
+            border-color: #d97757;
+            background: rgba(217, 119, 87, .16);
+            color: #d97757;
+        }
+    }
+
+    .o_cc_screen_composer small.o_cc_screen_dev_hint { color: #d97757; opacity: 1; }
+
+    .o_cc_screen_staged {
+        font-size: 12px;
+        margin: 8px 0;
+        padding: 8px 10px;
+        border: 1px solid rgba(217, 119, 87, .5);
+        border-radius: 8px;
+    }
+
     .o_cc_screen_select {
         // Odoo's theme stretches selects; these size to their text instead.
         flex: 0 0 auto;

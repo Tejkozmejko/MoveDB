@@ -41,6 +41,7 @@ export class ClaudeScreenPanel extends Component {
             model: "", effort: "",
             history: [], historyOpen: false, historyLoading: false,
             general: false, screenNote: "", moveDeferred: false,
+            developerMode: false, changes: [],
         });
         this.attachAccept = ATTACH_ACCEPT;
         this.scroll = useRef("messages");
@@ -95,6 +96,7 @@ export class ClaudeScreenPanel extends Component {
         Object.assign(this.state, {
             conversation: null, messages: [], operations: [], agent: {}, draft: "",
             pendingAttachments: [], error: "", pollError: "", historyOpen: false,
+            developerMode: false, changes: [],
             model: this.state.access.default_model || this.state.model,
             effort: this.state.access.default_effort || this.state.effort,
         });
@@ -300,6 +302,8 @@ export class ClaudeScreenPanel extends Component {
         this.state.operations = payload.operations || [];
         this.state.agent = payload.agent || {};
         this.state.access = payload.access || this.state.access;
+        this.state.developerMode = Boolean(payload.conversation.developer_mode);
+        this.state.changes = payload.changes || [];
         if (payload.conversation.model) {
             this.state.model = payload.conversation.model;
         }
@@ -315,7 +319,10 @@ export class ClaudeScreenPanel extends Component {
         if (this.state.conversation) {
             return this.state.conversation.id;
         }
-        const options = { model: this.state.model, effort: this.state.effort };
+        const options = {
+            model: this.state.model, effort: this.state.effort,
+            developer_mode: Boolean(this.state.developerMode && this.canDevelop),
+        };
         const payload = this.state.general
             ? await this.call("create_workspace_conversation", [false, false, options])
             : await this.call("create_screen_conversation", [this.state.rawContext, options]);
@@ -378,6 +385,33 @@ export class ClaudeScreenPanel extends Component {
         } catch (error) {
             this.state.model = previous;
             event.target.value = previous;
+            this.state.error = this.errorMessage(error);
+        }
+    }
+
+    get canDevelop() {
+        return Boolean(this.state.access.can_develop);
+    }
+
+    get stagedChanges() {
+        return (this.state.changes || []).filter((change) => change.status === "staged");
+    }
+
+    // Off by default in every new chat: code edits are something to ask for,
+    // not something a screen question should inherit.
+    async toggleDeveloperMode() {
+        if (!this.canDevelop || this.state.sending) {
+            return;
+        }
+        const enabled = !this.state.developerMode;
+        this.state.developerMode = enabled;
+        if (!this.state.conversation) {
+            return;
+        }
+        try {
+            this.applyPayload(await this.call("set_workspace_developer_mode", [this.state.conversation.id, enabled]));
+        } catch (error) {
+            this.state.developerMode = !enabled;
             this.state.error = this.errorMessage(error);
         }
     }
