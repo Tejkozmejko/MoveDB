@@ -371,6 +371,7 @@ class CentricClaudeTurn(models.Model):
             # The file itself is fetched separately from /agent/session: a
             # session runs to megabytes and claiming a turn has to stay small.
             "session_id": conversation.agent_session_id or "",
+            "model": conversation.model or "",
             "session_sha": conversation.agent_session_sha or "",
             "developer_mode": self.developer_mode,
             "base_branch": self.base_branch or "",

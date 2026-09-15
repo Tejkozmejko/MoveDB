@@ -517,8 +517,12 @@
                                                         <button class="o_cc_thumb" type="button"
                                                                 t-att-title="image.name"
                                                                 t-on-click="() => this.openAttachment(image)">
-                                                            <img t-att-src="image.url"
+                                                            <img t-if="image.is_image !== false"
+                                                                 t-att-src="image.url"
                                                                  t-att-alt="image.name"/>
+                                                            <i t-else=""
+                                                               t-att-class="image.mimetype === 'application/pdf' ? 'fa fa-file-pdf-o' : 'fa fa-file-text-o'"
+                                                               aria-hidden="true"/>
                                                         </button>
                                                     </t>
                                                 </div>
@@ -613,9 +617,13 @@
                                         <t t-foreach="state.pendingAttachments" t-as="image"
                                            t-key="image.id">
                                             <div class="o_cc_attach" t-att-title="image.name">
-                                                <img t-att-src="image.url" t-att-alt="image.name"/>
+                                                <img t-if="image.is_image !== false"
+                                                     t-att-src="image.url" t-att-alt="image.name"/>
+                                                <i t-else=""
+                                                   t-att-class="image.mimetype === 'application/pdf' ? 'fa fa-file-pdf-o' : 'fa fa-file-text-o'"
+                                                   aria-hidden="true"/>
                                                 <button class="o_cc_attach_remove" type="button"
-                                                        title="Remove this image"
+                                                        title="Remove this file"
                                                         t-on-click="() => this.removeAttachment(image)">
                                                     <i class="fa fa-times"/>
                                                 </button>
@@ -629,7 +637,7 @@
                                     <div class="o_cc_composer_row">
                                         <button t-if="attachmentsEnabled"
                                                 class="o_cc_attach_btn" type="button"
-                                                title="Attach an image"
+                                                title="Attach photos or files (images, PDF, text)"
                                                 t-on-click="pickFiles">
                                             <i class="fa fa-paperclip"/>
                                         </button>
@@ -655,7 +663,7 @@
 
                                 <input type="file" class="o_cc_file_input"
                                        t-ref="fileInput"
-                                       accept="image/png,image/jpeg,image/gif,image/webp"
+                                       accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,.txt,.csv,.md,.json,.log,.xml"
                                        multiple="multiple"
                                        t-on-change="onFilesPicked"/>
 
