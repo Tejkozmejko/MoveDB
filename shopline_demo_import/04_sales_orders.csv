@@ -1,0 +1,39 @@
+id,partner_id/id,date_order,order_line/product_id/id,order_line/product_uom_qty,order_line/price_unit
+shopline.so_0001,shopline.cust_northwind,2026-07-06 09:15:00,shopline.prod_laptop_14,12,1499.00
+,,,shopline.prod_mouse,12,79.00
+,,,shopline.prod_sleeve,12,39.00
+shopline.so_0002,shopline.cust_brightpath,2026-07-09 11:40:00,shopline.prod_tablet_11,40,649.00
+,,,shopline.prod_charger,40,49.00
+,,,shopline.prod_ext_warranty,40,99.00
+shopline.so_0003,shopline.cust_lumen,2026-07-14 14:05:00,shopline.prod_monitor_27,6,549.00
+,,,shopline.prod_stand,6,59.00
+,,,shopline.prod_keyboard,6,149.00
+shopline.so_0004,shopline.cust_harbor,2026-07-21 10:25:00,shopline.prod_speaker,8,89.00
+,,,shopline.prod_grinder,3,169.00
+shopline.so_0005,shopline.cust_ironwood,2026-07-28 16:30:00,shopline.prod_phone_a,15,699.00
+,,,shopline.prod_powerbank,15,69.00
+,,,shopline.prod_cable,30,19.00
+shopline.so_0006,shopline.cust_civicpress,2026-08-03 09:50:00,shopline.prod_hp_anc,10,329.00
+,,,shopline.prod_webcam,10,129.00
+,,,shopline.prod_setup_service,10,79.00
+shopline.so_0007,shopline.cust_glacier,2026-08-11 13:15:00,shopline.prod_laptop_16,4,2199.00
+,,,shopline.prod_monitor_27,4,549.00
+,,,shopline.prod_desktop_mini,2,899.00
+shopline.so_0008,shopline.cust_maplecare,2026-08-18 08:45:00,shopline.prod_purifier,12,279.00
+,,,shopline.prod_lamp,12,89.00
+shopline.so_0009,shopline.cust_atlas,2026-08-25 15:20:00,shopline.prod_phone_pro,9,1099.00
+,,,shopline.prod_charger,9,49.00
+,,,shopline.prod_ext_warranty,9,99.00
+shopline.so_0010,shopline.cust_kestrel,2026-09-01 10:10:00,shopline.prod_laptop_14,7,1499.00
+,,,shopline.prod_hp_studio,7,249.00
+,,,shopline.prod_webcam,7,129.00
+shopline.so_0011,shopline.cust_verdant,2026-09-04 12:35:00,shopline.prod_tablet_mini,6,449.00
+,,,shopline.prod_sleeve,6,39.00
+shopline.so_0012,shopline.cust_ind_okafor,2026-09-08 18:05:00,shopline.prod_earbuds,1,129.00
+,,,shopline.prod_powerbank,1,69.00
+shopline.so_0013,shopline.cust_ind_santos,2026-09-10 19:20:00,shopline.prod_soundbar,1,399.00
+,,,shopline.prod_turntable,1,279.00
+shopline.so_0014,shopline.cust_ind_lindqvist,2026-09-12 08:30:00,shopline.prod_blanket,2,119.00
+,,,shopline.prod_lamp,1,89.00
+shopline.so_0015,shopline.cust_ind_haddad,2026-09-14 17:45:00,shopline.prod_phone_a,1,699.00
+,,,shopline.prod_setup_service,1,79.00

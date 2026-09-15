@@ -1,0 +1,19 @@
+id,name,is_company,parent_id/id,function,street,city,state_id,zip,country_id,phone,email,website,customer_rank
+shopline.cust_northwind,Northwind Retail Group,True,,,"400 Market Street",San Francisco,California (US),94111,United States,+1 415 555 0118,ap@northwind-retail.example.com,https://northwind-retail.example.com,1
+shopline.cust_northwind_c1,Dana Whitfield,False,shopline.cust_northwind,Procurement Manager,"400 Market Street",San Francisco,California (US),94111,United States,+1 415 555 0119,dana.whitfield@northwind-retail.example.com,,1
+shopline.cust_brightpath,Brightpath Schools District,True,,,"1201 Broadway",Oakland,California (US),94612,United States,+1 510 555 0142,purchasing@brightpath.example.org,https://brightpath.example.org,1
+shopline.cust_brightpath_c1,Marcus Oyelaran,False,shopline.cust_brightpath,IT Director,"1201 Broadway",Oakland,California (US),94612,United States,+1 510 555 0143,m.oyelaran@brightpath.example.org,,1
+shopline.cust_lumen,Lumen Design Studio,True,,,"77 Geary Street",San Francisco,California (US),94108,United States,+1 415 555 0167,hello@lumendesign.example.com,https://lumendesign.example.com,1
+shopline.cust_harbor,Harbor Coffee Roasters,True,,,"2450 Alaskan Way",Seattle,Washington (US),98121,United States,+1 206 555 0193,orders@harborcoffee.example.com,https://harborcoffee.example.com,1
+shopline.cust_ironwood,Ironwood Construction LLC,True,,,"8800 Research Blvd",Austin,Texas (US),78758,United States,+1 512 555 0124,accounts@ironwood.example.com,,1
+shopline.cust_ironwood_c1,Priya Raghunathan,False,shopline.cust_ironwood,Office Manager,"8800 Research Blvd",Austin,Texas (US),78758,United States,+1 512 555 0125,p.raghunathan@ironwood.example.com,,1
+shopline.cust_civicpress,CivicPress Media,True,,,"111 8th Avenue",New York,New York (US),10011,United States,+1 212 555 0155,billing@civicpress.example.com,https://civicpress.example.com,1
+shopline.cust_glacier,Glacier Outdoor Supply,True,,,"1600 Blake Street",Denver,Colorado (US),80202,United States,+1 303 555 0171,purchasing@glacieroutdoor.example.com,https://glacieroutdoor.example.com,1
+shopline.cust_maplecare,MapleCare Clinics,True,,,"500 Boylston Street",Boston,Massachusetts (US),02116,United States,+1 617 555 0138,finance@maplecare.example.org,,1
+shopline.cust_atlas,Atlas Logistics Partners,True,,,"3400 Peachtree Road",Atlanta,Georgia (US),30326,United States,+1 404 555 0149,ap@atlaslogistics.example.com,https://atlaslogistics.example.com,1
+shopline.cust_verdant,Verdant Landscaping Co,True,,,"920 SW 6th Avenue",Portland,Oregon (US),97204,United States,+1 503 555 0186,office@verdant.example.com,,1
+shopline.cust_kestrel,Kestrel Analytics,True,,,"233 South Wacker Drive",Chicago,Illinois (US),60606,United States,+1 312 555 0102,ops@kestrelanalytics.example.com,https://kestrelanalytics.example.com,1
+shopline.cust_ind_okafor,Chidi Okafor,False,,,"1420 Dolores Street",San Francisco,California (US),94110,United States,+1 415 555 0204,chidi.okafor@example.com,,1
+shopline.cust_ind_santos,Beatriz Santos,False,,,"55 Bay State Road",Boston,Massachusetts (US),02215,United States,+1 617 555 0211,beatriz.santos@example.com,,1
+shopline.cust_ind_lindqvist,Elias Lindqvist,False,,,"2201 NW 24th Avenue",Portland,Oregon (US),97210,United States,+1 503 555 0227,elias.lindqvist@example.com,,1
+shopline.cust_ind_haddad,Yasmin Haddad,False,,,"610 Congress Avenue",Austin,Texas (US),78701,United States,+1 512 555 0233,yasmin.haddad@example.com,,1
