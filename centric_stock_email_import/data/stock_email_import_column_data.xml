@@ -43,5 +43,15 @@
             <field name="target">price</field>
             <field name="header_names">Price, Unit Price, Cost, Unit Cost</field>
         </record>
+        <record id="column_sales_price" model="stock.email.import.column">
+            <field name="sequence">75</field>
+            <field name="target">sales_price</field>
+            <field name="header_names">Sales Price, Sale Price, Selling Price, List Price, Retail Price</field>
+        </record>
+        <record id="column_cost_price" model="stock.email.import.column">
+            <field name="sequence">76</field>
+            <field name="target">cost_price</field>
+            <field name="header_names">Cost Price, Purchase Price, Standard Price, Cost Per Unit</field>
+        </record>
     </data>
 </odoo>

@@ -10,8 +10,11 @@ TARGETS = [
     ("quantity", "Counted Quantity"),
     ("location", "Location"),
     ("lot", "Lot / Serial Number"),
-    ("price", "Price"),
+    ("price", "Price (follows the mailbox setting)"),
+    ("sales_price", "Sales Price"),
+    ("cost_price", "Cost Price"),
 ]
+PRICE_TARGETS = ("price", "sales_price", "cost_price")
 
 
 def normalize_header(value):

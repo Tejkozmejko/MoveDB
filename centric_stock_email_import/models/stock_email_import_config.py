@@ -50,8 +50,9 @@ class StockEmailImportConfig(models.Model):
         string="Price Column",
         default="none",
         required=True,
-        help="What a Price column does. Updating the cost changes the value "
-             "of stock counted in by the same sheet.",
+        help="What a plain 'Price' column does. Columns headed 'Sales Price' "
+             "and 'Cost Price' always update their own field, whatever this says. "
+             "A cost change also changes the value of stock already on hand.",
     )
     create_missing_products = fields.Boolean(
         help="Create a storable product for rows whose product is not found, "
@@ -158,7 +159,8 @@ class StockEmailImportConfig(models.Model):
         headers = []
         seen = set()
         for column in self.env["stock.email.import.column"].search([]):
-            if column.target in seen:
+            # The template uses the explicit Sales Price / Cost Price columns.
+            if column.target in seen or column.target == "price":
                 continue
             seen.add(column.target)
             first = (column.header_names or "").split(",")[0].strip()

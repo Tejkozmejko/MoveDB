@@ -13,7 +13,7 @@
                    "journal entries follow.\n\n"
                    "Columns are matched by header name through an editable "
                    "column mapping, so sheets are not tied to one fixed layout.",
-    "version": "19.0.1.7.0",
+    "version": "19.0.1.8.0",
     "category": "Inventory/Inventory",
     "author": "Centric",
     "license": "LGPL-3",
