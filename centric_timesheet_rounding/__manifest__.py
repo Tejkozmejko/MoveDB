@@ -13,7 +13,7 @@
                    "applied on create and write, so a Field Service line reaches the "
                    "minimum however it was entered -- timer or typed in by hand. Lines that "
                    "are already validated or invoiced are never touched.",
-    "version": "19.0.1.1.0",
+    "version": "19.0.1.2.0",
     "category": "Services/Timesheets",
     "author": "Centric",
     "license": "LGPL-3",

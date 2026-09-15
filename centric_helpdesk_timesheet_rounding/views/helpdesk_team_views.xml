@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="helpdesk_team_view_form_timesheet_rounding" model="ir.ui.view">
+        <field name="name">helpdesk.team.form.inherit.centric.timesheet.rounding</field>
+        <field name="model">helpdesk.team</field>
+        <field name="inherit_id" ref="helpdesk.helpdesk_team_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet" position="inside">
+                <group string="Timesheet Rounding" name="centric_timesheet_rounding"
+                       invisible="not use_helpdesk_timesheet">
+                    <div class="text-muted" colspan="2">
+                        Applies to every timesheet logged on this team's tickets, timer or typed in.
+                        Leave both at 0 to use the database-wide Time Rounding setting.
+                    </div>
+                    <label for="centric_timesheet_min_duration"/>
+                    <div class="o_row">
+                        <field name="centric_timesheet_min_duration" class="oe_inline text-center"/>
+                        <span class="ms-2">min</span>
+                    </div>
+                    <label for="centric_timesheet_rounding"/>
+                    <div class="o_row">
+                        <field name="centric_timesheet_rounding" class="oe_inline text-center"/>
+                        <span class="ms-2">min</span>
+                    </div>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>
