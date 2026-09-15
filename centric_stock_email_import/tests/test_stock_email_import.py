@@ -188,6 +188,23 @@ class TestStockEmailImport(TransactionCase):
         self.assertEqual(record.state, "done", record.error_message)
         self.assertAlmostEqual(self.pear.standard_price, 3.5)
 
+    def test_sales_price_and_cost_price_columns(self):
+        """Both explicit columns apply whatever the mailbox Price setting is,
+        and a cost change on stock already held counts in the value change."""
+        self.assertEqual(self.config.price_update, "none")
+        record = self._import([
+            ["Product Code", "Quantity", "Sales Price", "Cost Price"],
+            ["STK-APPLE", 10, "9.00", 3],
+        ])
+        self.assertEqual(record.state, "done", record.error_message)
+        self.assertAlmostEqual(self.apple.list_price, 9.0)
+        self.assertAlmostEqual(self.apple.standard_price, 3.0)
+        line = record.line_ids
+        self.assertEqual(line.difference_qty, 0)
+        # 10 units were worth 10 x 2.00; they are now worth 10 x 3.00.
+        self.assertAlmostEqual(line.value_change, 10.0)
+        self.assertIn("Cost 2.00", line.message)
+
     def test_create_missing_product(self):
         self.config.create_missing_products = True
         record = self._import([

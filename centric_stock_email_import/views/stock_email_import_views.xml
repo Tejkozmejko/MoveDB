@@ -214,6 +214,8 @@
                                            decoration-success="difference_qty &gt; 0"/>
                                     <field name="currency_id" column_invisible="True"/>
                                     <field name="value_change" sum="Total" optional="show"/>
+                                    <field name="sales_price" optional="show"/>
+                                    <field name="cost_price" optional="show"/>
                                     <field name="message" class="text-wrap" optional="show"/>
                                 </list>
                             </field>
@@ -314,6 +316,8 @@
                        decoration-success="difference_qty &gt; 0"/>
                 <field name="currency_id" column_invisible="True"/>
                 <field name="value_change" sum="Total"/>
+                <field name="sales_price" optional="show"/>
+                <field name="cost_price" optional="show"/>
                 <field name="message" class="text-wrap"/>
             </list>
         </field>

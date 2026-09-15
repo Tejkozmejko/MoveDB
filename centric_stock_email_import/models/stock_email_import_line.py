@@ -27,6 +27,8 @@ class StockEmailImportLine(models.Model):
     previous_qty = fields.Float(string="Before", digits="Product Unit")
     difference_qty = fields.Float(string="Difference", digits="Product Unit")
     price = fields.Float(digits="Product Price")
+    sales_price = fields.Float(digits="Product Price")
+    cost_price = fields.Float(digits="Product Price")
     value_change = fields.Monetary()
     status = fields.Selection(
         [("ok", "OK"), ("skipped", "Skipped"), ("error", "Error")],

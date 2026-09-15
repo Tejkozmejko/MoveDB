@@ -13,7 +13,7 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 from odoo.tools import float_compare, float_is_zero
 
-from .stock_email_import_column import TARGETS, normalize_header
+from .stock_email_import_column import PRICE_TARGETS, TARGETS, normalize_header
 
 _logger = logging.getLogger(__name__)
 
@@ -101,7 +101,8 @@ class StockEmailImport(models.Model):
     changed_count = fields.Integer(string="Changes", compute="_compute_totals", store=True)
     value_change = fields.Monetary(
         compute="_compute_totals", store=True,
-        help="Estimated at product cost: sum of (counted - previous) x cost.",
+        help="Estimated stock value change: counted x new cost - stock before x "
+             "previous cost, so both quantity and cost changes count.",
     )
     move_count = fields.Integer(compute="_compute_move_count")
     color = fields.Integer(compute="_compute_color")
@@ -391,8 +392,8 @@ class StockEmailImport(models.Model):
                 return raw[column] if column is not None and column < len(raw) else None
 
             row = {target: _cell_text(get(target)) for target, _label in TARGETS
-                   if target not in ("quantity", "price")}
-            quantity_cell, price_cell = get("quantity"), get("price")
+                   if target != "quantity" and target not in PRICE_TARGETS}
+            quantity_cell = get("quantity")
             if not any(row[key] for key in PRODUCT_KEYS) and _cell_text(quantity_cell) == "":
                 continue  # blank row
 
@@ -408,12 +409,18 @@ class StockEmailImport(models.Model):
                 "lot": self.env["stock.lot"],
                 "new_lot": False,
                 "counted_qty": 0.0,
-                "price": False,
             })
             result.append(row)
 
             self._validate_quantity(row, quantity_cell)
-            self._validate_price(row, price_cell, config)
+            # A plain "Price" column means whatever the mailbox says; the
+            # explicit Sales Price and Cost Price columns always apply.
+            row["price"] = (
+                self._parse_price(row, get("price"), _("Price"))
+                if config.price_update != "none" else False
+            )
+            row["sales_price"] = self._parse_price(row, get("sales_price"), _("Sales price"))
+            row["cost_price"] = self._parse_price(row, get("cost_price"), _("Cost price"))
             self._resolve_product(row, config, caches["product"])
             self._resolve_location(row, config, caches["location"])
             if row["product"] or row["new_product"]:
@@ -444,18 +451,31 @@ class StockEmailImport(models.Model):
         else:
             row["counted_qty"] = quantity
 
-    def _validate_price(self, row, cell, config):
-        if config.price_update == "none":
-            return
+    def _parse_price(self, row, cell, label):
+        """The price in `cell`, or False when it is empty or invalid."""
         try:
             price = _cell_number(cell)
         except ValueError:
-            self._add(row, "error", _("Price '%(value)s' is not a number.", value=cell))
-            return
-        if price is not None and price < 0:
-            self._add(row, "error", _("A price cannot be negative."))
-        elif price is not None:
-            row["price"] = price
+            self._add(row, "error", _(
+                "%(label)s '%(value)s' is not a number.", label=label, value=cell))
+            return False
+        if price is None:
+            return False
+        if price < 0:
+            self._add(row, "error", _("%(label)s cannot be negative.", label=label))
+            return False
+        return price
+
+    def _row_prices(self, row, config):
+        """(sales price, cost) the row asks for; False where it sets none."""
+        sales = row["sales_price"]
+        cost = row["cost_price"]
+        if row["price"] is not False:
+            if config.price_update == "sales" and sales is False:
+                sales = row["price"]
+            elif config.price_update == "cost" and cost is False:
+                cost = row["price"]
+        return sales, cost
 
     def _resolve_product(self, row, config, cache):
         key = (row["product_code"], row["barcode"], row["product_name"])
@@ -584,6 +604,9 @@ class StockEmailImport(models.Model):
         config = self.config_id
         ok_rows = [row for row in rows if row["status"] == "ok"]
         self._create_missing_products(ok_rows, config)
+        # Cost before this sheet, per product: the value change compares the
+        # stock that was there at its old cost with the count at the new one.
+        old_costs = {row["product"].id: row["product"].standard_price for row in ok_rows}
         self._update_prices(ok_rows, config)
         self._create_missing_lots(ok_rows, config)
 
@@ -620,10 +643,11 @@ class StockEmailImport(models.Model):
             if float_is_zero(difference, precision_digits=digits):
                 difference = 0.0
             first = group[0]
+            old_cost = old_costs.get(product_id, product.standard_price)
             first.update({
                 "previous_qty": previous,
                 "difference_qty": difference,
-                "value_change": difference * product.standard_price,
+                "value_change": counted * product.standard_price - previous * old_cost,
             })
             if len(group) > 1:
                 rows_text = ", ".join(str(row["row_number"]) for row in group)
@@ -680,17 +704,20 @@ class StockEmailImport(models.Model):
         return category or Category.create({"name": name})
 
     def _update_prices(self, rows, config):
-        if config.price_update == "none":
-            return
+        """Write the sheet's sales price and cost; note each change on the row."""
         for row in rows:
-            if row["price"] is False:
-                continue
+            sales, cost = self._row_prices(row, config)
             product = row["product"]
-            if config.price_update == "cost":
-                if float_compare(product.standard_price, row["price"], 6):
-                    product.standard_price = row["price"]
-            elif float_compare(product.list_price, row["price"], 6):
-                product.product_tmpl_id.list_price = row["price"]
+            if sales is not False and float_compare(product.list_price, sales, precision_digits=6):
+                self._add(row, "info", _(
+                    "Sales price %(old)s → %(new)s.",
+                    old="{:,.2f}".format(product.list_price), new="{:,.2f}".format(sales)))
+                product.product_tmpl_id.list_price = sales
+            if cost is not False and float_compare(product.standard_price, cost, precision_digits=6):
+                self._add(row, "info", _(
+                    "Cost %(old)s → %(new)s.",
+                    old="{:,.2f}".format(product.standard_price), new="{:,.2f}".format(cost)))
+                product.standard_price = cost
 
     def _create_missing_lots(self, rows, config):
         created = {}
@@ -742,6 +769,8 @@ class StockEmailImport(models.Model):
             "difference_qty": row.get("difference_qty", 0.0),
             "value_change": row.get("value_change", 0.0),
             "price": row["price"] or 0.0,
+            "sales_price": row["sales_price"] or 0.0,
+            "cost_price": row["cost_price"] or 0.0,
             "status": "error" if is_error else row["status"],
             "message": "\n".join(messages),
         }
@@ -813,7 +842,7 @@ class StockEmailImport(models.Model):
         ])
 
         if ok:
-            lines = self.line_ids.filtered(lambda l: l.difference_qty)[:40]
+            lines = self.line_ids.filtered(lambda l: l.difference_qty or l.value_change)[:40]
             header = Markup("").join(
                 Markup('<th style="%s">%s</th>') % (head, label)
                 for label in (_("Product"), _("Location"), _("Before"), _("Counted"), _("Change"))
