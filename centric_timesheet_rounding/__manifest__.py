@@ -16,7 +16,7 @@
                    "The Confirm Time Spent dialog shown when a timer is stopped is also "
                    "corrected, so the duration it offers is the duration that will be "
                    "stored rather than the global one.",
-    "version": "19.0.1.3.1",
+    "version": "19.0.1.3.2",
     "category": "Services/Timesheets",
     "author": "Centric",
     "license": "LGPL-3",

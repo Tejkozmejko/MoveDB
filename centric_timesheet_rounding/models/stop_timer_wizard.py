@@ -1,7 +1,7 @@
 from odoo import api, models
 
 
-class HrTimesheetStopTimerConfirmationWizard(models.TransientModel):
+class HrTimesheetStopTimerConfirmationWizard(models.Model):
     """Propose the rounding that will actually be saved in "Confirm Time Spent".
 
     The dialog's `time_spent` is handed to it already rounded by the native
@@ -16,6 +16,8 @@ class HrTimesheetStopTimerConfirmationWizard(models.TransientModel):
     directly means any other module extending that rule is covered here too.
     """
 
+    # A regular models.Model in Odoo 19, despite the name: extending it as a
+    # TransientModel makes the registry refuse to load and takes the server down.
     _inherit = "hr.timesheet.stop.timer.confirmation.wizard"
 
     @api.model
