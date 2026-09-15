@@ -648,6 +648,51 @@ class TestClaudeWorkspace(TransactionCase):
         self.assertTrue(self.env["res.partner"].search([("name", "=", "Claude Before Co")]))
         self.assertFalse(self.env["res.partner"].search([("name", "=", "Claude After Co")]))
 
+    def _install_proposal(self, conversation):
+        # Built directly: the test must never be able to install anything, and
+        # nothing below applies it.
+        return self.env["centric.claude.operation"].create({
+            "conversation_id": conversation.id,
+            "user_id": self.env.user.id,
+            "kind": "method",
+            "model_name": "ir.module.module",
+            "record_ids": str(self.env.ref("base.module_base").id),
+            "method": "button_immediate_install",
+            "summary": "Install Website",
+        })
+
+    def test_yes_to_all_stops_in_front_of_a_module_install(self):
+        conversation = self._conversation()
+        first = conversation._propose_change(
+            "create", "res.partner", "", '{"name": "Claude Pre Install Co"}', "Add"
+        )
+        install = self._install_proposal(conversation)
+        after = conversation._propose_change(
+            "create", "res.partner", "", '{"name": "Claude Post Install Co"}', "Add"
+        )
+
+        self.Conversation.apply_all_workspace_operations(conversation.id)
+
+        Operation = self.env["centric.claude.operation"]
+        self.assertEqual(Operation.browse(first["operation_id"]).state, "applied")
+        self.assertEqual(install.state, "proposed")
+        self.assertEqual(Operation.browse(after["operation_id"]).state, "proposed")
+        self.assertFalse(self.env["res.partner"].search([("name", "=", "Claude Post Install Co")]))
+        self.assertIn("needs its own confirmation", conversation.message_ids.sorted("id")[-1].content)
+
+    def test_yes_to_all_refuses_when_a_module_install_comes_first(self):
+        conversation = self._conversation()
+        install = self._install_proposal(conversation)
+        after = conversation._propose_change(
+            "create", "res.partner", "", '{"name": "Claude Behind Install Co"}', "Add"
+        )
+        with self.assertRaises(UserError):
+            self.Conversation.apply_all_workspace_operations(conversation.id)
+        self.assertEqual(install.state, "proposed")
+        self.assertEqual(
+            self.env["centric.claude.operation"].browse(after["operation_id"]).state, "proposed"
+        )
+
     def test_a_credential_field_can_never_be_set(self):
         conversation = self._conversation()
         with self.assertRaises(AccessError):

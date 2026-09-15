@@ -565,6 +565,25 @@ class CentricClaudeOperation(models.Model):
         self._mark_applied(result)
         return result
 
+    # Methods that commit the transaction and rebuild the registry part-way.
+    # No savepoint survives that: everything queued behind one in the same
+    # request fails with "current transaction is aborted", after the install
+    # itself may already have gone through.
+    COMMITTING_METHODS = {
+        "ir.module.module": {
+            "button_immediate_install",
+            "button_immediate_uninstall",
+            "button_immediate_upgrade",
+        },
+        "res.config.settings": {"execute"},
+    }
+
+    def _commits_transaction(self):
+        self.ensure_one()
+        return self.kind == "method" and (self.method or "").strip() in self.COMMITTING_METHODS.get(
+            self.model_name, ()
+        )
+
     def _apply_in_batch(self):
         """Apply as one of several, without raising. Returns (applied, message).
 

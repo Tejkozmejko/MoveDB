@@ -1722,8 +1722,21 @@ Rules:
         if not pending:
             raise UserError(_("There are no changes waiting for approval."))
 
-        results, failed = [], None
+        # A module install commits and restarts the registry mid-request, which
+        # breaks every savepoint in the batch. It is never run from here: the
+        # run stops in front of it and it waits for its own Yes.
+        if pending[0]._commits_transaction():
+            raise UserError(_(
+                '"%s" installs or changes modules and restarts Odoo, so it cannot be '
+                "confirmed together with other changes. Confirm it on its own first, "
+                "then confirm the rest."
+            ) % pending[0].summary)
+
+        results, failed, held = [], None, None
         for operation in pending:
+            if operation._commits_transaction():
+                held = operation
+                break
             applied, outcome = operation._apply_in_batch()
             if not applied:
                 failed = (operation, outcome)
@@ -1741,6 +1754,12 @@ Rules:
             left = len(pending) - len(results) - 1
             if left:
                 lines.append(_("%s change(s) after it are still waiting.") % left)
+        if held:
+            lines.append(_(
+                'Stopped before "%s": it installs or changes modules and restarts Odoo, '
+                "so it needs its own confirmation. It and the %s change(s) after it are "
+                "still waiting."
+            ) % (held.summary, len(pending) - len(results) - 1))
         # One entry for the whole answer, so the transcript shows what the user
         # agreed to and Claude can see on its next turn where the run stopped.
         self.env["centric.claude.message"].create({

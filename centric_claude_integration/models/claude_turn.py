@@ -3,6 +3,7 @@ import logging
 import psycopg2
 
 from odoo import SUPERUSER_ID, _, api, fields, models
+from odoo.tools import mute_logger
 
 _logger = logging.getLogger(__name__)
 
@@ -120,7 +121,12 @@ class CentricClaudeTurn(models.Model):
             # aborted transaction, so the `turn.write` that follows died with
             # "current transaction is aborted, commands ignored until end of
             # transaction block" - and every worker's poll failed with it.
-            with self.env.cr.savepoint():
+            # Muted because losing the race is expected with several workers,
+            # and Odoo logs the refused query as ERROR before it reaches the
+            # except below. Odoo.sh grades a build by its log, so each lost race
+            # used to count as a failure. Anything else still reaches the
+            # warning further down, with its traceback.
+            with self.env.cr.savepoint(), mute_logger("odoo.sql_db"):
                 self.env.cr.execute(
                     "SELECT id FROM centric_claude_turn "
                     "WHERE id IN %s AND state = 'pending' "
