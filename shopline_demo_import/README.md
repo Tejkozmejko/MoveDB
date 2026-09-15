@@ -109,3 +109,17 @@ Both were proposed through the Claude chat. If a product row fails with
 Every row has an External ID (`id` column). Re-importing the same file **updates**
 those records instead of duplicating them, so a failed import is safe to fix and
 retry.
+
+## shopline_logo.png
+
+A transparent-background Shopline wordmark, 900x240. Upload it in
+Settings ▸ Companies ▸ Shopline ▸ logo, and again in the website editor if you
+want it in the site header (that is a separate image).
+
+Dark text on transparency is deliberate: the company logo is printed on
+quotations and invoices, which are white. A logo with a dark background renders
+as a black box on those documents.
+
+It is a file rather than something loaded through Claude because images have to
+be base64 to go through the bridge, and a single corrupted character in an
+11,000-character string gives you a broken image with no obvious cause.
