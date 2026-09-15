@@ -60,5 +60,16 @@ class TestStopTimerWizardRounding(TransactionCase):
         line.write({"unit_amount": proposed})
         self.assertAlmostEqual(line.unit_amount, proposed, places=4)
 
+    def test_dialog_created_with_the_time_filled_in_is_rounded(self):
+        # What Stop really does: create the record with the values, then open it.
+        wizard = self.env[self.WIZARD].create({
+            "timesheet_id": self._line(self.fsm_project).id, "time_spent": 0.25,
+        })
+        self.assertAlmostEqual(wizard.time_spent, 0.5, places=4)
+        other = self.env[self.WIZARD].create({
+            "timesheet_id": self._line(self.other_project).id, "time_spent": 0.25,
+        })
+        self.assertAlmostEqual(other.time_spent, 0.25, places=4)
+
     def test_dialog_without_a_timesheet_is_left_alone(self):
         self.assertAlmostEqual(self._proposed(None, 0.25), 0.25, places=4)

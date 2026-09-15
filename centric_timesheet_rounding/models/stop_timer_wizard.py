@@ -21,19 +21,31 @@ class HrTimesheetStopTimerConfirmationWizard(models.TransientModel):
     @api.model
     def default_get(self, fields_list):
         res = super().default_get(fields_list)
-        if not res.get("time_spent"):
-            return res
-        timesheet = self._centric_wizard_timesheet(res)
+        return self._centric_round_proposal(res)
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        # The Stop button creates the dialog record with time_spent already
+        # filled in and opens it by id, so default_get never sees that value -
+        # it has to be corrected here as well.
+        return super().create([self._centric_round_proposal(dict(vals)) for vals in vals_list])
+
+    @api.model
+    def _centric_round_proposal(self, values):
+        """`values` with time_spent re-rounded by its timesheet line's rule."""
+        if not values.get("time_spent"):
+            return values
+        timesheet = self._centric_wizard_timesheet(values)
         if not timesheet:
-            return res
+            return values
         minimal_minutes, step_minutes = timesheet._centric_rounding_rule()
         if not minimal_minutes and not step_minutes:
-            return res
+            return values
         # time_spent is in hours -- the form renders it with widget="float_time".
-        res["time_spent"] = timesheet._centric_round_hours(
-            res["time_spent"], minimal_minutes, step_minutes
+        values["time_spent"] = timesheet._centric_round_hours(
+            values["time_spent"], minimal_minutes, step_minutes
         )
-        return res
+        return values
 
     @api.model
     def _centric_wizard_timesheet(self, defaults):
