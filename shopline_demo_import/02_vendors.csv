@@ -1,0 +1,7 @@
+id,name,is_company,street,city,state_id,zip,country_id,phone,email,website,supplier_rank
+shopline.vend_meridian,Meridian Components Ltd,True,"3050 Zanker Road",San Jose,California (US),95134,United States,+1 408 555 0110,sales@meridiancomponents.example.com,https://meridiancomponents.example.com,1
+shopline.vend_pacifica,Pacifica Audio Manufacturing,True,"14 Tsing Yi Road",Hong Kong,,,Hong Kong,+852 5555 0120,orders@pacificaaudio.example.com,https://pacificaaudio.example.com,1
+shopline.vend_novatek,Novatek Displays GmbH,True,"Lindenstrasse 42",Munich,,80331,Germany,+49 89 5555 0130,vertrieb@novatek-displays.example.de,https://novatek-displays.example.de,1
+shopline.vend_cascade,Cascade Home Goods,True,"1200 SE Grand Avenue",Portland,Oregon (US),97214,United States,+1 503 555 0140,wholesale@cascadehome.example.com,,1
+shopline.vend_arclight,Arclight Accessories Inc,True,"7600 Dallas Parkway",Plano,Texas (US),75024,United States,+1 972 555 0150,accounts@arclightacc.example.com,https://arclightacc.example.com,1
+shopline.vend_tenjin,Tenjin Mobile Devices,True,"2-1-1 Nihonbashi",Tokyo,,103-0027,Japan,+81 3 5555 0160,export@tenjinmobile.example.jp,https://tenjinmobile.example.jp,1

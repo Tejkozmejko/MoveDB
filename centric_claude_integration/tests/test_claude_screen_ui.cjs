@@ -87,7 +87,11 @@ function panel() {
     result.state = {
         conversation: { id: 10 }, messages: [], operations: [], agent: { waiting: true },
         draft: "", context: { scope: "record" }, sending: false, answering: false,
+        pendingAttachments: [], uploading: 0, model: "claude-opus-5", effort: "high",
+        access: { attachments_enabled: true }, history: [],
     };
+    result.orm = { call: async () => ({}) };
+    result.revision = 1;
     result.schedulePoll = () => {};
     return result;
 }
@@ -127,7 +131,9 @@ test("sending reuses the pinned conversation and does not read the new screen", 
     instance.screenState.current = { model: "res.partner", record_ids: [99] };
     let sent;
     instance.call = async (method, args) => {
-        sent = { method, args };
+        if (method !== "list_screen_conversations") {
+            sent = { method, args };
+        }
         return { conversation: { id: 10 }, messages: [], agent: {} };
     };
     instance.applyPayload = () => {};
@@ -158,4 +164,182 @@ test("proposals are applied only by the explicit confirmation handler", async ()
     await instance.answerOperation({ id: 5 }, true);
     assert.equal(calls[0].method, "apply_workspace_operation");
     assert.deepEqual(plain(calls[0].args), [10, 5]);
+});
+
+test("a file-only message can be sent and carries the attachment ids", async () => {
+    const instance = panel();
+    instance.state.agent = {};
+    instance.state.pendingAttachments = [{ id: 7, name: "invoice.pdf", is_image: false }];
+    let sent;
+    instance.call = async (method, args) => {
+        if (method === "send_workspace_message") {
+            sent = plain(args);
+        }
+        return method === "list_screen_conversations" ? [] : { conversation: { id: 10 }, messages: [], agent: {} };
+    };
+    instance.applyPayload = () => {};
+    assert.equal(instance.canSend, true);
+    await instance.sendMessage();
+    assert.deepEqual(sent, [10, "", [7]]);
+    assert.deepEqual(plain(instance.state.pendingAttachments), []);
+});
+
+test("nothing is sent while a file is still uploading", async () => {
+    const instance = panel();
+    instance.state.agent = {};
+    instance.state.draft = "Read this";
+    instance.state.uploading = 1;
+    assert.equal(instance.canSend, false);
+});
+
+test("the first message creates the chat with the picked model and effort", async () => {
+    const instance = panel();
+    instance.state.agent = {};
+    instance.state.conversation = null;
+    instance.state.rawContext = { model: "res.partner", scope: "record", record_ids: [3] };
+    instance.state.model = "claude-sonnet-5";
+    instance.state.effort = "low";
+    instance.state.draft = "Summarize";
+    const calls = [];
+    instance.call = async (method, args) => {
+        calls.push({ method, args: plain(args) });
+        if (method === "list_screen_conversations") {
+            return [];
+        }
+        return { conversation: { id: 11 }, messages: [], agent: {} };
+    };
+    instance.applyPayload = (payload) => { instance.state.conversation = payload.conversation; };
+    await instance.sendMessage();
+    assert.equal(calls[0].method, "create_screen_conversation");
+    assert.deepEqual(calls[0].args[1], { model: "claude-sonnet-5", effort: "low" });
+    assert.equal(calls[1].method, "send_workspace_message");
+    assert.equal(calls[1].args[0], 11);
+});
+
+test("changing the model before the chat exists stays local", async () => {
+    const instance = panel();
+    instance.state.conversation = null;
+    let called = false;
+    instance.call = async () => { called = true; };
+    await instance.setModel({ target: { value: "claude-haiku-4-5-20251001" } });
+    assert.equal(instance.state.model, "claude-haiku-4-5-20251001");
+    assert.equal(called, false);
+});
+
+test("changing the effort on a live chat saves it and reverts on failure", async () => {
+    const instance = panel();
+    instance.call = async () => { throw new Error("Nope"); };
+    const target = { value: "max" };
+    await instance.setEffort({ target });
+    assert.equal(instance.state.effort, "high");
+    assert.equal(target.value, "high");
+    assert.equal(instance.state.error, "Nope");
+});
+
+test("opening a previous chat loads it and closes the list", async () => {
+    const instance = panel();
+    instance.stopPolling = () => {};
+    instance.rendered = new Map();
+    instance.composer = {};
+    const payloads = [];
+    instance.applyPayload = (payload) => payloads.push(payload.conversation.id);
+    instance.call = async (method, args) => ({ conversation: { id: args[0] }, messages: [] });
+    await instance.openChat({ id: 42 });
+    assert.deepEqual(payloads, [42]);
+    assert.equal(instance.state.historyOpen, false);
+});
+
+test("a new chat forgets the open one and drops unsent files", async () => {
+    const instance = panel();
+    instance.stopPolling = () => {};
+    instance.rendered = new Map();
+    instance.composer = {};
+    const discarded = [];
+    instance.orm = { call: async (model, method, args) => { discarded.push(args[0]); } };
+    instance.state.pendingAttachments = [{ id: 5 }];
+    instance.state.messages = [{ id: 1 }];
+    instance.call = async () => [];
+    instance.state.rawContext = { model: "res.partner" };
+    instance.newChat();
+    assert.equal(instance.state.conversation, null);
+    assert.deepEqual(plain(instance.state.messages), []);
+    assert.deepEqual(discarded, [5]);
+});
+
+
+function follower(overrides = {}) {
+    const instance = panel();
+    instance.state.initialized = true;
+    instance.state.loading = false;
+    instance.state.agent = {};
+    instance.state.rawContext = { model: "res.partner", scope: "record", record_ids: [1] };
+    instance.candidateKey = JSON.stringify(instance.state.rawContext);
+    instance.screenNow = { model: "res.partner", scope: "record", record_ids: [1] };
+    instance.screen = { refresh: () => instance.screenNow };
+    instance.switched = 0;
+    instance.useCurrentScreen = () => { instance.switched++; };
+    Object.assign(instance.state, overrides);
+    return instance;
+}
+
+test("the panel follows a move to another screen once it has settled", () => {
+    const instance = follower();
+    instance.followTick();
+    assert.equal(instance.switched, 0, "same screen: nothing happens");
+    instance.screenNow = { model: "res.partner", scope: "record", record_ids: [2] };
+    instance.followTick();
+    assert.equal(instance.switched, 0, "first sighting only marks a candidate");
+    instance.followTick();
+    assert.equal(instance.switched, 1);
+});
+
+test("leaving for the home menu follows too", () => {
+    const instance = follower();
+    instance.screenNow = null;
+    instance.followTick(true);
+    assert.equal(instance.switched, 1);
+});
+
+test("a move while Claude answers is offered, not forced, even after it finishes", () => {
+    const instance = follower();
+    instance.state.agent = { waiting: true };
+    instance.screenNow = { model: "helpdesk.ticket", scope: "record", record_ids: [9] };
+    instance.followTick(true);
+    assert.equal(instance.switched, 0);
+    assert.equal(instance.state.moveDeferred, true);
+    instance.state.agent = { waiting: false };
+    instance.followTick();
+    instance.followTick();
+    assert.equal(instance.switched, 0, "the finished answer stays readable");
+    instance.switchNow();
+    assert.equal(instance.switched, 1);
+});
+
+test("unsent files hold the chat in place", () => {
+    const instance = follower({ pendingAttachments: [{ id: 3 }] });
+    instance.screenNow = { model: "res.partner", scope: "record", record_ids: [2] };
+    instance.followTick(true);
+    assert.equal(instance.switched, 0);
+    assert.equal(instance.state.moveDeferred, true);
+});
+
+test("coming back to the chat's own screen clears the notice", () => {
+    const instance = follower({ moveDeferred: true });
+    instance.followTick();
+    assert.equal(instance.state.moveDeferred, false);
+});
+
+test("a general chat is created without screen context", async () => {
+    const instance = panel();
+    Object.assign(instance.state, { agent: {}, conversation: null, context: null, general: true, draft: "Hello" });
+    const calls = [];
+    instance.call = async (method, args) => {
+        calls.push({ method, args: plain(args) });
+        return method === "list_screen_conversations" ? [] : { conversation: { id: 12 }, messages: [], agent: {} };
+    };
+    instance.applyPayload = (payload) => { instance.state.conversation = payload.conversation; };
+    await instance.sendMessage();
+    assert.equal(calls[0].method, "create_workspace_conversation");
+    assert.deepEqual(calls[0].args, [false, false, { model: "claude-opus-5", effort: "high" }]);
+    assert.deepEqual(calls.find((c) => c.method === "list_screen_conversations").args, [false]);
 });

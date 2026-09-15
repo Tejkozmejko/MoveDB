@@ -142,6 +142,9 @@ class CentricClaudeConversation(models.Model):
             "default_branch": self._default_branch(),
             "allowed_module_prefix": self._param("centric_claude.allowed_module_prefix", "centric_"),
             "effort_choices": self._effort_choices(),
+            "model_choices": self._model_choices(),
+            "default_model": self._fields["model"].default(self),
+            "default_effort": self._default_effort(),
             "attachments_enabled": self.env["centric.claude.attachment"]._enabled(),
             "attachment_max_mb": round(
                 self.env["centric.claude.attachment"]._max_bytes() / 1024 / 1024, 1
@@ -165,7 +168,7 @@ class CentricClaudeConversation(models.Model):
         return {"access": self._workspace_access()} | self._workspace_sidebar()
 
     @api.model
-    def create_workspace_conversation(self, name=None, project_id=None):
+    def create_workspace_conversation(self, name=None, project_id=None, options=None):
         access = self._workspace_access()
         if not access["can_chat"]:
             raise AccessError(_("You do not have access to the Claude workspace."))
@@ -179,8 +182,20 @@ class CentricClaudeConversation(models.Model):
             "user_id": self.env.user.id,
             "base_branch": access["default_branch"],
             "project_id": project.id or False,
+            **self._conversation_options(options),
         })
         return self._conversation_payload(conv)
+
+    @api.model
+    def _conversation_options(self, options):
+        """The model and effort a chat was started with; anything unknown is dropped."""
+        options = options if isinstance(options, dict) else {}
+        values = {}
+        if options.get("model") in dict(self._fields["model"].selection):
+            values["model"] = options["model"]
+        if options.get("effort") in self.EFFORT_LEVELS:
+            values["effort"] = options["effort"]
+        return values
 
     @api.model
     def rename_workspace_conversation(self, conversation_id, name):
@@ -320,10 +335,13 @@ class CentricClaudeConversation(models.Model):
 
         # `content` is required, and an image on its own still has to say
         # something to Claude, so an image-only message carries the obvious ask.
-        text = typed or (
-            _("Please look at the attached image.") if len(attachments) == 1
-            else _("Please look at the attached images.")
-        )
+        if all(attachment._is_image() for attachment in attachments):
+            fallback = (_("Please look at the attached image.") if len(attachments) == 1
+                        else _("Please look at the attached images."))
+        else:
+            fallback = (_("Please look at the attached file.") if len(attachments) == 1
+                        else _("Please look at the attached files."))
+        text = typed or fallback
         message = self.env["centric.claude.message"].create({
             "conversation_id": conv.id,
             "role": "user",
@@ -493,7 +511,7 @@ class CentricClaudeConversation(models.Model):
                 for attachment in msg.attachment_ids:
                     if budget <= 0:
                         break
-                    blocks.append(attachment._image_block())
+                    blocks.append(attachment._content_block())
                     budget -= 1
             if blocks:
                 blocks.append({"type": "text", "text": msg.content})
@@ -1542,6 +1560,11 @@ Rules:
         if callable(selection):
             selection = selection(self)
         return [{"value": value, "label": label} for value, label in selection]
+
+    @api.model
+    def _model_choices(self):
+        """The models and their labels, for the picker."""
+        return [{"value": value, "label": label} for value, label in self._fields["model"].selection]
 
     @api.model
     def _conversation_summary(self, conv):

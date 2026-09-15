@@ -1,0 +1,30 @@
+// Centric background for the home apps screen.
+//
+// The image is painted on .o_home_menu itself, with a dark wash layered over
+// it in the same background shorthand. Doing the wash as a gradient layer
+// rather than an overlay element keeps the app grid out of a new stacking
+// context, so focus rings and the app search dropdown behave as they do
+// without this module.
+//
+// The url() is a literal root-relative path on purpose: Odoo 19's SCSS
+// pipeline does not rewrite interpolated url() values, so building the path
+// from a variable silently yields a 404.
+
+.o_home_menu {
+    background-color: #1d1a1c; // darkest corner of the photo, for the gap
+                               // before the image loads and beyond `cover`
+    background-image: linear-gradient(
+            rgba(14, 17, 22, 0.62),
+            rgba(14, 17, 22, 0.62)
+        ),
+        url("/centric_branding/static/src/img/centric_home_background.jpg");
+    background-position: center center;
+    background-repeat: no-repeat;
+    background-size: cover;
+
+    // Odoo paints its own backdrop on a child element. Switch it off so only
+    // one picture is ever drawn.
+    .o_home_menu_background {
+        background-image: none;
+    }
+}

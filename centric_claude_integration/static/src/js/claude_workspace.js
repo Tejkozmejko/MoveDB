@@ -1053,7 +1053,7 @@ export class ClaudeDeveloperWorkspace extends Component {
         const files = items
             .filter((item) => item.kind === "file")
             .map((item) => item.getAsFile())
-            .filter((file) => file && file.type.startsWith("image/"));
+            .filter(Boolean);
         if (!files.length) {
             // An ordinary text paste: leave the textarea to handle it.
             return;
@@ -1099,14 +1099,9 @@ export class ClaudeDeveloperWorkspace extends Component {
             }
         }
         const conversationId = this.state.conversation.id;
+        // Images, PDFs and text: the server sniffs the bytes and says no to
+        // anything else, with a message naming what is accepted.
         for (const file of files) {
-            if (!file.type.startsWith("image/")) {
-                this.notification.add(
-                    `${file.name || "That file"} is not an image, so it was not attached.`,
-                    { type: "warning" }
-                );
-                continue;
-            }
             this.state.uploading += 1;
             try {
                 const data = await readAsBase64(file);

@@ -8,6 +8,22 @@ class CentricClaudeScreenConversation(models.Model):
     _inherit = "centric.claude.conversation"
 
     screen_context = fields.Json(readonly=True, copy=False)
+    # Searchable copies of what the chat is about, so the panel can list the
+    # earlier chats on a record - or on an app's lists - without scanning JSON.
+    screen_model = fields.Char(compute="_compute_screen_target", store=True, index=True)
+    screen_res_id = fields.Integer(compute="_compute_screen_target", store=True, index=True)
+
+    HISTORY_LIMIT = 30
+
+    @api.depends("screen_context")
+    def _compute_screen_target(self):
+        for conversation in self:
+            screen = conversation.screen_context if isinstance(conversation.screen_context, dict) else {}
+            ids = screen.get("record_ids") or []
+            conversation.screen_model = screen.get("model") or False
+            conversation.screen_res_id = (
+                ids[0] if screen.get("scope") == "record" and len(ids) == 1 else 0
+            )
 
     @api.model
     def _screen_company_context(self, screen):
@@ -157,13 +173,62 @@ class CentricClaudeScreenConversation(models.Model):
         return super().write(values)
 
     @api.model
-    def create_screen_conversation(self, screen):
+    def create_screen_conversation(self, screen, options=None):
+        """Start a chat about `screen`, with the model and effort picked before it existed."""
         context = self._normalise_screen_context(screen)
         conversation = self.create({
             "name": context["label"][:120],
             "screen_context": context,
+            **self._conversation_options(options),
         })
         return self._conversation_payload(conversation)
+
+    @api.model
+    def list_screen_conversations(self, screen):
+        """This user's earlier chats about the same screen, newest first.
+
+        On a record: the chats about that record. On a list or kanban: every
+        chat in that app's model, record chats included. With no screen (the
+        home menu, a settings page): the general chats, not tied to any screen.
+        Chats nobody wrote in (a file picked, then abandoned) are left out.
+        """
+        domain = [
+            ("user_id", "=", self.env.user.id),
+            ("message_ids", "!=", False),
+        ]
+        if not screen:
+            if not self._workspace_access()["can_chat"]:
+                raise AccessError(_("Claude is disabled or you do not have workspace access."))
+            domain.append(("screen_model", "=", False))
+        else:
+            context = self._normalise_screen_context(screen)
+            domain.append(("screen_model", "=", context["model"]))
+            if context["scope"] == "record":
+                domain.append(("screen_res_id", "=", context["record_ids"][0]))
+        conversations = self.search(domain, order="write_date desc, id desc", limit=self.HISTORY_LIMIT)
+        Message = self.env["centric.claude.message"]
+        items = []
+        for conversation in conversations:
+            last = Message.search([
+                ("conversation_id", "=", conversation.id),
+                ("role", "in", ("user", "assistant")),
+            ], order="id desc", limit=1)
+            first_question = Message.search([
+                ("conversation_id", "=", conversation.id), ("role", "=", "user"),
+            ], order="id asc", limit=1)
+            items.append({
+                "id": conversation.id,
+                "name": conversation.name,
+                "question": (first_question.content or "").strip()[:160],
+                "scope_label": (conversation.screen_context or {}).get("label") or "",
+                "record_id": conversation.screen_res_id or False,
+                "updated": fields.Datetime.to_string(last.create_date or conversation.write_date),
+                "message_count": Message.search_count([
+                    ("conversation_id", "=", conversation.id),
+                    ("role", "in", ("user", "assistant")),
+                ]),
+            })
+        return items
 
     def _screen_environment(self):
         self.ensure_one()
