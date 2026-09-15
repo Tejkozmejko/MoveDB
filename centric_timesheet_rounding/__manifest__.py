@@ -12,8 +12,11 @@
                    "Unlike the native setting, which only applies to the timer, this is "
                    "applied on create and write, so a Field Service line reaches the "
                    "minimum however it was entered -- timer or typed in by hand. Lines that "
-                   "are already validated or invoiced are never touched.",
-    "version": "19.0.1.2.0",
+                   "are already validated or invoiced are never touched.\n\n"
+                   "The Confirm Time Spent dialog shown when a timer is stopped is also "
+                   "corrected, so the duration it offers is the duration that will be "
+                   "stored rather than the global one.",
+    "version": "19.0.1.3.0",
     "category": "Services/Timesheets",
     "author": "Centric",
     "license": "LGPL-3",
