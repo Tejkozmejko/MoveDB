@@ -12,11 +12,11 @@
                 <setting id="centric_fsm_time_rounding"
                          invisible="is_encode_uom_days"
                          string="Field Service Time Rounding"
-                         help="Applies instead of the rounding above when the timer runs on a Field Service task. Leave a value at 0 to fall back to the setting above.">
+                         help="Applies to Field Service timesheets instead of the rounding above. Unlike the setting above it also covers time typed in by hand, not only the timer. Leave a value at 0 to fall back to the setting above.">
                     <div class="mt16">
                         <div class="o_row">
                             <div class="o_light_label"
-                                 title="Timers stopped on a Field Service task below this duration are rounded up to it. For instance, with a minimal duration of 30 min, stopping the timer at 00:04:36 records 00:30.">
+                                 title="Field Service timesheets below this duration are rounded up to it. For instance, with a minimal duration of 30 min, a timer stopped at 00:04:36 records 00:30.">
                                 <label class="fw-bold col-6 col-sm-4 col-md-2 col-lg-4"
                                        for="centric_fsm_timesheet_min_duration"/>
                                 <field name="centric_fsm_timesheet_min_duration"
@@ -26,7 +26,7 @@
                         </div>
                         <div class="o_row">
                             <div class="o_light_label"
-                                 title="Once past the minimal duration, Field Service timers are rounded up to the next multiple of this number. For instance, with a round up of 15 min, stopping the timer at 00:38:12 records 00:45.">
+                                 title="Once past the minimal duration, Field Service timesheets are rounded up to the next multiple of this number. For instance, with a round up of 15 min, 00:38:12 records 00:45.">
                                 <label class="fw-bold col-6 col-sm-4 col-md-2 col-lg-4"
                                        for="centric_fsm_timesheet_rounding"/>
                                 <field name="centric_fsm_timesheet_rounding"
