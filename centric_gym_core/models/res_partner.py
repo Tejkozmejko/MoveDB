@@ -204,8 +204,7 @@ class ResPartner(models.Model):
         return {**membership, "allowed": True, "label": membership.get("label") or _("Active")}
 
     def _gym_refuse(self, code, detail=None):
-        from .gym_checkin import DENY_REASONS
-        label = dict(DENY_REASONS).get(code, code)
+        label = self.env["gym.checkin"]._gym_reason_label(code)
         return {"allowed": False, "code": code, "label": f"{label}: {detail}" if detail else label, "end": False}
 
     def _gym_membership_status(self):
@@ -280,10 +279,14 @@ class ResPartner(models.Model):
             self._gym_sync_pin(vals)
         return result
 
+    def _gym_protected_fields(self):
+        """Fields only a gym manager (or the system) may set."""
+        return PROTECTED_FIELDS
+
     def _gym_check_protected_write(self, vals, creating=False):
         if self.env.su or self.env.user.has_group(GROUP_MANAGER):
             return
-        touched = [name for name in PROTECTED_FIELDS if name in vals]
+        touched = [name for name in self._gym_protected_fields() if name in vals]
         if creating:
             # The form sends the defaults along with a new contact.
             touched = [name for name in touched if vals[name] and vals[name] != "none"]

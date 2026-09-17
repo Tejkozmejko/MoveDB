@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="gym_member_intake_view_form" model="ir.ui.view">
+        <field name="name">gym.member.intake.form</field>
+        <field name="model">gym.member.intake</field>
+        <field name="arch" type="xml">
+            <form>
+                <field name="step" widget="statusbar" statusbar_visible="details,sign,done" class="mb-3"/>
+
+                <!-- 1. Details -->
+                <div invisible="step != 'details'">
+                    <div class="d-flex gap-3 align-items-start">
+                        <div class="text-center">
+                            <field name="image_1920" widget="image" class="oe_avatar m-0"
+                                   options="{'size': [120, 120]}"/>
+                            <widget name="centric_gym_core_member_photo"/>
+                        </div>
+                        <div class="flex-grow-1">
+                            <h2><field name="name" placeholder="Full name" required="step == 'details'"/></h2>
+                        </div>
+                    </div>
+                    <group>
+                        <group string="Contact">
+                            <field name="email" widget="email" required="step == 'details' and not is_minor"/>
+                            <field name="phone" widget="phone"/>
+                            <field name="birthdate"/>
+                            <field name="is_minor" invisible="1"/>
+                            <field name="home_location_id" options="{'no_create': True}"/>
+                        </group>
+                        <group string="Address">
+                            <field name="street"/>
+                            <field name="zip"/>
+                            <field name="city"/>
+                            <field name="country_id" options="{'no_create': True}"/>
+                        </group>
+                        <group string="Emergency Contact">
+                            <field name="emergency_name" string="Name"/>
+                            <field name="emergency_phone" string="Phone" widget="phone"/>
+                            <field name="emergency_relation"/>
+                        </group>
+                        <group string="Parent / Guardian" invisible="not is_minor">
+                            <field name="guardian_id"/>
+                            <field name="guardian_name" invisible="guardian_id"/>
+                            <field name="guardian_email" widget="email" invisible="guardian_id"/>
+                        </group>
+                    </group>
+                    <p class="text-muted">
+                        Next, the member (or their parent or guardian) signs the gym waiver. Health details can be
+                        added on the member afterwards by staff allowed to see them.
+                    </p>
+                </div>
+
+                <!-- 2. Signature -->
+                <div invisible="step != 'sign'" class="text-center py-3">
+                    <h3>Waiting for <field name="signer_name" class="d-inline"/> to sign the waiver</h3>
+                    <p class="text-muted">
+                        Open the signing page on this screen or drag it to the customer screen. The waiver has
+                        also been emailed. When it is signed, check the signature.
+                    </p>
+                    <field name="agreement_state" invisible="1"/>
+                    <field name="partner_id" invisible="1"/>
+                    <field name="agreement_id" invisible="1"/>
+                </div>
+
+                <!-- 3. Done -->
+                <div invisible="step != 'done'" class="text-center py-3">
+                    <h3><i class="fa fa-check-circle text-success me-2"/>Waiver signed: welcome to the gym!</h3>
+                    <p class="fs-5 mb-1">Member PIN</p>
+                    <p class="display-5 fw-bold"><field name="pin" class="d-inline"/></p>
+                    <p class="text-muted">Sell a membership in the Point of Sale to let them check in.</p>
+                </div>
+
+                <footer>
+                    <button name="action_send_waiver" type="object" string="Send Waiver" class="btn-primary"
+                            invisible="step != 'details'"/>
+                    <button name="action_open_signing" type="object" string="Open Signing Page" class="btn-primary"
+                            invisible="step != 'sign'"/>
+                    <button name="action_check_signature" type="object" string="Check Signature"
+                            invisible="step != 'sign'"/>
+                    <button name="action_print_card" type="object" string="Print Card" class="btn-primary"
+                            invisible="step != 'done'"/>
+                    <button name="action_open_member" type="object" string="Open Member"
+                            invisible="step != 'done'"/>
+                    <button special="cancel" string="Close"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_gym_member_intake" model="ir.actions.act_window">
+        <field name="name">New Gym Member</field>
+        <field name="res_model">gym.member.intake</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="context">{'dialog_size': 'large'}</field>
+    </record>
+
+</odoo>

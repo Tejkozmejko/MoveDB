@@ -157,6 +157,12 @@ class GymCheckin(models.Model):
             raise AccessError(_("You are not allowed to do this in the Gym app."))
 
     @api.model
+    def _gym_reason_label(self, code):
+        """Translated label of a refusal reason, including reasons added by other modules."""
+        reasons = dict(self._fields["deny_reason"]._description_selection(self.env))
+        return reasons.get(code, code or "")
+
+    @api.model
     def _gym_find_member(self, code):
         """(partner, identified_by) for a scanned card or a typed PIN."""
         code = (code or "").strip()
@@ -179,7 +185,7 @@ class GymCheckin(models.Model):
             partner, identified_by = self._gym_find_member(code)
             if not partner:
                 return {"result": "denied", "reason": "unknown_code",
-                        "reason_label": dict(DENY_REASONS)["unknown_code"], "member": False}
+                        "reason_label": self._gym_reason_label("unknown_code"), "member": False}
         else:
             partner = self.env["res.partner"].sudo().browse(partner_id).exists()
             if not partner:
@@ -279,7 +285,7 @@ class GymCheckin(models.Model):
         return {
             "result": result or self.result,
             "reason": reason or False,
-            "reason_label": dict(DENY_REASONS).get(reason, "") if reason else "",
+            "reason_label": self._gym_reason_label(reason) if reason else "",
             "checkin_id": self.id,
             "check_in": fields.Datetime.to_string(self.check_in),
             "planned_check_out": fields.Datetime.to_string(self.planned_check_out),

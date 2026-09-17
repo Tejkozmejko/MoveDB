@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Templates -->
+    <record id="gym_agreement_template_view_list" model="ir.ui.view">
+        <field name="name">gym.agreement.template.list</field>
+        <field name="model">gym.agreement.template</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="agreement_type"/>
+                <field name="version"/>
+                <field name="sign_template_id"/>
+                <field name="agreement_count" string="Sent"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="gym_agreement_template_view_form" model="ir.ui.view">
+        <field name="name">gym.agreement.template.form</field>
+        <field name="model">gym.agreement.template</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+                    <field name="active" invisible="1"/>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="e.g. Waiver and GDPR notice"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="agreement_type" readonly="agreement_count"/>
+                            <field name="version" readonly="agreement_count"/>
+                            <field name="sign_template_id" readonly="agreement_count"/>
+                            <field name="agreement_count" invisible="1"/>
+                        </group>
+                        <group>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                            <field name="sequence"/>
+                        </group>
+                    </group>
+                    <div class="alert alert-info" role="alert">
+                        Prepare the Sign template in the Sign app from the gym's own PDF, with fields for one
+                        signer (e.g. the "Customer" role). For new wording, duplicate this template with a new
+                        version and archive this one: members then have to sign again.
+                    </div>
+                    <field name="note" placeholder="Internal notes"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_gym_agreement_templates" model="ir.actions.act_window">
+        <field name="name">Agreement Templates</field>
+        <field name="res_model">gym.agreement.template</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'active_test': False}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Set up the gym waiver</p>
+            <p>Upload the waiver PDF in the Sign app, add the fields to sign, then link it here.</p>
+        </field>
+    </record>
+
+    <!-- Agreements -->
+    <record id="gym_agreement_view_list" model="ir.ui.view">
+        <field name="name">gym.agreement.list</field>
+        <field name="model">gym.agreement</field>
+        <field name="arch" type="xml">
+            <list create="0" decoration-muted="state in ('cancelled', 'void')" decoration-info="state == 'sent'">
+                <field name="name"/>
+                <field name="partner_id"/>
+                <field name="signer_id" optional="show"/>
+                <field name="agreement_type"/>
+                <field name="version"/>
+                <field name="create_date" string="Sent On" optional="show"/>
+                <field name="signed_on"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'signed'"
+                       decoration-info="state == 'sent'"
+                       decoration-muted="state in ('cancelled', 'void')"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="gym_agreement_view_form" model="ir.ui.view">
+        <field name="name">gym.agreement.form</field>
+        <field name="model">gym.agreement</field>
+        <field name="arch" type="xml">
+            <form create="0" edit="0">
+                <header>
+                    <button name="action_open_signing" type="object" string="Open Signing Page" class="btn-primary"
+                            invisible="state != 'sent'"/>
+                    <button name="action_check_signature" type="object" string="Check Signature"
+                            invisible="state != 'sent'"/>
+                    <button name="action_download_documents" type="object" string="Download Signed PDF"
+                            invisible="state != 'signed'" groups="centric_gym_core.group_gym_manager"/>
+                    <button name="action_void" type="object" string="Void"
+                            invisible="state == 'void'" groups="centric_gym_core.group_gym_manager"
+                            confirm="This agreement will no longer count. Continue?"/>
+                    <field name="state" widget="statusbar" statusbar_visible="sent,signed"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="partner_id"/>
+                            <field name="signer_id"/>
+                            <field name="template_id"/>
+                            <field name="agreement_type"/>
+                            <field name="version"/>
+                        </group>
+                        <group>
+                            <field name="create_date" string="Sent On"/>
+                            <field name="signed_on"/>
+                            <field name="sign_request_id" groups="sign.group_sign_user"/>
+                            <field name="document_count" string="Signed Files"/>
+                            <field name="void_reason" invisible="not voided"/>
+                            <field name="voided" invisible="1"/>
+                        </group>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="gym_agreement_view_search" model="ir.ui.view">
+        <field name="name">gym.agreement.search</field>
+        <field name="model">gym.agreement</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="partner_id"/>
+                <field name="name"/>
+                <filter name="filter_waiting" string="Waiting for Signature" domain="[('state', '=', 'sent')]"/>
+                <filter name="filter_signed" string="Signed" domain="[('state', '=', 'signed')]"/>
+                <separator/>
+                <filter name="filter_waiver" string="Waivers" domain="[('agreement_type', '=', 'waiver')]"/>
+                <filter name="filter_membership" string="Membership Agreements" domain="[('agreement_type', '=', 'membership')]"/>
+                <separator/>
+                <filter name="filter_signed_on" string="Signed On" date="signed_on"/>
+                <group>
+                    <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                    <filter name="group_template" string="Template" context="{'group_by': 'template_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_gym_agreements" model="ir.actions.act_window">
+        <field name="name">Agreements</field>
+        <field name="res_model">gym.agreement</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_empty_folder">No agreements yet</p>
+            <p>Waivers and membership agreements sent for signature appear here.</p>
+        </field>
+    </record>
+
+</odoo>

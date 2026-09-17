@@ -28,7 +28,7 @@ needs on it:
 Whether a membership is valid comes from the Gym Membership module
 (Subscriptions); agreements (Sign) and the POS flow are separate modules too.
 """,
-    "version": "19.0.1.1.0",
+    "version": "19.0.1.2.0",
     "category": "Services/Gym",
     "author": "Centric",
     "license": "LGPL-3",

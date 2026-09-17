@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_gym_agreement_template_reception,gym.agreement.template reception,model_gym_agreement_template,centric_gym_core.group_gym_reception,1,0,0,0
+access_gym_agreement_template_admin,gym.agreement.template administrator,model_gym_agreement_template,centric_gym_core.group_gym_admin,1,1,1,1
+access_gym_agreement_reception,gym.agreement reception,model_gym_agreement,centric_gym_core.group_gym_reception,1,0,0,0
+access_gym_agreement_manager,gym.agreement manager,model_gym_agreement,centric_gym_core.group_gym_manager,1,1,0,0
+access_gym_agreement_admin,gym.agreement administrator,model_gym_agreement,centric_gym_core.group_gym_admin,1,1,1,1
+access_gym_member_intake_reception,gym.member.intake reception,model_gym_member_intake,centric_gym_core.group_gym_reception,1,1,1,1

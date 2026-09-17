@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <menuitem id="menu_gym_member_intake"
+              name="New Member"
+              parent="centric_gym_core.menu_gym_root"
+              action="action_gym_member_intake"
+              sequence="18"/>
+
+    <menuitem id="menu_gym_agreements"
+              name="Agreements"
+              parent="centric_gym_core.menu_gym_root"
+              action="action_gym_agreements"
+              groups="centric_gym_core.group_gym_manager"
+              sequence="35"/>
+
+    <menuitem id="menu_gym_agreement_templates"
+              name="Agreement Templates"
+              parent="centric_gym_core.menu_gym_configuration"
+              action="action_gym_agreement_templates"
+              groups="centric_gym_core.group_gym_admin"
+              sequence="40"/>
+
+</odoo>

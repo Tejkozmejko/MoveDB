@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_partner_form_gym_sign" model="ir.ui.view">
+        <field name="name">res.partner.form.gym.sign</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="centric_gym_core.view_partner_form_gym"/>
+        <field name="arch" type="xml">
+            <xpath expr="//button[@name='action_gym_view_checkins']" position="after">
+                <button name="action_gym_view_agreements" type="object" class="oe_stat_button" icon="fa-pencil-square-o"
+                        groups="centric_gym_core.group_gym_reception"
+                        invisible="is_company or gym_member_state == 'none'">
+                    <field name="gym_agreement_count" widget="statinfo" string="Agreements"/>
+                </button>
+            </xpath>
+            <xpath expr="//button[@name='action_gym_print_card']" position="before">
+                <button name="action_gym_send_waiver" type="object" string="Send Waiver" icon="fa-pencil"
+                        class="btn-secondary"
+                        invisible="gym_member_state == 'none' or gym_waiver_state in ('signed', 'not_required')"/>
+            </xpath>
+            <xpath expr="//group[@name='gym_member']" position="inside">
+                <field name="gym_waiver_state" widget="badge"
+                       invisible="gym_member_state == 'none'"
+                       decoration-success="gym_waiver_state in ('signed', 'not_required')"
+                       decoration-info="gym_waiver_state == 'pending'"
+                       decoration-danger="gym_waiver_state in ('missing', 'outdated')"/>
+                <field name="gym_paper_waiver_version" groups="centric_gym_core.group_gym_manager"
+                       invisible="gym_member_state == 'none'"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="gym_member_view_list_sign" model="ir.ui.view">
+        <field name="name">res.partner.list.gym.sign</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="centric_gym_core.gym_member_view_list"/>
+        <field name="arch" type="xml">
+            <xpath expr="//list" position="inside">
+                <header>
+                    <button name="%(centric_gym_sign.action_gym_member_intake)d" type="action"
+                            string="New Gym Member" class="btn-primary" display="always"/>
+                </header>
+            </xpath>
+            <field name="gym_member_state" position="after">
+                <field name="gym_paper_waiver_version" optional="hide"/>
+            </field>
+        </field>
+    </record>
+
+</odoo>

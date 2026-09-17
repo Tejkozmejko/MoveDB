@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="rule_gym_agreement_company" model="ir.rule">
+        <field name="name">Gym agreement: own companies</field>
+        <field name="model_id" ref="model_gym_agreement"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="rule_gym_agreement_template_company" model="ir.rule">
+        <field name="name">Gym agreement template: own companies</field>
+        <field name="model_id" ref="model_gym_agreement_template"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+</odoo>
