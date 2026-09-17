@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="res_config_settings_view_form_gym" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.centric.gym</field>
+        <field name="model">res.config.settings</field>
+        <field name="priority" eval="85"/>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app data-string="Gym" string="Gym" name="centric_gym_core"
+                     groups="centric_gym_core.group_gym_admin">
+                    <block title="Member PINs" name="gym_pin_settings">
+                        <setting id="gym_pin_usage" string="PINs in Use"
+                                 help="Members holding a 4-digit PIN, out of all PINs that can be handed out (easy-to-guess ones are skipped).">
+                            <field name="gym_pin_usage" readonly="1"/>
+                            <div class="text-danger" invisible="not gym_pin_usage_warning">
+                                Over 90% of PINs are taken. Release PINs of inactive members or shorten the waiting period.
+                            </div>
+                        </setting>
+                        <setting id="gym_pin_auto_release" string="Reuse PINs"
+                                 help="Every night, take the PIN back from members who have been inactive for a while. Their card stops working and they become former members. Turn this on once memberships and check-ins are recorded in Odoo, otherwise every imported member looks inactive.">
+                            <field name="gym_pin_auto_release"/>
+                            <div class="mt8" invisible="not gym_pin_auto_release">
+                                <div class="o_row">
+                                    <label for="gym_pin_release_months" class="o_light_label me-2"/>
+                                    <field name="gym_pin_release_months" class="text-center" style="width: 6ch;"/>
+                                    <span class="ms-2">months</span>
+                                </div>
+                            </div>
+                        </setting>
+                        <setting id="gym_pin_quarantine" string="Wait Before Reuse"
+                                 help="A released PIN is not given to anyone else for this long, so an old member who still remembers it does not check in as somebody else.">
+                            <field name="gym_pin_quarantine_months" class="text-center" style="width: 6ch;"/>
+                            <span class="ms-2">months</span>
+                        </setting>
+                    </block>
+                    <block title="Members" name="gym_member_settings">
+                        <setting id="gym_minor_age" string="Adult From Age"
+                                 help="Members younger than this are minors and need a parent or guardian to sign for them.">
+                            <field name="gym_minor_age" class="text-center" style="width: 6ch;"/>
+                            <span class="ms-2">years</span>
+                        </setting>
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="action_gym_settings" model="ir.actions.act_window">
+        <field name="name">Settings</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="context">{'module': 'centric_gym_core', 'bin_size': False}</field>
+    </record>
+
+</odoo>

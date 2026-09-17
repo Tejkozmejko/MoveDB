@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- CR80, the size of a bank card: 85.6 x 54 mm, one card per page. -->
+    <record id="paperformat_gym_member_card" model="report.paperformat">
+        <field name="name">Gym Member Card (CR80)</field>
+        <field name="format">custom</field>
+        <field name="page_width">86</field>
+        <field name="page_height">54</field>
+        <field name="orientation">Portrait</field>
+        <field name="margin_top">0</field>
+        <field name="margin_bottom">0</field>
+        <field name="margin_left">0</field>
+        <field name="margin_right">0</field>
+        <field name="header_line" eval="False"/>
+        <field name="header_spacing">0</field>
+        <field name="disable_shrinking" eval="True"/>
+        <field name="dpi">96</field>
+    </record>
+
+    <!-- No binding: printing goes through the button on the member, which
+         refuses contacts that have no card. -->
+    <record id="action_report_gym_member_card" model="ir.actions.report">
+        <field name="name">Member Card</field>
+        <field name="model">res.partner</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">centric_gym_core.report_gym_member_card</field>
+        <field name="report_file">centric_gym_core.report_gym_member_card</field>
+        <field name="print_report_name">'Member Card - %s' % object.name</field>
+        <field name="paperformat_id" ref="paperformat_gym_member_card"/>
+    </record>
+
+    <template id="report_gym_member_card">
+        <t t-call="web.html_container">
+            <t t-foreach="docs.filtered('gym_pin')" t-as="o">
+                <t t-call="web.basic_layout">
+                    <div class="page o_gym_member_card" style="width: 85mm; height: 53mm; padding: 3mm 4mm; font-family: sans-serif; overflow: hidden; page-break-after: always;">
+                        <div style="height: 8mm;">
+                            <img t-if="o.env.company.logo" t-att-src="image_data_uri(o.env.company.logo)"
+                                 style="max-height: 8mm; max-width: 35mm; float: left;" alt="Logo"/>
+                            <span style="float: right; font-size: 8pt; letter-spacing: 1px; text-transform: uppercase; color: #555;">
+                                Member Card
+                            </span>
+                        </div>
+                        <table style="width: 100%; margin-top: 2mm; border-collapse: collapse;">
+                            <tr>
+                                <td style="width: 20mm; vertical-align: top;">
+                                    <img t-if="o.image_512" t-att-src="image_data_uri(o.image_512)"
+                                         style="width: 18mm; height: 22mm; object-fit: cover; border-radius: 1mm;" alt="Photo"/>
+                                </td>
+                                <td style="vertical-align: top; padding-left: 2mm;">
+                                    <div style="font-size: 11pt; font-weight: bold; line-height: 1.2;" t-out="o.name"/>
+                                    <div style="font-size: 8pt; color: #555; margin-top: 1mm;">Member PIN</div>
+                                    <div style="font-size: 16pt; font-weight: bold; letter-spacing: 3px;" t-out="o.gym_pin"/>
+                                    <div t-if="o.gym_member_since" style="font-size: 7pt; color: #555;">
+                                        Member since <span t-field="o.gym_member_since"/>
+                                    </div>
+                                </td>
+                            </tr>
+                        </table>
+                        <div style="margin-top: 1mm; text-align: center;">
+                            <div t-field="o.barcode"
+                                 t-options="{'widget': 'barcode', 'symbology': 'Code128', 'width': 600, 'height': 120, 'humanreadable': 1, 'img_style': 'width: 70mm; height: 12mm;'}"/>
+                        </div>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+
+</odoo>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="gym_member_health_view_form" model="ir.ui.view">
+        <field name="name">gym.member.health.form</field>
+        <field name="model">gym.member.health</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="partner_id" invisible="context.get('default_partner_id')"/>
+                            <field name="show_alert"/>
+                            <field name="consent_date"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="conditions"/>
+                        <field name="medications"/>
+                        <field name="allergies"/>
+                        <field name="notes"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="gym_member_health_view_list" model="ir.ui.view">
+        <field name="name">gym.member.health.list</field>
+        <field name="model">gym.member.health</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="partner_id"/>
+                <field name="show_alert"/>
+                <field name="conditions"/>
+                <field name="allergies"/>
+                <field name="consent_date"/>
+            </list>
+        </field>
+    </record>
+
+</odoo>

@@ -1,0 +1,7 @@
+.o_gym_photo_dialog video {
+    max-height: 60vh;
+    background-color: #000;
+    // Show people a mirror image so they move the right way when centring
+    // themselves; the captured frame is not mirrored.
+    transform: scaleX(-1);
+}

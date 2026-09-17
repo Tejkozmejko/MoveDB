@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <menuitem id="menu_gym_root"
+              name="Gym"
+              web_icon="centric_gym_core,static/description/icon.png"
+              groups="centric_gym_core.group_gym_reception"
+              sequence="45"/>
+
+    <menuitem id="menu_gym_members"
+              name="Members"
+              parent="menu_gym_root"
+              action="action_gym_members"
+              sequence="20"/>
+
+    <menuitem id="menu_gym_configuration"
+              name="Configuration"
+              parent="menu_gym_root"
+              groups="centric_gym_core.group_gym_manager"
+              sequence="90"/>
+
+    <menuitem id="menu_gym_settings"
+              name="Settings"
+              parent="menu_gym_configuration"
+              action="action_gym_settings"
+              groups="base.group_system"
+              sequence="10"/>
+
+    <menuitem id="menu_gym_locations"
+              name="Locations"
+              parent="menu_gym_configuration"
+              action="action_gym_locations"
+              groups="centric_gym_core.group_gym_admin"
+              sequence="20"/>
+
+    <menuitem id="menu_gym_pin_assignments"
+              name="PIN History"
+              parent="menu_gym_configuration"
+              action="action_gym_pin_assignments"
+              sequence="30"/>
+
+</odoo>

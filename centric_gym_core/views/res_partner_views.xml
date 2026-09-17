@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_partner_form_gym" model="ir.ui.view">
+        <field name="name">res.partner.form.gym</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='internal_notes']" position="before">
+                <page name="gym" string="Gym" invisible="is_company"
+                      groups="centric_gym_core.group_gym_reception">
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <button name="action_gym_make_member" type="object" string="Make Gym Member"
+                                class="btn-primary" invisible="gym_member_state == 'member'"
+                                groups="centric_gym_core.group_gym_manager"/>
+                        <widget name="centric_gym_core_member_photo" invisible="gym_member_state == 'none'"/>
+                        <button name="action_gym_print_card" type="object" string="Print Card"
+                                icon="fa-id-card-o" class="btn-secondary" invisible="not gym_pin"/>
+                        <button name="action_gym_reissue_card" type="object" string="Replace Lost Card"
+                                icon="fa-refresh" class="btn-secondary" invisible="not gym_pin"
+                                confirm="The member's current card will stop working. Continue?"/>
+                        <button name="action_gym_release_pin" type="object" string="Release PIN"
+                                icon="fa-unlock" class="btn-secondary" invisible="not gym_pin"
+                                groups="centric_gym_core.group_gym_manager"
+                                confirm="The member loses their PIN and card and becomes a former member. Continue?"/>
+                    </div>
+                    <div class="alert alert-warning" role="alert"
+                         invisible="not gym_is_minor or gym_guardian_id or gym_member_state == 'none'">
+                        This member is a minor: add a parent or guardian to sign their agreements.
+                    </div>
+                    <div class="alert alert-danger" role="alert" invisible="not gym_health_alert">
+                        <i class="fa fa-heartbeat me-1"/>Health alert: ask a manager before training this member.
+                    </div>
+                    <group>
+                        <group string="Member" name="gym_member">
+                            <field name="gym_member_state" widget="badge"
+                                   decoration-success="gym_member_state == 'member'"
+                                   decoration-warning="gym_member_state == 'pending'"
+                                   decoration-muted="gym_member_state in ('none', 'former')"/>
+                            <field name="gym_pin" groups="centric_gym_core.group_gym_manager"
+                                   placeholder="Handed out automatically"/>
+                            <field name="gym_pin" readonly="1"
+                                   groups="!centric_gym_core.group_gym_manager"/>
+                            <field name="gym_card_no" invisible="not gym_pin"/>
+                            <field name="barcode" string="Card Barcode" readonly="1" invisible="not gym_pin"/>
+                            <field name="gym_member_since" readonly="gym_member_state != 'member'"/>
+                            <field name="gym_home_location_id" options="{'no_create': True}"/>
+                        </group>
+                        <group string="Personal" name="gym_personal">
+                            <field name="gym_birthdate"/>
+                            <field name="gym_age" invisible="not gym_birthdate"/>
+                            <field name="gym_is_minor" invisible="1"/>
+                            <field name="gym_guardian_id" invisible="not gym_is_minor"/>
+                            <field name="gym_health_alert" readonly="1"/>
+                        </group>
+                        <group string="Emergency Contact" name="gym_emergency">
+                            <field name="gym_emergency_name" string="Name"/>
+                            <field name="gym_emergency_phone" string="Phone" widget="phone"/>
+                            <field name="gym_emergency_relation"/>
+                        </group>
+                    </group>
+                    <group string="Health Information" name="gym_health"
+                           groups="centric_gym_core.group_gym_health">
+                        <field name="gym_health_ids" nolabel="1" colspan="2"
+                               context="{'default_partner_id': id}">
+                            <list>
+                                <field name="show_alert"/>
+                                <field name="conditions"/>
+                                <field name="medications"/>
+                                <field name="allergies"/>
+                                <field name="consent_date"/>
+                            </list>
+                        </field>
+                    </group>
+                    <group string="PIN History" name="gym_pin_history"
+                           groups="centric_gym_core.group_gym_manager"
+                           invisible="gym_member_state == 'none'">
+                        <field name="gym_pin_assignment_ids" nolabel="1" colspan="2" readonly="1">
+                            <list decoration-muted="not is_current">
+                                <field name="pin"/>
+                                <field name="date_assigned"/>
+                                <field name="date_released"/>
+                                <field name="is_current" column_invisible="True"/>
+                                <field name="source"/>
+                                <field name="release_reason"/>
+                                <field name="card_no"/>
+                            </list>
+                        </field>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="gym_member_view_list" model="ir.ui.view">
+        <field name="name">res.partner.list.gym</field>
+        <field name="model">res.partner</field>
+        <field name="priority">100</field>
+        <field name="arch" type="xml">
+            <list create="0">
+                <field name="avatar_128" widget="image" options="{'size': [32, 32]}" string=" " width="40px"/>
+                <field name="name"/>
+                <field name="gym_pin"/>
+                <field name="phone" class="o_force_ltr" optional="show"/>
+                <field name="email" optional="show"/>
+                <field name="gym_member_state" widget="badge"
+                       decoration-success="gym_member_state == 'member'"
+                       decoration-warning="gym_member_state == 'pending'"
+                       decoration-muted="gym_member_state == 'former'"/>
+                <field name="gym_home_location_id" optional="show"/>
+                <field name="gym_member_since" optional="show"/>
+                <field name="gym_birthdate" optional="hide"/>
+                <field name="gym_health_alert" widget="boolean" optional="show"/>
+                <field name="barcode" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="gym_member_view_kanban" model="ir.ui.view">
+        <field name="name">res.partner.kanban.gym</field>
+        <field name="model">res.partner</field>
+        <field name="priority">100</field>
+        <field name="arch" type="xml">
+            <kanban create="0">
+                <field name="id"/>
+                <field name="gym_health_alert"/>
+                <templates>
+                    <t t-name="card" class="flex-row">
+                        <aside class="me-3">
+                            <field name="avatar_128" widget="image" alt="Photo"
+                                   options="{'img_class': 'object-fit-cover rounded'}"
+                                   style="width: 64px; height: 64px;"/>
+                        </aside>
+                        <main>
+                            <field name="name" class="fw-bold fs-5"/>
+                            <div class="d-flex gap-2 align-items-center">
+                                <span class="text-muted">PIN</span>
+                                <field name="gym_pin" class="fw-bold"/>
+                            </div>
+                            <field name="phone"/>
+                            <div class="mt-1 d-flex gap-2">
+                                <field name="gym_member_state" widget="badge"
+                                       decoration-success="gym_member_state == 'member'"
+                                       decoration-warning="gym_member_state == 'pending'"
+                                       decoration-muted="gym_member_state == 'former'"/>
+                                <span t-if="record.gym_health_alert.raw_value" class="badge text-bg-danger">
+                                    <i class="fa fa-heartbeat"/> Alert
+                                </span>
+                            </div>
+                        </main>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="gym_member_view_search" model="ir.ui.view">
+        <field name="name">res.partner.search.gym</field>
+        <field name="model">res.partner</field>
+        <field name="priority">100</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name" string="Member"
+                       filter_domain="['|', '|', '|', ('complete_name', 'ilike', self), ('gym_pin', '=', self), ('phone', 'ilike', self), ('email', 'ilike', self)]"/>
+                <field name="gym_pin"/>
+                <field name="barcode" string="Card Barcode"/>
+                <field name="gym_home_location_id"/>
+                <filter name="filter_members" string="Members" domain="[('gym_member_state', '=', 'member')]"/>
+                <filter name="filter_pending" string="Waiting for Waiver" domain="[('gym_member_state', '=', 'pending')]"/>
+                <filter name="filter_former" string="Former Members" domain="[('gym_member_state', '=', 'former')]"/>
+                <separator/>
+                <filter name="filter_minor" string="Minors" domain="[('gym_is_minor', '=', True)]"/>
+                <filter name="filter_health_alert" string="Health Alert" domain="[('gym_health_alert', '=', True)]"/>
+                <filter name="filter_no_photo" string="No Photo" domain="[('image_1920', '=', False)]"/>
+                <separator/>
+                <filter name="filter_member_since" string="Member Since" date="gym_member_since"/>
+                <separator/>
+                <filter name="filter_archived" string="Archived" domain="[('active', '=', False)]"/>
+                <group>
+                    <filter name="group_state" string="Membership" context="{'group_by': 'gym_member_state'}"/>
+                    <filter name="group_location" string="Home Gym" context="{'group_by': 'gym_home_location_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_gym_members" model="ir.actions.act_window">
+        <field name="name">Members</field>
+        <field name="res_model">res.partner</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="domain">[('gym_member_state', '!=', 'none')]</field>
+        <field name="context">{'search_default_filter_members': 1, 'default_is_company': False}</field>
+        <field name="search_view_id" ref="gym_member_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No gym members yet</p>
+            <p>Open a contact and use Make Gym Member, or import your existing members with their PINs.</p>
+        </field>
+    </record>
+
+    <record id="action_gym_members_view_kanban" model="ir.actions.act_window.view">
+        <field name="sequence">1</field>
+        <field name="view_mode">kanban</field>
+        <field name="view_id" ref="gym_member_view_kanban"/>
+        <field name="act_window_id" ref="action_gym_members"/>
+    </record>
+
+    <record id="action_gym_members_view_list" model="ir.actions.act_window.view">
+        <field name="sequence">2</field>
+        <field name="view_mode">list</field>
+        <field name="view_id" ref="gym_member_view_list"/>
+        <field name="act_window_id" ref="action_gym_members"/>
+    </record>
+
+    <record id="action_gym_members_view_form" model="ir.actions.act_window.view">
+        <field name="sequence">3</field>
+        <field name="view_mode">form</field>
+        <field name="view_id" ref="base.view_partner_form"/>
+        <field name="act_window_id" ref="action_gym_members"/>
+    </record>
+
+</odoo>
