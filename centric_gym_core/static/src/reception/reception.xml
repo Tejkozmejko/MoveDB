@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="centric_gym_core.Reception">
+        <div class="o_gym_reception d-flex flex-column h-100 bg-view">
+            <div class="o_gym_reception_bar d-flex align-items-center gap-3 px-3 py-2 border-bottom">
+                <h4 class="mb-0 me-auto">Reception</h4>
+                <select t-if="state.locations.length > 1" class="form-select w-auto"
+                        t-on-change="onLocationChange">
+                    <t t-foreach="state.locations" t-as="location" t-key="location.id">
+                        <option t-att-value="location.id" t-att-selected="location.id === state.locationId"
+                                t-esc="location.name"/>
+                    </t>
+                </select>
+                <span t-elif="state.locations.length" class="text-muted" t-esc="state.locations[0].name"/>
+                <span class="badge fs-6" t-att-class="overCapacity ? 'text-bg-danger' : 'text-bg-secondary'"
+                      title="Members inside now">
+                    <i class="fa fa-users me-1"/><t t-esc="capacityLabel"/>
+                </span>
+            </div>
+
+            <div t-if="!state.locations.length" class="alert alert-warning m-3">
+                There is no gym location yet. Create one under Gym → Configuration → Locations.
+            </div>
+
+            <div t-else="" class="d-flex flex-grow-1 overflow-hidden">
+                <div class="o_gym_reception_main d-flex flex-column flex-grow-1 p-3 overflow-auto">
+                    <div class="position-relative mb-3">
+                        <input t-ref="search" type="text" class="form-control form-control-lg o_gym_reception_search"
+                               placeholder="Scan a card, or type a name or PIN"
+                               autocomplete="off"
+                               t-model="state.term" t-on-input="onInput" t-on-keydown="onKeydown"
+                               t-att-disabled="state.busy"/>
+                        <div t-if="state.results.length" class="list-group position-absolute w-100 shadow o_gym_reception_results">
+                            <t t-foreach="state.results" t-as="member" t-key="member.id">
+                                <button type="button" class="list-group-item list-group-item-action d-flex align-items-center gap-3"
+                                        t-on-click="() => this.checkInMember(member.id)">
+                                    <img class="rounded o_gym_thumb" t-att-src="photo(member.id, member.write_date)" alt=""/>
+                                    <span class="fw-bold" t-esc="member.name"/>
+                                    <span t-if="member.pin" class="text-muted">PIN <t t-esc="member.pin"/></span>
+                                    <span t-if="member.state === 'pending'" class="badge text-bg-warning ms-auto">Waiting for waiver</span>
+                                </button>
+                            </t>
+                        </div>
+                    </div>
+
+                    <div t-if="state.card" t-attf-class="card o_gym_reception_card border-{{cardTone}}">
+                        <div t-attf-class="card-header text-bg-{{cardTone}} fs-3 fw-bold">
+                            <i t-attf-class="fa me-2 {{ cardTone === 'success' ? 'fa-check-circle' : cardTone === 'warning' ? 'fa-exclamation-circle' : 'fa-times-circle' }}"/>
+                            <t t-esc="cardTitle"/>
+                            <div t-if="state.card.reason_label and state.card.result !== 'already_inside'" class="fs-5 fw-normal">
+                                <t t-esc="state.card.reason_label"/>
+                            </div>
+                        </div>
+                        <div t-if="state.card.member" class="card-body d-flex gap-4">
+                            <img class="rounded o_gym_photo" t-att-src="photo(state.card.member.id, state.card.member.write_date)" alt=""/>
+                            <div class="flex-grow-1">
+                                <h2 class="mb-1">
+                                    <a href="#" t-on-click.prevent="() => this.openMember(state.card.member.id)" t-esc="state.card.member.name"/>
+                                </h2>
+                                <div class="d-flex flex-wrap gap-2 mb-3">
+                                    <span t-if="state.card.member.pin" class="badge text-bg-light border fs-6">PIN <t t-esc="state.card.member.pin"/></span>
+                                    <span t-if="state.card.member.health_alert" class="badge text-bg-danger fs-6"><i class="fa fa-heartbeat me-1"/>Health alert</span>
+                                    <span t-if="state.card.member.minor" class="badge text-bg-info fs-6">Minor</span>
+                                </div>
+                                <dl class="row mb-0 o_gym_card_details">
+                                    <t t-if="state.card.membership_label">
+                                        <dt class="col-sm-4">Membership</dt>
+                                        <dd class="col-sm-8" t-esc="state.card.membership_label"/>
+                                    </t>
+                                    <t t-if="state.card.membership_end">
+                                        <dt class="col-sm-4">Membership ends</dt>
+                                        <dd class="col-sm-8" t-esc="date(state.card.membership_end)"/>
+                                    </t>
+                                    <t t-if="state.card.result !== 'denied'">
+                                        <dt class="col-sm-4">Checked in</dt>
+                                        <dd class="col-sm-8" t-esc="time(state.card.check_in)"/>
+                                        <dt class="col-sm-4">Automatic check-out</dt>
+                                        <dd class="col-sm-8" t-esc="time(state.card.planned_check_out)"/>
+                                    </t>
+                                </dl>
+                                <div t-if="state.overriding" class="mt-3">
+                                    <label class="form-label fw-bold">Why let this member in?</label>
+                                    <div class="d-flex gap-2">
+                                        <input type="text" class="form-control" t-model="state.overrideReason"
+                                               placeholder="e.g. paying at the desk now"/>
+                                        <button class="btn btn-warning" t-att-disabled="!state.overrideReason.trim()"
+                                                t-on-click="confirmOverride">Let In</button>
+                                    </div>
+                                </div>
+                                <div class="d-flex gap-2 mt-3">
+                                    <button t-if="canOverride and !state.overriding" class="btn btn-warning" t-on-click="startOverride">
+                                        <i class="fa fa-unlock me-1"/>Override
+                                    </button>
+                                    <button t-if="state.card.result === 'already_inside'" class="btn btn-secondary"
+                                            t-on-click="() => this.checkOut(state.card.checkin_id)">
+                                        <i class="fa fa-sign-out me-1"/>Check Out
+                                    </button>
+                                    <button t-if="canUndo" class="btn btn-link" t-on-click="undo">Undo</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div t-else="" class="o_gym_reception_idle text-center text-muted my-auto">
+                        <i class="fa fa-barcode fa-4x mb-3"/>
+                        <p class="fs-4">Scan a member card, or search by name.</p>
+                    </div>
+                </div>
+
+                <div class="o_gym_reception_inside border-start overflow-auto">
+                    <h5 class="px-3 pt-3">Inside now</h5>
+                    <p t-if="!state.inside.length" class="px-3 text-muted">Nobody is checked in.</p>
+                    <ul class="list-group list-group-flush">
+                        <t t-foreach="state.inside" t-as="visit" t-key="visit.checkin_id">
+                            <li class="list-group-item d-flex align-items-center gap-2">
+                                <img class="rounded o_gym_thumb" t-att-src="photo(visit.partner_id, visit.write_date)" alt=""/>
+                                <div class="flex-grow-1 text-truncate">
+                                    <a href="#" class="fw-bold" t-on-click.prevent="() => this.openMember(visit.partner_id)" t-esc="visit.name"/>
+                                    <i t-if="visit.health_alert" class="fa fa-heartbeat text-danger ms-1" title="Health alert"/>
+                                    <i t-if="visit.override" class="fa fa-unlock text-warning ms-1" title="Let in by override"/>
+                                    <div class="small text-muted">
+                                        <t t-esc="time(visit.check_in)"/> → <t t-esc="time(visit.planned_check_out)"/>
+                                    </div>
+                                </div>
+                                <button class="btn btn-sm btn-outline-secondary" title="Check out"
+                                        t-on-click="() => this.checkOut(visit.checkin_id)">
+                                    <i class="fa fa-sign-out"/>
+                                </button>
+                            </li>
+                        </t>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </t>
+
+</templates>

@@ -3,3 +3,7 @@ access_gym_location_reception,gym.location reception,model_gym_location,group_gy
 access_gym_location_admin,gym.location administrator,model_gym_location,group_gym_admin,1,1,1,1
 access_gym_pin_assignment_manager,gym.pin.assignment manager,model_gym_pin_assignment,group_gym_manager,1,0,0,0
 access_gym_member_health_health,gym.member.health health data,model_gym_member_health,group_gym_health,1,1,1,1
+access_gym_checkin_reception,gym.checkin reception,model_gym_checkin,group_gym_reception,1,0,0,0
+access_gym_checkin_manager,gym.checkin manager,model_gym_checkin,group_gym_manager,1,1,0,0
+access_gym_checkin_admin,gym.checkin administrator,model_gym_checkin,group_gym_admin,1,1,1,1
+access_gym_presence_report_manager,gym.presence.report manager,model_gym_presence_report,group_gym_manager,1,1,1,1

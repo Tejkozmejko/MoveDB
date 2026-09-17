@@ -35,6 +35,13 @@
                             <span class="ms-2">months</span>
                         </setting>
                     </block>
+                    <block title="Check-In" name="gym_checkin_settings">
+                        <setting id="gym_checkin_retention" string="Keep Check-Ins For"
+                                 help="Check-ins older than this are deleted every night. 0 keeps them forever. The automatic check-out time is set per location.">
+                            <field name="gym_checkin_retention_months" class="text-center" style="width: 6ch;"/>
+                            <span class="ms-2">months</span>
+                        </setting>
+                    </block>
                     <block title="Members" name="gym_member_settings">
                         <setting id="gym_minor_age" string="Adult From Age"
                                  help="Members younger than this are minors and need a parent or guardian to sign for them.">

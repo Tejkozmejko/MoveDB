@@ -1,5 +1,6 @@
 from odoo import _, api, fields, models
 
+from .gym_checkin import DEFAULT_RETENTION_MONTHS, PARAM_RETENTION_MONTHS
 from .res_partner import (
     DEFAULT_MINOR_AGE,
     DEFAULT_QUARANTINE_MONTHS,
@@ -32,6 +33,11 @@ class ResConfigSettings(models.TransientModel):
         string="Adult From Age",
         config_parameter=PARAM_MINOR_AGE,
         default=DEFAULT_MINOR_AGE,
+    )
+    gym_checkin_retention_months = fields.Integer(
+        string="Keep Check-Ins For",
+        config_parameter=PARAM_RETENTION_MONTHS,
+        default=DEFAULT_RETENTION_MONTHS,
     )
     gym_pin_usage = fields.Char(string="PINs in Use", compute="_compute_gym_pin_usage")
     gym_pin_usage_warning = fields.Boolean(compute="_compute_gym_pin_usage")

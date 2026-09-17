@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="gym_checkin_view_form_membership" model="ir.ui.view">
+        <field name="name">gym.checkin.form.membership</field>
+        <field name="model">gym.checkin</field>
+        <field name="inherit_id" ref="centric_gym_core.gym_checkin_view_form"/>
+        <field name="arch" type="xml">
+            <field name="membership_end" position="before">
+                <field name="subscription_id" groups="sales_team.group_sale_salesman"
+                       invisible="not subscription_id"/>
+            </field>
+        </field>
+    </record>
+
+    <record id="gym_checkin_view_list_membership" model="ir.ui.view">
+        <field name="name">gym.checkin.list.membership</field>
+        <field name="model">gym.checkin</field>
+        <field name="inherit_id" ref="centric_gym_core.gym_checkin_view_list"/>
+        <field name="arch" type="xml">
+            <field name="deny_reason" position="after">
+                <field name="subscription_id" optional="hide" groups="sales_team.group_sale_salesman"/>
+            </field>
+        </field>
+    </record>
+
+</odoo>

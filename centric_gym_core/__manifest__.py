@@ -19,15 +19,21 @@ needs on it:
 * Health information in its own model, readable only by the Gym Health Data
   group. Reception sees a health-alert flag, never the details.
 * Gym locations, ready for more than one site.
+* Check-in: a reception screen (scan a card, type a PIN or search a name),
+  refusals with their reason, manager overrides, an "Inside Now" list,
+  automatic check-out after the location's time (2 hours by default),
+  "Who Was Inside?" for contact tracing, attendance analysis, and deletion of
+  check-ins after the retention period (6 months by default).
 
-Memberships (Subscriptions), agreements (Sign), check-in and the POS flow are
-built on top of this in the next phases.
+Whether a membership is valid comes from the Gym Membership module
+(Subscriptions); agreements (Sign) and the POS flow are separate modules too.
 """,
-    "version": "19.0.1.0.0",
+    "version": "19.0.1.1.0",
     "category": "Services/Gym",
     "author": "Centric",
     "license": "LGPL-3",
     "depends": [
+        "barcodes",
         "contacts",
         "mail",
     ],
@@ -39,6 +45,7 @@ built on top of this in the next phases.
         "views/gym_location_views.xml",
         "views/gym_pin_assignment_views.xml",
         "views/gym_member_health_views.xml",
+        "views/gym_checkin_views.xml",
         "views/res_partner_views.xml",
         "views/res_config_settings_views.xml",
         "views/menus.xml",
@@ -46,6 +53,7 @@ built on top of this in the next phases.
     "assets": {
         "web.assets_backend": [
             "centric_gym_core/static/src/member_photo/*",
+            "centric_gym_core/static/src/reception/*",
         ],
         "web.assets_tests": [
             "centric_gym_core/static/tests/tours/*",

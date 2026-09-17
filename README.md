@@ -27,7 +27,8 @@ build and database upgrade are green.
 | Centric Sales | `centric_sales_rep_customisation` | `19.0.2.5.7` | Sales-representative security, barcode/catalog tools, customer PO data, price history, and customer analytics |
 | Centric Gym | `centric_gym` | `19.0.1.5.0` | Membership cards, kiosk check-in/out, presence, overrides, and visit reporting |
 | Centric Invoices | `centric_invoices` | `19.0.1.0.0` | Invoicing → Configuration → Invoice Layout: Odoo's layout chooser with a live invoice preview (standard Settings option unchanged) |
-| Centric Gym (Gym Management suite) | `centric_gym_core` | `19.0.1.0.0` | Gym members on the contact: 4-digit PIN with reuse, card barcode, health data, locations, access groups (unrelated to `centric_gym`) |
+| Centric Gym (Gym Management suite) | `centric_gym_core` | `19.0.1.1.0` | Gym members on the contact: 4-digit PIN with reuse, card barcode, health data, locations, reception check-in, automatic check-out, contact tracing, access groups (unrelated to `centric_gym`) |
+| Centric Gym Memberships | `centric_gym_membership` | `19.0.1.0.0` | Gym memberships are Subscriptions: membership status, check-in validation, Memberships menu (needs Enterprise) |
 | Centric POS | `centric_pos_customer_display` | `19.0.2.2.0` | Loyalty customer display, survey kiosk mode, and improved POS VAT receipt presentation |
 
 All applications are explicitly installable and use `auto_install = False`.

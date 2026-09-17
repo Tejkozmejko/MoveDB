@@ -35,7 +35,7 @@ DEFAULT_QUARANTINE_MONTHS = 12
 DEFAULT_MINOR_AGE = 18
 
 # Set by the system or a manager, never typed in by reception.
-PROTECTED_FIELDS = ("gym_member_state", "gym_pin", "gym_card_no")
+PROTECTED_FIELDS = ("gym_member_state", "gym_pin", "gym_card_no", "gym_access_blocked", "gym_block_reason")
 
 GROUP_RECEPTION = "centric_gym_core.group_gym_reception"
 GROUP_MANAGER = "centric_gym_core.group_gym_manager"
@@ -117,6 +117,17 @@ class ResPartner(models.Model):
         string="PIN History",
         groups="centric_gym_core.group_gym_manager",
     )
+    gym_access_blocked = fields.Boolean(
+        string="Blocked",
+        copy=False,
+        tracking=True,
+        help="Refuse check-in whatever the membership says.",
+    )
+    gym_block_reason = fields.Char(string="Block Reason", copy=False)
+    gym_checkin_ids = fields.One2many("gym.checkin", "partner_id", string="Check-Ins")
+    gym_checkin_count = fields.Integer(string="Visits", compute="_compute_gym_checkin_stats")
+    gym_last_checkin = fields.Datetime(string="Last Visit", compute="_compute_gym_checkin_stats")
+    gym_is_inside = fields.Boolean(string="Inside Now", compute="_compute_gym_checkin_stats")
 
     _gym_pin_uniq = models.UniqueIndex(
         "(gym_pin) WHERE gym_pin IS NOT NULL",
@@ -152,6 +163,60 @@ class ResPartner(models.Model):
         for partner in self:
             # Reception never has access to the health records themselves.
             partner.gym_health_alert = any(partner.sudo().gym_health_ids.mapped("show_alert"))
+
+    def _compute_gym_checkin_stats(self):
+        Checkin = self.env["gym.checkin"].sudo()
+        visits = dict(Checkin._read_group(
+            [("partner_id", "in", self.ids), ("result", "!=", "denied")],
+            ["partner_id"], ["check_in:max"],
+        ))
+        counts = dict(Checkin._read_group(
+            [("partner_id", "in", self.ids), ("result", "!=", "denied")], ["partner_id"], ["__count"],
+        ))
+        inside = Checkin.search([("partner_id", "in", self.ids), ("is_inside", "=", True)]).partner_id
+        for partner in self:
+            key = partner._origin
+            partner.gym_last_checkin = visits.get(key, False)
+            partner.gym_checkin_count = counts.get(key, 0)
+            partner.gym_is_inside = key in inside
+
+    # ------------------------------------------------------------------
+    # Access
+    # ------------------------------------------------------------------
+
+    def _gym_access_status(self):
+        """May this member come in right now?
+
+        Returns ``{"allowed", "code", "label", "end"}``. ``code`` is one of the
+        check-in refusal reasons, or ``active`` when allowed.
+        """
+        self.ensure_one()
+        if self.gym_member_state == "pending":
+            return self._gym_refuse("waiver_missing")
+        if self.gym_member_state != "member":
+            return self._gym_refuse("not_member")
+        if self.gym_access_blocked:
+            return self._gym_refuse("blocked", self.gym_block_reason)
+        membership = self._gym_membership_status()
+        if membership["code"] != "active":
+            refusal = self._gym_refuse(membership["code"])
+            return {**membership, **refusal, "end": membership.get("end") or False}
+        return {**membership, "allowed": True, "label": membership.get("label") or _("Active")}
+
+    def _gym_refuse(self, code, detail=None):
+        from .gym_checkin import DENY_REASONS
+        label = dict(DENY_REASONS).get(code, code)
+        return {"allowed": False, "code": code, "label": f"{label}: {detail}" if detail else label, "end": False}
+
+    def _gym_membership_status(self):
+        """The member's membership right now: ``{"code", "label", "end"}``.
+
+        ``code`` is active, no_membership, not_started, expired, suspended or
+        cancelled. Memberships live in Subscriptions, which the Gym Membership
+        module reads; without it nobody has a membership.
+        """
+        self.ensure_one()
+        return {"code": "no_membership", "label": _("No membership"), "end": False}
 
     @api.constrains("gym_pin")
     def _check_gym_pin(self):
@@ -396,11 +461,16 @@ class ResPartner(models.Model):
     def _gym_last_activity_date(self):
         """The last day this member did something that should keep their PIN.
 
-        Membership and check-in dates are added here in the next phases.
+        The Gym Membership module adds the membership end date.
         """
         self.ensure_one()
         assigned = self._gym_current_assignment().date_assigned
-        dates = [day for day in (self.gym_member_since, assigned and assigned.date()) if day]
+        last_visit = self.sudo().gym_last_checkin
+        dates = [day for day in (
+            self.gym_member_since,
+            assigned and assigned.date(),
+            last_visit and last_visit.date(),
+        ) if day]
         return max(dates) if dates else fields.Date.context_today(self)
 
     @api.model
@@ -455,6 +525,13 @@ class ResPartner(models.Model):
                 card_no=card_no,
             ))
         return self.action_gym_print_card()
+
+    def action_gym_view_checkins(self):
+        self.ensure_one()
+        action = self.env["ir.actions.act_window"]._for_xml_id("centric_gym_core.action_gym_checkins")
+        action["domain"] = [("partner_id", "=", self.id)]
+        action["context"] = {"search_default_filter_visits": 1}
+        return action
 
     def action_gym_print_card(self):
         self._gym_require_group(GROUP_RECEPTION)

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="product_template_form_view_gym_membership" model="ir.ui.view">
+        <field name="name">product.template.form.gym.membership</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="sale_subscription.product_template_view_form_recurring"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='recurring_invoice']/.." position="after">
+                <span class="d-inline-flex" invisible="not recurring_invoice and not gym_membership">
+                    <field name="gym_membership"/>
+                    <label for="gym_membership"/>
+                </span>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="action_gym_membership_products" model="ir.actions.act_window">
+        <field name="name">Membership Products</field>
+        <field name="res_model">product.template</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="domain">[('gym_membership', '=', True)]</field>
+        <field name="context">{'default_gym_membership': True, 'default_recurring_invoice': True, 'default_type': 'service', 'default_available_in_pos': True}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Create your first membership product</p>
+            <p>For example "1 Month Membership", with a 1-month recurring price. One subscription is one paid membership period.</p>
+        </field>
+    </record>
+
+</odoo>

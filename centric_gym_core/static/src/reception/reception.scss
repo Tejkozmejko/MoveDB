@@ -1,0 +1,36 @@
+.o_gym_reception {
+    .o_gym_reception_results {
+        z-index: 10;
+    }
+
+    .o_gym_reception_card {
+        border-width: 3px;
+    }
+
+    .o_gym_card_details {
+        max-width: 32rem;
+    }
+
+    .o_gym_photo {
+        width: 160px;
+        height: 160px;
+        object-fit: cover;
+    }
+
+    .o_gym_thumb {
+        width: 40px;
+        height: 40px;
+        object-fit: cover;
+    }
+
+    .o_gym_reception_inside {
+        width: 340px;
+        flex-shrink: 0;
+    }
+
+    @include media-breakpoint-down(lg) {
+        .o_gym_reception_inside {
+            display: none;
+        }
+    }
+}

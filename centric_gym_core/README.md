@@ -20,12 +20,28 @@ it. The two are never installed on the same database.
 | Health | `gym.member.health`, readable only by **Gym Health Data**. Reception and managers see a *Health Alert* flag, never the details. Health records have no chatter, so nothing leaks into the contact's history. |
 | Locations | `gym.location` with timezone, automatic check-out time (default 120 min) and capacity. |
 
+## Check-in
+
+- **Gym → Reception:**
+  - Scan a member card, type a PIN, or search a name.
+  - A member with a valid membership is checked in at once. Anyone else is refused, with the reason (not a member, waiver not signed, blocked, no/expired/suspended membership…), and the refusal is recorded.
+  - Managers can **Override** a refusal; the reason is kept. **Undo** removes your own check-in from the last 5 minutes.
+  - The right-hand panel shows who is inside, with a headcount against the location's capacity.
+- **Automatic check-out:** after the location's time (120 minutes by default), at the planned time rather than when the job happens to run. A job runs every 5 minutes, and each check-in also schedules one at its own check-out time.
+- **Gym → Inside Now** and **Gym → Reporting:**
+  - **Check-Ins**
+  - **Who Was Inside?**: everyone inside at any moment of a period, with phone and email, for contact tracing.
+  - **Attendance Analysis**: busiest hours and days, in the location's timezone.
+- **Retention:** check-ins older than **Keep Check-Ins For** (default 6 months) are deleted nightly.
+- **Blocked:** a manager can block a member, with a reason. Check-in is then refused whatever the membership says.
+- **Memberships:** whether a membership is valid comes from **Centric Gym Memberships** (Subscriptions). Without that module, every member is refused with "No membership".
+
 ## Access groups
 
 | Group | Can |
 |---|---|
-| Gym / Reception | Gym app, members, edit contact details (includes *Contacts → Creation*), print and replace cards |
-| Gym / Manager | + make members, set or release PINs, PIN history |
+| Gym / Reception | Gym app, reception screen, check-in and check-out, members, edit contact details (includes *Contacts → Creation*), print and replace cards |
+| Gym / Manager | + override refusals, block members, reports, make members, set or release PINs, PIN history |
 | Gym / Administrator | + locations, Gym settings (settings also need *Administration → Settings*) |
 | Gym Health Data / Health Data | Read and edit health records. Separate on purpose; no gym level includes it. |
 
@@ -53,8 +69,6 @@ python -m odoo -d <db> -i centric_gym_core --test-enable --test-tags /centric_gy
 
 ## Coming in later phases
 
-- Membership status from Subscriptions
-- Check-in, auto check-out and tracing
 - Waiver and agreements with Sign
 - POS sales and renewals
 - The member tablet

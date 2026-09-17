@@ -6,6 +6,13 @@
         <field name="model">res.partner</field>
         <field name="inherit_id" ref="base.view_partner_form"/>
         <field name="arch" type="xml">
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button name="action_gym_view_checkins" type="object" class="oe_stat_button" icon="fa-sign-in"
+                        groups="centric_gym_core.group_gym_reception"
+                        invisible="is_company or gym_member_state == 'none'">
+                    <field name="gym_checkin_count" widget="statinfo" string="Visits"/>
+                </button>
+            </xpath>
             <xpath expr="//page[@name='internal_notes']" position="before">
                 <page name="gym" string="Gym" invisible="is_company"
                       groups="centric_gym_core.group_gym_reception">
@@ -31,6 +38,13 @@
                     <div class="alert alert-danger" role="alert" invisible="not gym_health_alert">
                         <i class="fa fa-heartbeat me-1"/>Health alert: ask a manager before training this member.
                     </div>
+                    <div class="alert alert-danger" role="alert" invisible="not gym_access_blocked">
+                        <i class="fa fa-ban me-1"/>Blocked: check-in is refused.
+                        <field name="gym_block_reason" readonly="1" class="d-inline"/>
+                    </div>
+                    <div class="alert alert-success" role="status" invisible="not gym_is_inside">
+                        <i class="fa fa-sign-in me-1"/>Inside the gym now.
+                    </div>
                     <group>
                         <group string="Member" name="gym_member">
                             <field name="gym_member_state" widget="badge"
@@ -52,6 +66,15 @@
                             <field name="gym_is_minor" invisible="1"/>
                             <field name="gym_guardian_id" invisible="not gym_is_minor"/>
                             <field name="gym_health_alert" readonly="1"/>
+                        </group>
+                        <group string="Visits" name="gym_visits" invisible="gym_member_state == 'none'">
+                            <field name="gym_last_checkin"/>
+                            <field name="gym_is_inside"/>
+                            <field name="gym_access_blocked" groups="centric_gym_core.group_gym_manager"/>
+                            <field name="gym_block_reason" groups="centric_gym_core.group_gym_manager"
+                                   invisible="not gym_access_blocked" required="gym_access_blocked"/>
+                            <field name="gym_access_blocked" readonly="1"
+                                   groups="!centric_gym_core.group_gym_manager"/>
                         </group>
                         <group string="Emergency Contact" name="gym_emergency">
                             <field name="gym_emergency_name" string="Name"/>
