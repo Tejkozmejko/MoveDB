@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Odoo's own layout chooser, opened in its invoice version: the preview
+         is an invoice and the payment QR code option is shown. -->
+    <record id="action_invoice_layout" model="ir.actions.act_window">
+        <field name="name">Invoice Layout</field>
+        <field name="res_model">base.document.layout</field>
+        <field name="view_mode">form</field>
+        <field name="view_id" ref="account.view_base_document_layout"/>
+        <field name="target">new</field>
+        <field name="context">{'dialog_size': 'extra-large', 'default_from_invoice': True}</field>
+    </record>
+
+    <!-- The chooser edits the company, which only administrators may do. -->
+    <menuitem id="menu_invoice_layout"
+              name="Invoice Layout"
+              parent="account.menu_finance_configuration"
+              action="action_invoice_layout"
+              groups="base.group_system"
+              sequence="1"/>
+
+</odoo>
