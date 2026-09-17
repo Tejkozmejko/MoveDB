@@ -68,7 +68,7 @@ class GymMemberIntake(models.TransientModel):
             "name": _("New Gym Member"),
         }
 
-    def _check_access(self):
+    def _gym_check_staff(self):
         if not self.env.su and not self.env.user.has_group(GROUP_RECEPTION):
             raise UserError(_("Only gym staff can register members."))
 
@@ -99,7 +99,7 @@ class GymMemberIntake(models.TransientModel):
 
     def action_send_waiver(self):
         self.ensure_one()
-        self._check_access()
+        self._gym_check_staff()
         email = email_normalize(self.email or "")
         if self.email and not email:
             raise UserError(_("%(email)s is not a valid email address.", email=self.email))
@@ -144,7 +144,7 @@ class GymMemberIntake(models.TransientModel):
 
     def action_check_signature(self):
         self.ensure_one()
-        self._check_access()
+        self._gym_check_staff()
         self.agreement_id._gym_process_signed()
         if self.agreement_id.sudo().state == "signed":
             self.step = "done"

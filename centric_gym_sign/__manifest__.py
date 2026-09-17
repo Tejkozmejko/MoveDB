@@ -21,7 +21,7 @@ Connects Centric Gym to Odoo Sign.
 
 Odoo Sign emails every signer, so a signer needs an email address.
 """,
-    "version": "19.0.1.0.0",
+    "version": "19.0.1.0.1",
     "category": "Services/Gym",
     "author": "Centric",
     "license": "LGPL-3",
