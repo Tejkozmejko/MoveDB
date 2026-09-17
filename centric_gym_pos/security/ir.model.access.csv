@@ -1,0 +1,2 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_gym_tablet_attempt_manager,gym.tablet.attempt manager,model_gym_tablet_attempt,centric_gym_core.group_gym_manager,1,0,0,0

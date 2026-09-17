@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="centric_gym_pos.GymMembershipDialog">
+        <Dialog title="title" size="'md'">
+            <div class="o_gym_membership_dialog">
+                <dl class="row mb-3">
+                    <dt class="col-4">Member</dt>
+                    <dd class="col-8" t-esc="props.prep.member"/>
+                    <dt class="col-4">Membership</dt>
+                    <dd class="col-8" t-esc="props.prep.product"/>
+                    <dt class="col-4">Period</dt>
+                    <dd class="col-8"><t t-esc="props.prep.start"/> → <t t-esc="props.prep.end"/></dd>
+                    <dt class="col-4">Reference</dt>
+                    <dd class="col-8" t-esc="props.prep.order_name"/>
+                </dl>
+                <div t-if="state.error" class="alert alert-danger mb-0" t-esc="state.error"/>
+                <div t-else="" class="alert alert-info mb-0 d-flex align-items-center gap-2">
+                    <i class="fa fa-circle-o-notch fa-spin"/>
+                    <span>
+                        Waiting for <strong t-esc="props.prep.signer"/> to sign the agreement on the customer screen.
+                    </span>
+                </div>
+            </div>
+            <t t-set-slot="footer">
+                <button class="btn btn-secondary" t-on-click="openHere">
+                    <i class="fa fa-external-link me-1"/>Open Signing Page Here
+                </button>
+                <button class="btn btn-light" t-on-click="cancel">Cancel Sale</button>
+            </t>
+        </Dialog>
+    </t>
+
+</templates>
