@@ -20,6 +20,11 @@ export class GymDisplayOverlay extends Component {
     static props = { data: Object };
 
     setup() {
+        // The standard screen reads order.lines.length as soon as it holds any
+        // key, so a check-in arriving before the first order would crash it.
+        if (!Array.isArray(this.props.data.lines)) {
+            this.props.data.lines = [];
+        }
         this.state = useState({ now: Date.now(), pinOpen: false, pin: "", busy: false, error: "" });
         this.ticker = setInterval(() => {
             this.state.now = Date.now();

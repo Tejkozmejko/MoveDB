@@ -29,7 +29,7 @@ On the customer screen (the member's tablet):
 
 Set the gym location of each Point of Sale in its settings.
 """,
-    "version": "19.0.1.0.0",
+    "version": "19.0.1.0.1",
     "category": "Services/Gym",
     "author": "Centric",
     "license": "LGPL-3",
